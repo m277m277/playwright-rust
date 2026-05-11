@@ -15,26 +15,12 @@ readme = "../../README.md"
 doctest = false  # Disable doc-tests by default (run with: cargo test --doc)
 
 [features]
-default = ["native-tls", "screenshot-diff", "macros"]
+default = ["native-tls", "macros"]
 native-tls = ["tokio-tungstenite/native-tls"]
 rustls-tls-native-roots = ["tokio-tungstenite/rustls-tls-native-roots"]
 rustls-tls-webpki-roots = ["tokio-tungstenite/rustls-tls-webpki-roots"]
-# Enables `Expectation::to_have_screenshot` and `PageExpectation::to_have_screenshot`,
-# pulling in the `image` crate for PNG decode and pixel-diff. Default-on for
-# compatibility on the v0.12.x line; consumers that don't need screenshot
-# comparison can disable this with `default-features = false` to drop ~5
-# transitive deps. Planned to flip to default-off in v0.13.0 as a
-# documented breaking change.
 screenshot-diff = ["dep:image"]
-# Re-exports the `playwright_rs::locator!` compile-time-validated
-# selector macro from the companion `playwright-rs-macros` crate.
-# Default-on; opt out with `default-features = false` if proc-macro
-# build cost matters.
 macros = ["dep:playwright-rs-macros"]
-# Enables the `playwright-rs` binary — a clap-based CLI that bootstraps
-# the Playwright driver into the user cache and installs browsers.
-# Library consumers don't need it; enable with
-# `cargo install playwright-rs --features cli`.
 cli = ["dep:clap", "dep:ureq", "dep:zip"]
 
 [dependencies]
@@ -55,7 +41,6 @@ url = "2.5"
 dirs = "6"
 image = { version = "0.25", default-features = false, features = ["png"], optional = true }
 playwright-rs-macros = { version = "0.1.0", path = "../playwright-rs-macros", optional = true }
-# CLI bin deps — gated by `cli` feature so library-only consumers don't compile them.
 clap = { version = "4", features = ["derive"], optional = true }
 ureq = { version = "3", optional = true }
 zip = { version = "8", optional = true }
