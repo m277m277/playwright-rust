@@ -134,6 +134,33 @@ cargo clippy --workspace --all-targets -- -D warnings
 pre-commit run --all-files
 ```
 
+## Mutation testing
+
+`scripts/mutants.sh` wraps `cargo mutants --in-diff`, scoping mutation
+testing to just the lines a commit touched. A full-codebase run grows
+linearly with codebase size and routinely takes hours; `--in-diff`
+keeps the loop fast enough to use while the test is still warm.
+
+```bash
+./scripts/mutants.sh                 # diff HEAD~1..HEAD (default)
+./scripts/mutants.sh main            # diff main..HEAD
+./scripts/mutants.sh -- --jobs 4     # pass extra cargo-mutants args
+```
+
+CI runs the per-diff variant on every push and PR
+(`mutation-testing-diff` in [`security.yml`](.github/workflows/security.yml)).
+The full-codebase job (`mutation-testing`) runs on the weekly
+Saturday cron, on release tag pushes, and on demand via
+`workflow_dispatch` — kept on a cadence so test-quality drift across
+files outside the recent diff still gets caught.
+
+Scope is set by [`.cargo/mutants.toml`](.cargo/mutants.toml)
+(`examine_globs` lists the files that get mutated at all; `exclude_re`
+removes mutants that are only testable via integration tests).
+`--in-diff` narrows from there.
+
+Install once: `cargo install cargo-mutants`.
+
 ## Versioning
 
 `0.x.y` while pre-1.0; API may evolve. `1.0.0` after stable parity is

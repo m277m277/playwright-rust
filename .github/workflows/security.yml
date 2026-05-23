@@ -77,10 +77,14 @@ jobs:
       run: cargo semver-checks check-release
 
   mutation-testing:
-    name: Mutation Testing
+    name: Mutation Testing (full)
     runs-on: ubuntu-latest
-    # Run on weekly schedule and release tags only (too slow for every push)
-    if: github.event_name == 'schedule' || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
+    # Full-codebase run is too slow for every push; per-PR coverage is
+    # handled by mutation-testing-diff.
+    if: >
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
 
     steps:
     - uses: actions/checkout@v6
@@ -89,20 +93,19 @@ jobs:
       uses: dtolnay/rust-toolchain@stable
 
     - name: Cache Cargo
-      uses: actions/cache@v5
+      uses: Swatinem/rust-cache@v2
       with:
-        path: |
-          ~/.cargo/bin/
-          ~/.cargo/registry/index/
-          ~/.cargo/registry/cache/
-          ~/.cargo/git/db/
-          target/
-        key: ${{ runner.os }}-cargo-mutants-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-mutants-
+        shared-key: mutants
 
+    - name: Install cargo-nextest
+      uses: taiki-e/install-action@nextest
+
+    # Prebuilt binary — `cargo install` fails when a cache restore
+    # leaves an existing binary in ~/.cargo/bin/.
     - name: Install cargo-mutants
-      run: cargo install cargo-mutants
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-mutants
 
     - name: Run mutation testing
       run: cargo mutants
@@ -112,4 +115,57 @@ jobs:
       uses: actions/upload-artifact@v7
       with:
         name: mutation-report
+        path: mutants.out/
+
+  mutation-testing-diff:
+    name: Mutation Testing (diff)
+    runs-on: ubuntu-latest
+    # Per-push variant via `cargo mutants --in-diff`.
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        # Need history beyond HEAD so `git diff` can reach the diff base.
+        fetch-depth: 0
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache Cargo
+      uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: mutants-diff
+
+    - name: Install cargo-nextest
+      uses: taiki-e/install-action@nextest
+
+    - name: Install cargo-mutants
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-mutants
+
+    # PR: merge base against target branch.
+    # Push: parent of HEAD (`before` SHA); first push to a branch has
+    # before = 000...0, in which case fall back to HEAD~1.
+    - name: Compute diff base
+      id: base
+      shell: bash
+      run: |
+        if [ "${{ github.event_name }}" = "pull_request" ]; then
+          echo "ref=origin/${{ github.base_ref }}" >> $GITHUB_OUTPUT
+        elif [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
+          echo "ref=HEAD~1" >> $GITHUB_OUTPUT
+        else
+          echo "ref=${{ github.event.before }}" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Run mutation testing on diff
+      run: ./scripts/mutants.sh ${{ steps.base.outputs.ref }}
+
+    - name: Upload mutation report
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: mutation-report-diff
         path: mutants.out/
