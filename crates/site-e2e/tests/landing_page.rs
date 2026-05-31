@@ -125,6 +125,24 @@ async fn landing_page_boots_and_shows_hero() {
             .unwrap_or_else(|e| panic!("feature card {id} should render: {e:?}"));
     }
 
+    // The dogfood banner makes the pitch explicit.
+    let banner = page.locator("#dogfood-banner").await;
+    expect(banner)
+        .to_contain_text("Tested by the binding it advertises")
+        .await
+        .expect("dogfood banner should render");
+
+    // The footer is up front about being an unofficial binding.
+    let disclaimer = page.locator("#disclaimer").await;
+    expect(disclaimer.clone())
+        .to_contain_text("unofficial")
+        .await
+        .expect("footer should disclose unofficial status");
+    expect(disclaimer)
+        .to_contain_text("Microsoft")
+        .await
+        .expect("footer should name the Microsoft trademark");
+
     browser.close().await.ok();
     server.abort();
 }
