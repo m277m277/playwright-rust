@@ -36,13 +36,14 @@ fn main() {
 
         // Drop syntect's outer `<pre style=...>` / `</pre>`; the component
         // supplies its own styled <pre>. The first '>' closes the <pre> tag.
-        let inner = html
-            .find('>')
-            .map(|i| &html[i + 1..])
-            .unwrap_or(&html)
-            .trim_end()
+        // Trim the newline syntect emits right after `<pre>` (and before
+        // `</pre>`) so the block has no leading/trailing blank line.
+        let after_open = html.find('>').map(|i| &html[i + 1..]).unwrap_or(&html);
+        let inner = after_open
+            .trim()
             .strip_suffix("</pre>")
-            .unwrap_or(&html)
+            .unwrap_or(after_open)
+            .trim()
             .to_string();
 
         let stem = path.file_stem().unwrap().to_str().unwrap();

@@ -1,16 +1,14 @@
 use leptos::prelude::*;
 
-use super::CodeBlock;
-
-/// One feature highlight: title, one-line blurb, and a short real snippet.
+/// One feature highlight: title, one-line blurb, and a code area supplied as
+/// children (a `CodeBlock` for a single snippet, or `CodeTabs` for variants).
 #[component]
 pub fn FeatureCard(
     /// Stable id so the dogfood test can assert the card rendered.
     id: &'static str,
     title: &'static str,
     blurb: &'static str,
-    /// Highlighted snippet HTML from `crate::snippets`.
-    html: &'static str,
+    children: Children,
 ) -> impl IntoView {
     view! {
         <div
@@ -19,9 +17,7 @@ pub fn FeatureCard(
         >
             <h3 class="text-lg font-semibold text-rust-300">{title}</h3>
             <p class="mt-1 mb-4 text-sm text-rust-50/70">{blurb}</p>
-            <div class="mt-auto">
-                <CodeBlock html=html/>
-            </div>
+            <div class="mt-auto">{children()}</div>
         </div>
     }
 }
