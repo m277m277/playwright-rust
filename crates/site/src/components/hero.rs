@@ -9,7 +9,7 @@ const GITHUB: &str = "https://github.com/padamson/playwright-rust";
 #[component]
 pub fn Hero() -> impl IntoView {
     view! {
-        <header class="flex flex-col items-center px-6 pt-24 pb-16 text-center">
+        <header id="hero" class="flex flex-col items-center px-6 pt-24 pb-16 text-center">
             <h1
                 id="hero-title"
                 class="text-5xl font-bold tracking-tight text-rust-500 sm:text-6xl"

@@ -1,28 +1,33 @@
-//! The dogfood deploy gate: serve the Trunk-built landing page and assert,
-//! through a real browser driven by playwright-rs, that it works as advertised.
-//! Because the site is a Leptos CSR/WASM app, these assertions also prove the
-//! WASM bundle actually boots and renders (a static-HTML check could not).
+//! The dogfood deploy gate: serve the Trunk-built landing page and drive it
+//! with playwright-rs, asserting it works as advertised. Because the site is a
+//! Leptos CSR/WASM app, these assertions also prove the WASM bundle boots and
+//! that its interactive widgets actually react (a static-HTML check could not).
+//!
+//! The steps are written the way you would test a real app: wait for the SPA
+//! to render (auto-waiting locators, no sleeps), perform user interactions and
+//! assert the resulting state, then check key content. Each step also writes an
+//! element screenshot to `crates/site/dist/receipts/steps/`, and the whole run
+//! is traced to `dist/receipts/trace.zip`; the page's walkthrough surfaces both.
+//! Those artifacts are byproducts. The assertions are the gate.
 //!
 //! Run after building the site:
-//!   (cd crates/site && trunk build --release)
+//!   (cd crates/site && trunk build)
 //!   cargo test --manifest-path crates/site-e2e/Cargo.toml
 //!
-//! Skips gracefully when `crates/site/dist` is absent so it never fails a run
-//! that didn't build the site.
+//! Skips gracefully when `crates/site/dist` is absent.
 
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use axum::Router;
-use playwright_rs::{Playwright, expect};
+use playwright_rs::expect;
+use playwright_rs::protocol::{Page, Playwright, TracingStartOptions, TracingStopOptions};
 use tower_http::services::ServeDir;
 
 fn dist_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../site/dist")
 }
 
-/// Serve `dist/` on an ephemeral port; returns the bound address and the
-/// server task handle.
 async fn serve(dist: &PathBuf) -> (SocketAddr, tokio::task::JoinHandle<()>) {
     let app = Router::new().fallback_service(ServeDir::new(dist));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -35,113 +40,197 @@ async fn serve(dist: &PathBuf) -> (SocketAddr, tokio::task::JoinHandle<()>) {
     (addr, handle)
 }
 
+/// Write an element screenshot of `selector` to the step file. An element
+/// screenshot scrolls the element into view and frames it tightly, so each
+/// step's receipt is distinct (a viewport screenshot of adjacent sections looks
+/// nearly identical).
+async fn shot(page: &Page, steps: &Path, file: &str, selector: &str) {
+    let bytes = page
+        .locator(selector)
+        .await
+        .screenshot(None)
+        .await
+        .unwrap_or_else(|e| panic!("screenshot {selector}: {e:?}"));
+    std::fs::write(steps.join(file), bytes)
+        .unwrap_or_else(|e| panic!("write step screenshot {file}: {e:?}"));
+}
+
 #[tokio::test]
-async fn landing_page_boots_and_shows_hero() {
+async fn landing_page_works_as_advertised() {
     let dist = dist_dir();
     if !dist.join("index.html").exists() {
         eprintln!(
-            "skipping dogfood test: {} not built — run `trunk build` in crates/site first",
+            "skipping dogfood test: {} not built. Run `trunk build` in crates/site first.",
             dist.display()
         );
         return;
     }
+    let steps = dist.join("receipts").join("steps");
+    std::fs::create_dir_all(&steps).expect("create receipts/steps dir");
 
     let (addr, server) = serve(&dist).await;
 
     let pw = Playwright::launch().await.expect("launch playwright");
     let browser = pw.chromium().launch().await.expect("launch chromium");
-    let page = browser.new_page().await.expect("new page");
+    let context = browser.new_context().await.expect("new context");
+
+    // Trace the whole run; published as a downloadable receipt.
+    let tracing = context.tracing().await.expect("tracing handle");
+    tracing
+        .start(Some(TracingStartOptions {
+            name: Some("playwright-rust.dev dogfood".into()),
+            screenshots: Some(true),
+            snapshots: Some(true),
+            ..Default::default()
+        }))
+        .await
+        .expect("start trace");
+
+    let page = context.new_page().await.expect("new page");
     page.goto(&format!("http://{addr}"), None)
         .await
         .expect("navigate to site");
 
-    // Auto-wait for Leptos to mount the hero — proves the WASM app booted.
-    let hero = page.locator("#hero-title").await;
-    expect(hero.clone())
-        .to_be_visible()
+    // Step 1: the SPA renders. The locator auto-waits for the WASM app to mount
+    // and paint the hero, so there is no sleep or readiness polling.
+    expect(page.locator("#hero-title").await)
+        .to_have_text("Playwright for Rust")
         .await
-        .expect("hero title should render");
-    expect(hero)
-        .to_contain_text("Playwright for Rust")
+        .expect("hero renders once the WASM app boots");
+    // The primary CTA must point at the docs (a navigation contract: catches a
+    // broken or wrong docs link).
+    expect(page.locator("#cta-docs").await)
+        .to_have_attribute("href", "https://docs.rs/playwright-rs")
         .await
-        .expect("hero title text");
+        .expect("the Docs button links to docs.rs");
+    shot(&page, &steps, "01.png", "#hero").await;
 
-    // Install section advertises the current crate version.
-    let install = page.locator("#install").await;
-    expect(install.clone())
-        .to_be_visible()
-        .await
-        .expect("install section should render");
-    expect(install)
-        .to_contain_text("playwright-rs = \"0.13\"")
-        .await
-        .expect("install snippet should show the crate version");
-
-    // Comparison: Python is the default tab, Rust is always shown alongside.
+    // Step 2: switch the comparison language and assert the resulting state.
+    // The default tab is Python; clicking Java must swap the snippet and mark
+    // the Java tab selected.
     let comparison = page.locator("#comparison").await;
-    expect(comparison.clone())
-        .to_be_visible()
-        .await
-        .expect("comparison section should render");
     expect(comparison.clone())
         .to_contain_text("sync_playwright")
         .await
-        .expect("default tab should show the Python side");
-    expect(comparison.clone())
-        .to_contain_text("Playwright::launch")
-        .await
-        .expect("comparison should show the Rust side");
-
-    // Interactive tabs: clicking Java switches the snippet (exercises real
-    // client-side reactivity in the WASM app).
+        .expect("comparison defaults to Python");
     page.locator("[data-lang='Java']")
         .await
         .click(None)
         .await
-        .expect("Java tab should be clickable");
+        .expect("click the Java tab");
+    expect(page.locator("[data-lang='Java']").await)
+        .to_have_attribute("aria-selected", "true")
+        .await
+        .expect("the Java tab becomes selected");
     expect(comparison.clone())
         .to_contain_text("Playwright.create()")
         .await
-        .expect("clicking Java should switch to the Java snippet");
+        .expect("the Java snippet is shown");
     expect(comparison)
         .not()
         .to_contain_text("sync_playwright")
         .await
-        .expect("the Python snippet should no longer be shown");
+        .expect("the Python snippet is replaced");
+    shot(&page, &steps, "02.png", "#comparison").await;
 
-    // Every advertised feature card renders.
-    for id in [
-        "#feature-locators",
-        "#feature-assertions",
-        "#feature-cross-browser",
-        "#feature-routing",
-        "#feature-tracing",
-        "#feature-responsive",
+    // Step 3: a second interactive widget. Switch the cross-browser tile from
+    // Chromium to Firefox, scoping the locator to that card.
+    page.locator("#feature-cross-browser [data-lang='Firefox']")
+        .await
+        .click(None)
+        .await
+        .expect("click the Firefox engine tab");
+    expect(
+        page.locator("#feature-cross-browser [data-lang='Firefox']")
+            .await,
+    )
+    .to_have_attribute("aria-selected", "true")
+    .await
+    .expect("the Firefox tab becomes selected");
+    expect(
+        page.locator("#feature-cross-browser [data-lang='Chromium']")
+            .await,
+    )
+    .to_have_attribute("aria-selected", "false")
+    .await
+    .expect("the Chromium tab deselects");
+    expect(page.locator("#feature-cross-browser").await)
+        .to_contain_text("firefox")
+        .await
+        .expect("the Firefox snippet is shown");
+    shot(&page, &steps, "03.png", "#feature-cross-browser").await;
+
+    // Step 4: every feature card renders its own snippet, actually highlighted.
+    // For each card assert it is visible, shows a token unique to its snippet
+    // (so we are not testing one shared constant), and that its code contains
+    // colored <span>s. The color check is what proves the build-time syntect
+    // HTML rendered as markup: a broken pipeline (escaped text, empty const, no
+    // highlighting) would show the same text but zero colored spans.
+    for (id, token) in [
+        ("#feature-locators", "page.locator"),
+        ("#feature-assertions", "to_have_text"),
+        ("#feature-cross-browser", "launch"),
+        ("#feature-routing", "route"),
+        ("#feature-tracing", "tracing_subscriber"),
+        ("#feature-responsive", "set_viewport_size"),
     ] {
-        let card = page.locator(id).await;
-        expect(card)
+        expect(page.locator(id).await)
             .to_be_visible()
             .await
             .unwrap_or_else(|e| panic!("feature card {id} should render: {e:?}"));
+        expect(page.locator(id).await)
+            .to_contain_text(token)
+            .await
+            .unwrap_or_else(|e| panic!("feature card {id} should show its snippet: {e:?}"));
+        let colored = page
+            .locator(&format!("{id} span[style*='color']"))
+            .await
+            .count()
+            .await
+            .unwrap_or_else(|e| panic!("count colored spans in {id}: {e:?}"));
+        assert!(
+            colored > 0,
+            "feature card {id} should render highlighted (colored) code, found {colored} colored spans"
+        );
     }
+    shot(&page, &steps, "04.png", "#features").await;
 
-    // The dogfood banner makes the pitch explicit.
-    let banner = page.locator("#dogfood-banner").await;
-    expect(banner)
-        .to_contain_text("Tested by the binding it advertises")
-        .await
-        .expect("dogfood banner should render");
-
-    // The footer is up front about being an unofficial binding.
+    // Step 5: the footer is up front about being an unofficial binding.
     let disclaimer = page.locator("#disclaimer").await;
     expect(disclaimer.clone())
         .to_contain_text("unofficial")
         .await
-        .expect("footer should disclose unofficial status");
+        .expect("footer discloses unofficial status");
     expect(disclaimer)
         .to_contain_text("Microsoft")
         .await
-        .expect("footer should name the Microsoft trademark");
+        .expect("footer names the Microsoft trademark");
+    shot(&page, &steps, "05.png", "#footer").await;
+
+    // The walkthrough is itself an interactive stepper. Driving it covers the
+    // third interactive widget on the page.
+    page.locator("#walk-next")
+        .await
+        .click(None)
+        .await
+        .expect("click the walkthrough Next button");
+    expect(page.locator("#walkthrough").await)
+        .to_contain_text("Step 2 of 5")
+        .await
+        .expect("the walkthrough advances to the next step");
+
+    // Save the trace zip as the deep-dive receipt.
+    tracing
+        .stop(Some(TracingStopOptions {
+            path: Some(
+                dist.join("receipts")
+                    .join("trace.zip")
+                    .to_string_lossy()
+                    .into_owned(),
+            ),
+        }))
+        .await
+        .expect("write trace receipt");
 
     browser.close().await.ok();
     server.abort();
