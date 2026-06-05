@@ -591,6 +591,17 @@ impl Locator {
         &self.frame
     }
 
+    /// Serializes this locator as a screenshot `mask` entry — `{ frame, selector }`
+    /// with the frame sent as a channel reference — matching the protocol shape
+    /// the driver expects. Used by [`crate::protocol::ScreenshotOptions`].
+    pub(crate) fn mask_json(&self) -> serde_json::Value {
+        use crate::server::channel_owner::ChannelOwner as _;
+        serde_json::json!({
+            "frame": { "guid": self.frame.guid() },
+            "selector": self.selector,
+        })
+    }
+
     /// Creates a [`FrameLocator`](crate::protocol::FrameLocator) scoped within this locator's subtree.
     ///
     /// The `selector` identifies an iframe element within the locator's scope.

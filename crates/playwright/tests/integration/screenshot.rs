@@ -398,3 +398,31 @@ async fn test_screenshot_new_options_accepted() {
     browser.close().await.expect("Failed to close browser");
     server.shutdown();
 }
+
+#[tokio::test]
+async fn test_screenshot_mask_accepted() {
+    let server = TestServer::start().await;
+    let (_pw, browser, page) = crate::common::setup().await;
+
+    page.goto(&format!("{}/locators.html", server.url()), None)
+        .await
+        .expect("Failed to navigate");
+
+    // Mask locators serialize to `{ frame, selector }` channel refs; a
+    // successful capture confirms that shape (and maskColor) is accepted.
+    let masked = page.locator("h1").await;
+    let options = ScreenshotOptions::builder()
+        .mask(vec![masked])
+        .mask_color("#FF00FF")
+        .build();
+    let bytes = page
+        .screenshot(Some(options))
+        .await
+        .expect("screenshot with mask + mask_color");
+
+    assert!(!bytes.is_empty());
+    assert_eq!(&bytes[0..4], &[0x89, 0x50, 0x4E, 0x47]); // PNG magic bytes
+
+    browser.close().await.expect("Failed to close browser");
+    server.shutdown();
+}

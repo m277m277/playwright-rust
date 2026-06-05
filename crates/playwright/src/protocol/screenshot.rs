@@ -134,6 +134,11 @@ pub struct ScreenshotOptions {
     pub scale: Option<Scale>,
     /// CSS to inject into the page before capturing (e.g. hide dynamic elements)
     pub style: Option<String>,
+    /// Locators to mask out (overpaint) with a solid box, pre-serialized to the
+    /// protocol `{ frame, selector }` shape. Build via the builder's `mask`.
+    pub mask: Option<Vec<serde_json::Value>>,
+    /// CSS color of the mask boxes (e.g. `"#FF00FF"`); Playwright defaults to pink.
+    pub mask_color: Option<String>,
     /// Screenshot timeout in milliseconds
     pub timeout: Option<f64>,
 }
@@ -188,6 +193,14 @@ impl ScreenshotOptions {
             json["style"] = serde_json::json!(style);
         }
 
+        if let Some(mask) = &self.mask {
+            json["mask"] = serde_json::Value::Array(mask.clone());
+        }
+
+        if let Some(mask_color) = &self.mask_color {
+            json["maskColor"] = serde_json::json!(mask_color);
+        }
+
         // Timeout is required in Playwright 1.56.1+
         if let Some(timeout) = self.timeout {
             json["timeout"] = serde_json::json!(timeout);
@@ -213,6 +226,8 @@ pub struct ScreenshotOptionsBuilder {
     caret: Option<Caret>,
     scale: Option<Scale>,
     style: Option<String>,
+    mask: Option<Vec<serde_json::Value>>,
+    mask_color: Option<String>,
     timeout: Option<f64>,
 }
 
@@ -276,6 +291,21 @@ impl ScreenshotOptionsBuilder {
         self
     }
 
+    /// Overpaint the given locators with a solid box (mask out dynamic or
+    /// sensitive content). Each locator may match multiple elements; all are
+    /// masked. Pair with [`mask_color`](Self::mask_color) to set the box color.
+    pub fn mask(mut self, mask: Vec<crate::protocol::Locator>) -> Self {
+        self.mask = Some(mask.iter().map(|l| l.mask_json()).collect());
+        self
+    }
+
+    /// CSS color of the [`mask`](Self::mask) boxes (e.g. `"#FF00FF"` or
+    /// `"rgba(0,0,0,0.5)"`). Defaults to pink when unset.
+    pub fn mask_color(mut self, mask_color: impl Into<String>) -> Self {
+        self.mask_color = Some(mask_color.into());
+        self
+    }
+
     /// Set screenshot timeout in milliseconds
     pub fn timeout(mut self, timeout: f64) -> Self {
         self.timeout = Some(timeout);
@@ -294,6 +324,8 @@ impl ScreenshotOptionsBuilder {
             caret: self.caret,
             scale: self.scale,
             style: self.style,
+            mask: self.mask,
+            mask_color: self.mask_color,
             timeout: self.timeout,
         }
     }
@@ -403,12 +435,23 @@ mod tests {
     }
 
     #[test]
+    fn test_builder_mask_color() {
+        let json = ScreenshotOptions::builder()
+            .mask_color("#FF00FF")
+            .build()
+            .to_json();
+        assert_eq!(json["maskColor"], "#FF00FF");
+    }
+
+    #[test]
     fn test_unset_options_absent() {
         let json = ScreenshotOptions::builder().build().to_json();
         assert!(json.get("animations").is_none());
         assert!(json.get("caret").is_none());
         assert!(json.get("scale").is_none());
         assert!(json.get("style").is_none());
+        assert!(json.get("mask").is_none());
+        assert!(json.get("maskColor").is_none());
     }
 
     #[test]
