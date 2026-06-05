@@ -77,6 +77,7 @@ exclude_re = [
     "Locator::aria_snapshot",
     "Locator::highlight",
     "Locator::selector",
+    "Locator::mask_json",
     "Locator::wrap_error",
     "impl std::fmt::Debug for Locator",
 

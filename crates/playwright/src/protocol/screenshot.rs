@@ -444,6 +444,22 @@ mod tests {
     }
 
     #[test]
+    fn test_mask_serializes_to_array() {
+        // The builder's `mask` needs a real Locator (browser-only), so construct
+        // the pre-serialized form directly to lock the `to_json` mask branch.
+        let options = ScreenshotOptions {
+            mask: Some(vec![serde_json::json!({
+                "frame": { "guid": "frame@1" },
+                "selector": "h1",
+            })]),
+            ..Default::default()
+        };
+        let json = options.to_json();
+        assert_eq!(json["mask"][0]["frame"]["guid"], "frame@1");
+        assert_eq!(json["mask"][0]["selector"], "h1");
+    }
+
+    #[test]
     fn test_unset_options_absent() {
         let json = ScreenshotOptions::builder().build().to_json();
         assert!(json.get("animations").is_none());
