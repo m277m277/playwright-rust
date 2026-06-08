@@ -498,3 +498,41 @@ async fn test_browser_new_browser_cdp_session() {
     session.detach().await.expect("detach should succeed");
     browser.close().await.expect("Failed to close browser");
 }
+
+#[tokio::test]
+async fn test_browser_on_context() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
+
+    let pw = Playwright::launch().await.expect("launch playwright");
+    let browser = pw.chromium().launch().await.expect("launch chromium");
+
+    let count = Arc::new(AtomicUsize::new(0));
+    let c = count.clone();
+    browser
+        .on_context(move |_ctx| {
+            let c = c.clone();
+            async move {
+                c.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            }
+        })
+        .await
+        .expect("register on_context");
+
+    let ctx = browser.new_context().await.expect("new context");
+
+    let mut waited = Duration::ZERO;
+    while count.load(Ordering::SeqCst) == 0 && waited < Duration::from_secs(3) {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        waited += Duration::from_millis(50);
+    }
+    assert!(
+        count.load(Ordering::SeqCst) >= 1,
+        "Browser on_context should fire when a new context is created"
+    );
+
+    ctx.close().await.ok();
+    browser.close().await.expect("close browser");
+}

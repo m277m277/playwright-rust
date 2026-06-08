@@ -23,6 +23,12 @@ type DisconnectedHandlerFuture = Pin<Box<dyn Future<Output = Result<()>> + Send>
 /// Type alias for a registered disconnected event handler.
 type DisconnectedHandler = Arc<dyn Fn() -> DisconnectedHandlerFuture + Send + Sync>;
 
+/// Type alias for the future returned by a context handler.
+type ContextHandlerFuture = Pin<Box<dyn Future<Output = Result<()>> + Send>>;
+
+/// Type alias for a registered `context` event handler.
+type ContextHandler = Arc<dyn Fn(BrowserContext) -> ContextHandlerFuture + Send + Sync>;
+
 /// Options for `Browser::bind()`.
 ///
 /// See: <https://playwright.dev/docs/api/class-browser#browser-bind>
@@ -130,6 +136,8 @@ pub struct Browser {
     is_connected: Arc<AtomicBool>,
     /// Registered handlers for the "disconnected" event.
     disconnected_handlers: Arc<Mutex<Vec<DisconnectedHandler>>>,
+    /// Registered handlers for the "context" event (new context created).
+    context_handlers: Arc<Mutex<Vec<ContextHandler>>>,
 }
 
 impl Browser {
@@ -185,6 +193,7 @@ impl Browser {
             name,
             is_connected: Arc::new(AtomicBool::new(true)),
             disconnected_handlers: Arc::new(Mutex::new(Vec::new())),
+            context_handlers: Arc::new(Mutex::new(Vec::new())),
         })
     }
 
@@ -459,6 +468,24 @@ impl Browser {
         Ok(())
     }
 
+    /// Adds a listener for the `context` event, fired when a new browser
+    /// context is created on this browser (including via
+    /// [`new_context`](Self::new_context)). Lets framework code observe context
+    /// creation without threading the `new_context()` return value through.
+    ///
+    /// See: <https://playwright.dev/docs/api/class-browser#browser-event-context>
+    #[tracing::instrument(level = "debug", skip_all, fields(name = %self.name))]
+    pub async fn on_context<F, Fut>(&self, handler: F) -> Result<()>
+    where
+        F: Fn(BrowserContext) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<()>> + Send + 'static,
+    {
+        let handler =
+            Arc::new(move |ctx: BrowserContext| -> ContextHandlerFuture { Box::pin(handler(ctx)) });
+        self.context_handlers.lock().unwrap().push(handler);
+        Ok(())
+    }
+
     /// Exposes this browser over a local WebSocket or pipe endpoint so external
     /// clients (Playwright CLI, `@playwright/mcp`, other agent tooling) can
     /// attach to it.
@@ -726,6 +753,27 @@ impl ChannelOwner for Browser {
                     }
                 });
             }
+        } else if method == "context" {
+            let handlers = self.context_handlers.lock().unwrap().clone();
+            if !handlers.is_empty()
+                && let Some(guid) = params
+                    .get("context")
+                    .and_then(|c| c.get("guid"))
+                    .and_then(|g| g.as_str())
+            {
+                let guid = guid.to_string();
+                let connection = self.connection();
+                tokio::spawn(async move {
+                    use crate::server::connection::ConnectionExt;
+                    if let Ok(ctx) = connection.get_typed::<BrowserContext>(&guid).await {
+                        for handler in handlers {
+                            if let Err(e) = handler(ctx.clone()).await {
+                                tracing::warn!("Browser context handler error: {}", e);
+                            }
+                        }
+                    }
+                });
+            }
         }
         self.base.on_event(method, params)
     }
@@ -749,8 +797,7 @@ impl std::fmt::Debug for Browser {
     }
 }
 
-// Note: Browser testing is done via integration tests since it requires:
-// - A real Connection with object registry
-// - Protocol messages from the server
-// - BrowserType.launch() to create Browser objects
-// See: crates/playwright-core/tests/browser_launch_integration.rs (Phase 2 Slice 3)
+// Note: Browser is exercised by integration tests rather than unit tests,
+// because it requires a real Connection with an object registry, protocol
+// messages from the server, and BrowserType::launch() to create the object.
+// See crates/playwright/tests/integration/browser.rs.

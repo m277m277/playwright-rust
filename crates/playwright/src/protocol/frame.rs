@@ -521,7 +521,7 @@ impl Frame {
         if let Some(response_ref) = goto_result.response {
             // The server returns a Response GUID, but the __create__ message might not have
             // arrived yet. Retry a few times to wait for the object to be created.
-            // TODO(Phase 4+): Implement proper GUID replacement like Python's _replace_guids_with_channels
+            // TODO: Implement proper GUID replacement like Python's _replace_guids_with_channels
             //   - Eliminates retry loop for better performance
             //   - See: playwright-python's _replace_guids_with_channels method
             let response_arc = {

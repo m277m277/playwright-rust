@@ -11,7 +11,9 @@ use crate::protocol::cdp_session::CDPSession;
 use crate::protocol::event_waiter::EventWaiter;
 use crate::protocol::route::UnrouteBehavior;
 use crate::protocol::tracing::Tracing;
-use crate::protocol::{Browser, Page, ProxySettings, Request, ResponseObject, Route};
+use crate::protocol::{
+    Browser, Download, Frame, Page, ProxySettings, Request, ResponseObject, Route,
+};
 use crate::server::channel::Channel;
 use crate::server::channel_owner::{ChannelOwner, ChannelOwnerImpl, ParentOrConnection};
 use crate::server::connection::ConnectionExt;
@@ -143,6 +145,18 @@ type ServiceWorkerHandlerFuture = Pin<Box<dyn Future<Output = Result<()>> + Send
 type ServiceWorkerHandler =
     Arc<dyn Fn(crate::protocol::Worker) -> ServiceWorkerHandlerFuture + Send + Sync>;
 
+/// Context-level event handlers for the 1.60 lifecycle events. These are not
+/// wire events on the context channel; they are forwarded from each page's
+/// own events (see `wire_*` helpers), matching how the upstream clients
+/// synthesize them.
+type CtxHandlerFuture = Pin<Box<dyn Future<Output = Result<()>> + Send>>;
+/// Context `download` handler (receives the page's `Download`).
+type DownloadHandler = Arc<dyn Fn(Download) -> CtxHandlerFuture + Send + Sync>;
+/// Context frame handler (`frameAttached`/`frameDetached`/`frameNavigated`).
+type CtxFrameHandler = Arc<dyn Fn(Frame) -> CtxHandlerFuture + Send + Sync>;
+/// Context page-lifecycle handler (`pageLoad`/`pageClose`), receives the `Page`.
+type PageEventHandler = Arc<dyn Fn(Page) -> CtxHandlerFuture + Send + Sync>;
+
 /// Binding callback: receives deserialized JS args, returns a JSON value
 type BindingCallback = Arc<dyn Fn(Vec<serde_json::Value>) -> BindingCallbackFuture + Send + Sync>;
 
@@ -210,6 +224,13 @@ pub struct BrowserContext {
     weberror_handlers: Arc<Mutex<Vec<WebErrorHandler>>>,
     /// Context-level service worker event handlers (fired when a service worker is registered)
     serviceworker_handlers: Arc<Mutex<Vec<ServiceWorkerHandler>>>,
+    /// Context-level lifecycle handlers, forwarded from each page's events.
+    download_handlers: Arc<Mutex<Vec<DownloadHandler>>>,
+    frame_attached_handlers: Arc<Mutex<Vec<CtxFrameHandler>>>,
+    frame_detached_handlers: Arc<Mutex<Vec<CtxFrameHandler>>>,
+    frame_navigated_handlers: Arc<Mutex<Vec<CtxFrameHandler>>>,
+    page_load_handlers: Arc<Mutex<Vec<PageEventHandler>>>,
+    page_close_handlers: Arc<Mutex<Vec<PageEventHandler>>>,
     /// One-shot senders waiting for the next "request" event (expect_event("request"))
     request_waiters: Arc<Mutex<Vec<oneshot::Sender<Request>>>>,
     /// One-shot senders waiting for the next "response" event (expect_event("response"))
@@ -310,6 +331,12 @@ impl BrowserContext {
             console_waiters: Arc::new(Mutex::new(Vec::new())),
             weberror_handlers: Arc::new(Mutex::new(Vec::new())),
             serviceworker_handlers: Arc::new(Mutex::new(Vec::new())),
+            download_handlers: Arc::new(Mutex::new(Vec::new())),
+            frame_attached_handlers: Arc::new(Mutex::new(Vec::new())),
+            frame_detached_handlers: Arc::new(Mutex::new(Vec::new())),
+            frame_navigated_handlers: Arc::new(Mutex::new(Vec::new())),
+            page_load_handlers: Arc::new(Mutex::new(Vec::new())),
+            page_close_handlers: Arc::new(Mutex::new(Vec::new())),
             request_waiters: Arc::new(Mutex::new(Vec::new())),
             response_waiters: Arc::new(Mutex::new(Vec::new())),
             weberror_waiters: Arc::new(Mutex::new(Vec::new())),
@@ -1231,6 +1258,232 @@ impl BrowserContext {
         let handler = Arc::new(move |page: Page| -> PageHandlerFuture { Box::pin(handler(page)) });
         self.page_handlers.lock().unwrap().push(handler);
         Ok(())
+    }
+
+    /// Adds a listener for the `download` event: fired when any page in the
+    /// context starts a download. Forwarded from each page's own `download`
+    /// event.
+    ///
+    /// See: <https://playwright.dev/docs/api/class-browsercontext#browser-context-event-download>
+    #[tracing::instrument(level = "debug", skip_all, fields(guid = %self.guid()))]
+    pub async fn on_download<F, Fut>(&self, handler: F) -> Result<()>
+    where
+        F: Fn(Download) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<()>> + Send + 'static,
+    {
+        let handler = Arc::new(move |d: Download| -> CtxHandlerFuture { Box::pin(handler(d)) });
+        let was_empty = self.download_handlers.lock().unwrap().is_empty();
+        self.download_handlers.lock().unwrap().push(handler);
+        if was_empty {
+            for page in self.pages() {
+                Self::wire_download(&page, self.download_handlers.clone()).await;
+            }
+        }
+        Ok(())
+    }
+
+    /// Adds a listener for the `frameAttached` event: fired when a frame is
+    /// attached in any page of the context. Forwarded from each page.
+    ///
+    /// See: <https://playwright.dev/docs/api/class-browsercontext#browser-context-event-frame-attached>
+    #[tracing::instrument(level = "debug", skip_all, fields(guid = %self.guid()))]
+    pub async fn on_frame_attached<F, Fut>(&self, handler: F) -> Result<()>
+    where
+        F: Fn(Frame) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<()>> + Send + 'static,
+    {
+        let handler = Arc::new(move |f: Frame| -> CtxHandlerFuture { Box::pin(handler(f)) });
+        let was_empty = self.frame_attached_handlers.lock().unwrap().is_empty();
+        self.frame_attached_handlers.lock().unwrap().push(handler);
+        if was_empty {
+            for page in self.pages() {
+                Self::wire_frame_attached(&page, self.frame_attached_handlers.clone()).await;
+            }
+        }
+        Ok(())
+    }
+
+    /// Adds a listener for the `frameDetached` event: fired when a frame is
+    /// detached in any page of the context. Forwarded from each page.
+    ///
+    /// See: <https://playwright.dev/docs/api/class-browsercontext#browser-context-event-frame-detached>
+    #[tracing::instrument(level = "debug", skip_all, fields(guid = %self.guid()))]
+    pub async fn on_frame_detached<F, Fut>(&self, handler: F) -> Result<()>
+    where
+        F: Fn(Frame) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<()>> + Send + 'static,
+    {
+        let handler = Arc::new(move |f: Frame| -> CtxHandlerFuture { Box::pin(handler(f)) });
+        let was_empty = self.frame_detached_handlers.lock().unwrap().is_empty();
+        self.frame_detached_handlers.lock().unwrap().push(handler);
+        if was_empty {
+            for page in self.pages() {
+                Self::wire_frame_detached(&page, self.frame_detached_handlers.clone()).await;
+            }
+        }
+        Ok(())
+    }
+
+    /// Adds a listener for the `frameNavigated` event: fired when a frame
+    /// navigates in any page of the context. Forwarded from each page.
+    ///
+    /// See: <https://playwright.dev/docs/api/class-browsercontext#browser-context-event-frame-navigated>
+    #[tracing::instrument(level = "debug", skip_all, fields(guid = %self.guid()))]
+    pub async fn on_frame_navigated<F, Fut>(&self, handler: F) -> Result<()>
+    where
+        F: Fn(Frame) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<()>> + Send + 'static,
+    {
+        let handler = Arc::new(move |f: Frame| -> CtxHandlerFuture { Box::pin(handler(f)) });
+        let was_empty = self.frame_navigated_handlers.lock().unwrap().is_empty();
+        self.frame_navigated_handlers.lock().unwrap().push(handler);
+        if was_empty {
+            for page in self.pages() {
+                Self::wire_frame_navigated(&page, self.frame_navigated_handlers.clone()).await;
+            }
+        }
+        Ok(())
+    }
+
+    /// Adds a listener for the `pageLoad` event: fired when any page in the
+    /// context fires its `load` event. The handler receives that `Page`.
+    ///
+    /// See: <https://playwright.dev/docs/api/class-browsercontext#browser-context-event-page-load>
+    #[tracing::instrument(level = "debug", skip_all, fields(guid = %self.guid()))]
+    pub async fn on_page_load<F, Fut>(&self, handler: F) -> Result<()>
+    where
+        F: Fn(Page) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<()>> + Send + 'static,
+    {
+        let handler = Arc::new(move |p: Page| -> CtxHandlerFuture { Box::pin(handler(p)) });
+        let was_empty = self.page_load_handlers.lock().unwrap().is_empty();
+        self.page_load_handlers.lock().unwrap().push(handler);
+        if was_empty {
+            for page in self.pages() {
+                Self::wire_page_load(&page, self.page_load_handlers.clone()).await;
+            }
+        }
+        Ok(())
+    }
+
+    /// Adds a listener for the `pageClose` event: fired when any page in the
+    /// context closes. The handler receives that `Page`.
+    ///
+    /// See: <https://playwright.dev/docs/api/class-browsercontext#browser-context-event-page-close>
+    #[tracing::instrument(level = "debug", skip_all, fields(guid = %self.guid()))]
+    pub async fn on_page_close<F, Fut>(&self, handler: F) -> Result<()>
+    where
+        F: Fn(Page) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<()>> + Send + 'static,
+    {
+        let handler = Arc::new(move |p: Page| -> CtxHandlerFuture { Box::pin(handler(p)) });
+        let was_empty = self.page_close_handlers.lock().unwrap().is_empty();
+        self.page_close_handlers.lock().unwrap().push(handler);
+        if was_empty {
+            for page in self.pages() {
+                Self::wire_page_close(&page, self.page_close_handlers.clone()).await;
+            }
+        }
+        Ok(())
+    }
+
+    // --- Forwarders: wire a single page's events to the context handler vecs. ---
+    // Each (page, event) is wired exactly once: on the first context handler
+    // (current pages) or at page creation (future pages, see the "page" event
+    // dispatch). The vec is cloned out under the lock before awaiting handlers.
+
+    async fn wire_download(page: &Page, handlers: Arc<Mutex<Vec<DownloadHandler>>>) {
+        let _ = page
+            .on_download(move |d: Download| {
+                let handlers = handlers.clone();
+                async move {
+                    let hs = handlers.lock().unwrap().clone();
+                    for h in hs {
+                        let _ = h(d.clone()).await;
+                    }
+                    Ok(())
+                }
+            })
+            .await;
+    }
+
+    async fn wire_frame_attached(page: &Page, handlers: Arc<Mutex<Vec<CtxFrameHandler>>>) {
+        let _ = page
+            .on_frameattached(move |f: Frame| {
+                let handlers = handlers.clone();
+                async move {
+                    let hs = handlers.lock().unwrap().clone();
+                    for h in hs {
+                        let _ = h(f.clone()).await;
+                    }
+                    Ok(())
+                }
+            })
+            .await;
+    }
+
+    async fn wire_frame_detached(page: &Page, handlers: Arc<Mutex<Vec<CtxFrameHandler>>>) {
+        let _ = page
+            .on_framedetached(move |f: Frame| {
+                let handlers = handlers.clone();
+                async move {
+                    let hs = handlers.lock().unwrap().clone();
+                    for h in hs {
+                        let _ = h(f.clone()).await;
+                    }
+                    Ok(())
+                }
+            })
+            .await;
+    }
+
+    async fn wire_frame_navigated(page: &Page, handlers: Arc<Mutex<Vec<CtxFrameHandler>>>) {
+        let _ = page
+            .on_framenavigated(move |f: Frame| {
+                let handlers = handlers.clone();
+                async move {
+                    let hs = handlers.lock().unwrap().clone();
+                    for h in hs {
+                        let _ = h(f.clone()).await;
+                    }
+                    Ok(())
+                }
+            })
+            .await;
+    }
+
+    async fn wire_page_load(page: &Page, handlers: Arc<Mutex<Vec<PageEventHandler>>>) {
+        let p = page.clone();
+        let _ = page
+            .on_load(move || {
+                let handlers = handlers.clone();
+                let p = p.clone();
+                async move {
+                    let hs = handlers.lock().unwrap().clone();
+                    for h in hs {
+                        let _ = h(p.clone()).await;
+                    }
+                    Ok(())
+                }
+            })
+            .await;
+    }
+
+    async fn wire_page_close(page: &Page, handlers: Arc<Mutex<Vec<PageEventHandler>>>) {
+        let p = page.clone();
+        let _ = page
+            .on_close(move || {
+                let handlers = handlers.clone();
+                let p = p.clone();
+                async move {
+                    let hs = handlers.lock().unwrap().clone();
+                    for h in hs {
+                        let _ = h(p.clone()).await;
+                    }
+                    Ok(())
+                }
+            })
+            .await;
     }
 
     /// Adds a listener for the `close` event.
@@ -2192,6 +2445,12 @@ impl ChannelOwner for BrowserContext {
                     let pages = self.pages.clone();
                     let page_handlers = self.page_handlers.clone();
                     let page_waiters = self.page_waiters.clone();
+                    let download_handlers = self.download_handlers.clone();
+                    let frame_attached_handlers = self.frame_attached_handlers.clone();
+                    let frame_detached_handlers = self.frame_detached_handlers.clone();
+                    let frame_navigated_handlers = self.frame_navigated_handlers.clone();
+                    let page_load_handlers = self.page_load_handlers.clone();
+                    let page_close_handlers = self.page_close_handlers.clone();
 
                     tokio::spawn(async move {
                         // Get and downcast the Page object
@@ -2203,6 +2462,28 @@ impl ChannelOwner for BrowserContext {
 
                         // Track the page
                         pages.lock().unwrap().push(page.clone());
+
+                        // Forward this new page's lifecycle events to any
+                        // context-level handlers already registered.
+                        if !download_handlers.lock().unwrap().is_empty() {
+                            Self::wire_download(&page, download_handlers.clone()).await;
+                        }
+                        if !frame_attached_handlers.lock().unwrap().is_empty() {
+                            Self::wire_frame_attached(&page, frame_attached_handlers.clone()).await;
+                        }
+                        if !frame_detached_handlers.lock().unwrap().is_empty() {
+                            Self::wire_frame_detached(&page, frame_detached_handlers.clone()).await;
+                        }
+                        if !frame_navigated_handlers.lock().unwrap().is_empty() {
+                            Self::wire_frame_navigated(&page, frame_navigated_handlers.clone())
+                                .await;
+                        }
+                        if !page_load_handlers.lock().unwrap().is_empty() {
+                            Self::wire_page_load(&page, page_load_handlers.clone()).await;
+                        }
+                        if !page_close_handlers.lock().unwrap().is_empty() {
+                            Self::wire_page_close(&page, page_close_handlers.clone()).await;
+                        }
 
                         // If this page has an opener, dispatch popup event to opener's handlers.
                         // The opener guid is in the page's initializer: {"opener": {"guid": "..."}}
