@@ -2462,6 +2462,12 @@ impl ChannelOwner for Frame {
     }
 
     fn dispose(&self, reason: crate::server::channel_owner::DisposeReason) {
+        // Clear the Page back-reference: Page holds this Frame strongly, so
+        // keeping a strong Page here would form an Arc cycle and leak both
+        // after disposal.
+        if let Ok(mut guard) = self.page.lock() {
+            *guard = None;
+        }
         self.base.dispose(reason)
     }
 

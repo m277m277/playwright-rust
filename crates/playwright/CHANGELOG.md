@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Connection-layer concurrency hardening.** The transport-to-dispatch message channel is now bounded (256), so a dispatch loop that falls behind exerts backpressure on the driver instead of buffering memory without limit. `wait_for_object` blocks on a `Notify` instead of polling every 10ms. `dispose()` unregisters objects synchronously instead of spawning a task, closing a window where a disposed object could still receive events (and removing a hidden tokio-runtime requirement from a sync path). The pending-callback map uses a sync lock (it was never held across an await), and the transport-writer mutex now documents that holding it across the send is the write-serialization mechanism.
+- **`Frame` no longer keeps its `Page` alive after disposal.** The frame's back-reference is cleared when the frame is disposed, breaking the `Page`↔`Frame` reference cycle that previously kept both objects in memory after a page closed (`frame.page()` returns `None` once the frame is disposed).
 - **`Page::locator()` / `frame_locator()` can no longer panic.** They previously `.expect()`-ed a per-call registry lookup of the main frame, which panicked if the page had been closed. The main frame is now resolved once at `Page` construction (matching playwright-python), making locator creation genuinely infallible; actions on a closed page still fail with a normal `Error`. `Page::url()` now always reads through the main frame too, instead of a fallback cache. The remaining flagged panics on public paths (`FilePayload` builder, root-object init, a CDP params invariant) were converted to errors or made unreachable.
 
 ## [0.13.0] - 2026-05-23

@@ -13,7 +13,7 @@ use url::Url;
 
 /// WebSocket transport for remote browser connections
 pub struct WebSocketTransport {
-    message_tx: mpsc::UnboundedSender<JsonValue>,
+    message_tx: mpsc::Sender<JsonValue>,
 
     // Let's store the sender half of the split stream
     sender: futures_util::stream::SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, WsMessage>,
@@ -24,15 +24,15 @@ pub struct WebSocketTransport {
 
 pub struct WebSocketTransportReceiver {
     receiver: futures_util::stream::SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>,
-    message_tx: mpsc::UnboundedSender<JsonValue>,
+    message_tx: mpsc::Sender<JsonValue>,
 }
 
 impl WebSocketTransport {
     pub async fn connect(
         url: &str,
         headers: Option<HashMap<String, String>>,
-    ) -> Result<(Self, mpsc::UnboundedReceiver<JsonValue>)> {
-        let (message_tx, message_rx) = mpsc::unbounded_channel();
+    ) -> Result<(Self, mpsc::Receiver<JsonValue>)> {
+        let (message_tx, message_rx) = mpsc::channel(super::MESSAGE_CHANNEL_CAPACITY);
 
         // Parse URL to ensure validity
         let _parsed_url =
@@ -130,7 +130,7 @@ impl TransportReceiver for WebSocketTransportReceiver {
                                         Error::ProtocolError(format!("Failed to parse JSON: {}", e))
                                     })?;
 
-                                if self.message_tx.send(message).is_err() {
+                                if self.message_tx.send(message).await.is_err() {
                                     break;
                                 }
                             }
