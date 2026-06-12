@@ -121,34 +121,24 @@ impl TransportReceiver for WebSocketTransportReceiver {
     fn run(&mut self) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>> {
         Box::pin(async move {
             while let Some(msg_result) = self.receiver.next().await {
-                match msg_result {
-                    Ok(msg) => {
-                        match msg {
-                            WsMessage::Text(text) => {
-                                let message: JsonValue =
-                                    serde_json::from_str(&text).map_err(|e| {
-                                        Error::ProtocolError(format!("Failed to parse JSON: {}", e))
-                                    })?;
-
-                                if self.message_tx.send(message).await.is_err() {
-                                    break;
-                                }
-                            }
-                            WsMessage::Binary(_) => {
-                                // Playwright usually uses Text for JSON RPC
-                                // But might use binary for Buffer transfer?
-                                // For now ignore or log
-                            }
-                            WsMessage::Close(_) => break,
-                            _ => {}
+                let msg = msg_result
+                    .map_err(|e| Error::TransportError(format!("WebSocket read error: {}", e)))?;
+                match msg {
+                    WsMessage::Text(text) => {
+                        let message: JsonValue = serde_json::from_str(&text).map_err(|e| {
+                            Error::ProtocolError(format!("Failed to parse JSON: {}", e))
+                        })?;
+                        // Bounded send: a slow dispatch loop backpressures the
+                        // socket instead of buffering unboundedly.
+                        if self.message_tx.send(message).await.is_err() {
+                            break; // dispatch side gone; stop reading
                         }
                     }
-                    Err(e) => {
-                        return Err(Error::TransportError(format!(
-                            "WebSocket read error: {}",
-                            e
-                        )));
-                    }
+                    // Playwright's JSON-RPC uses Text frames; Binary is unused.
+                    WsMessage::Binary(_) => {}
+                    WsMessage::Close(_) => break,
+                    // Ping/Pong are answered by tungstenite itself.
+                    _ => {}
                 }
             }
             Ok(())
