@@ -37,6 +37,17 @@ pub enum HarMode {
 
 /// Options for [`Tracing::start_har`](crate::protocol::Tracing::start_har).
 ///
+/// # Example
+///
+/// ```
+/// use playwright_rs::protocol::{StartHarOptions, HarContent, HarMode};
+///
+/// let opts = StartHarOptions::default()
+///     .content(HarContent::Attach)
+///     .mode(HarMode::Minimal)
+///     .url_filter("**/api/**");
+/// ```
+///
 /// See: <https://playwright.dev/docs/api/class-tracing#tracing-start-har>
 #[derive(Debug, Clone, Default)]
 #[non_exhaustive]
@@ -53,6 +64,27 @@ pub struct StartHarOptions {
 }
 
 impl StartHarOptions {
+    /// How resource bodies are stored (`Attach` / `Embed` / `Omit`).
+    pub fn content(mut self, content: HarContent) -> Self {
+        self.content = Some(content);
+        self
+    }
+    /// Level of detail (`Full` / `Minimal`).
+    pub fn mode(mut self, mode: HarMode) -> Self {
+        self.mode = Some(mode);
+        self
+    }
+    /// Glob pattern; only requests whose URL matches are recorded.
+    pub fn url_filter(mut self, url_filter: impl Into<String>) -> Self {
+        self.url_filter = Some(url_filter.into());
+        self
+    }
+    /// Directory to store `attach`-mode resource files in (for non-zip paths).
+    pub fn resources_dir(mut self, resources_dir: impl Into<String>) -> Self {
+        self.resources_dir = Some(resources_dir.into());
+        self
+    }
+
     /// Build the protocol `RecordHarOptions` object for the given output path.
     ///
     /// `harPath` is intentionally omitted: setting it makes the driver write its
@@ -101,17 +133,23 @@ mod tests {
     }
 
     #[test]
-    fn test_start_har_options_explicit() {
-        let opts = StartHarOptions {
-            content: Some(HarContent::Omit),
-            mode: Some(HarMode::Minimal),
-            url_filter: Some("**/api/**".to_string()),
-            resources_dir: None,
-        };
+    fn test_start_har_options_setters() {
+        let opts = StartHarOptions::default()
+            .content(HarContent::Omit)
+            .mode(HarMode::Minimal)
+            .url_filter("**/api/**");
         let json = opts.to_record_har_json("run.har");
         assert_eq!(json["content"], "omit");
         assert_eq!(json["mode"], "minimal");
         assert_eq!(json["urlGlob"], "**/api/**");
         assert!(json.get("resourcesDir").is_none());
+    }
+
+    #[test]
+    fn test_start_har_options_resources_dir_setter() {
+        let json = StartHarOptions::default()
+            .resources_dir("/tmp/har-resources")
+            .to_record_har_json("run.har");
+        assert_eq!(json["resourcesDir"], "/tmp/har-resources");
     }
 }
