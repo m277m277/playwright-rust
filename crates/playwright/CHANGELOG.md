@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-06-13
+
 ### Added
 
 - **Tracing + HAR types are now re-exported at the crate root** — `Tracing`, `TracingStartOptions`, `TracingStopOptions`, `StartHarOptions`, `HarMode`, and `HarContent` join every other consumer-facing type at `playwright_rs::*` (previously reachable only via `playwright_rs::protocol::*`, which still works). Surfaced by dogfooding: a consumer following the obvious `playwright_rs::Viewport` pattern hit a compile error on `playwright_rs::StartHarOptions`.
