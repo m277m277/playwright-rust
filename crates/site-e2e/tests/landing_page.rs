@@ -291,3 +291,58 @@ async fn landing_page_works_as_advertised() {
     browser.close().await.ok();
     server.abort();
 }
+
+/// The version switcher is fetch-driven (it reads `/versions.json` at runtime),
+/// so prove it boots, populates the dropdown from the manifest, and shows the
+/// "unreleased" banner on the dev build — served with a fixture manifest.
+#[tokio::test]
+async fn version_switcher_lists_versions_and_warns_on_dev() {
+    let dist = dist_dir();
+    if !dist.join("index.html").exists() {
+        eprintln!("skipping switcher test: {} not built.", dist.display());
+        return;
+    }
+
+    // Serve the built site, overlaying a fixture manifest the dev build can fetch.
+    let app = Router::new()
+        .route(
+            "/versions.json",
+            axum::routing::get(|| async {
+                (
+                    [(axum::http::header::CONTENT_TYPE, "application/json")],
+                    r#"{"latest":"9.9.9","versions":["9.9.9","0.14.0"]}"#,
+                )
+            }),
+        )
+        .fallback_service(ServeDir::new(&dist));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = listener.local_addr().expect("addr");
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+
+    let pw = Playwright::launch().await.expect("launch playwright");
+    let browser = pw.chromium().launch().await.expect("launch chromium");
+    let page = browser.new_page().await.expect("new page");
+    page.goto(&format!("http://{addr}"), None)
+        .await
+        .expect("navigate");
+
+    // The dropdown is always present; once the manifest loads it carries the
+    // published versions, and the dev build shows the unreleased banner.
+    expect(page.locator("#version-select").await)
+        .to_be_visible()
+        .await
+        .expect("version dropdown visible");
+    expect(page.locator("#version-select").await)
+        .to_contain_text("v0.14.0")
+        .await
+        .expect("dropdown lists published version from manifest");
+    expect(page.locator("text=Unreleased dev build").await)
+        .to_be_visible()
+        .await
+        .expect("dev build shows the unreleased banner");
+
+    browser.close().await.ok();
+    server.abort();
+}
