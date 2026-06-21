@@ -2342,16 +2342,6 @@ impl Frame {
         is_not: bool,
         timeout_ms: f64,
     ) -> Result<()> {
-        #[derive(serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct ExpectResult {
-            matches: bool,
-            #[serde(default)]
-            timed_out: Option<bool>,
-            #[serde(default)]
-            error_message: Option<String>,
-        }
-
         let params = serde_json::json!({
             "selector": selector,
             "expression": expression,
@@ -2360,20 +2350,14 @@ impl Frame {
             "timeout": timeout_ms
         });
 
-        let result: ExpectResult = self.channel().send("expect", params).await?;
-
-        if result.matches != is_not {
-            Ok(())
-        } else {
-            let msg = result
-                .error_message
-                .unwrap_or_else(|| format!("Assertion '{}' failed", expression));
-            if result.timed_out == Some(true) {
-                Err(crate::error::Error::AssertionTimeout(msg))
-            } else {
-                Err(crate::error::Error::AssertionFailed(msg))
-            }
-        }
+        // Playwright 1.61 changed the `expect` channel method: it returns no
+        // result on success and reports a failed assertion as a protocol error
+        // carrying top-level `errorDetails` (surfaced by the connection layer as
+        // `AssertionFailed` / `AssertionTimeout`). The server applies `isNot`
+        // itself, so a successful call always means the assertion held. A genuine
+        // error (e.g. a bad selector) arrives without `errorDetails` and
+        // propagates unchanged.
+        self.channel().send_no_result("expect", params).await
     }
 
     /// Adds a `<script>` tag into the frame with the desired content.

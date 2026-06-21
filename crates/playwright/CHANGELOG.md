@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Bundled Playwright driver bumped to 1.61.0** (from 1.60.0). New server surface includes WebAuthn virtual-authenticator credentials, a `WebStorage` API (`page.localStorage`/`sessionStorage`), `apiResponse.securityDetails()`/`serverAddr()`, and Ubuntu 26.04 support. Browser builds: Chromium 149, Firefox 151, WebKit 26.5. Install matching browsers with `npx playwright@1.61.0 install`.
+
+### Fixed
+
+- **`to_match_aria_snapshot` adapted to the 1.61.0 `expect` protocol change.** The driver's `expect` channel method no longer returns a `{ matches }` result; it returns nothing on success and reports a failed assertion through a top-level `errorDetails` object (carrying `timedOut` and `customErrorMessage`). The connection layer now reads `errorDetails` and maps it to `AssertionTimeout`/`AssertionFailed`, with genuine errors (without details) propagating unchanged. Without this, every aria-snapshot assertion failed to deserialize the now-`null` response.
+
 ## [0.14.0] - 2026-06-13
 
 ### Added
