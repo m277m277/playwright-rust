@@ -4217,6 +4217,9 @@ impl Page {
         if let Some(f) = options.font_size {
             params["fontSize"] = serde_json::json!(f);
         }
+        if let Some(c) = options.cursor {
+            params["cursor"] = serde_json::json!(c.as_str());
+        }
         self.channel()
             .send_no_result("screencastShowActions", params)
             .await
@@ -4799,6 +4802,7 @@ impl ChannelOwner for Page {
                         // Wrap once in `Bytes`; each handler-clone below is a refcount bump.
                         let frame = crate::protocol::ScreencastFrame {
                             data: bytes::Bytes::from(bytes),
+                            timestamp: params.get("timestamp").and_then(|v| v.as_f64()),
                         };
                         let handlers = self.screencast_frame_handlers.lock().unwrap().clone();
                         for h in handlers {
