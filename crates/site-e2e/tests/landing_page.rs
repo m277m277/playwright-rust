@@ -400,6 +400,12 @@ async fn dev_build_shows_unreleased_features() {
         .await
         .expect("WebStorage card shows the local_storage snippet");
 
+    // The dev build installs from git (main HEAD), not the crates.io version.
+    expect(page.locator("#install").await)
+        .to_contain_text("git = \"https://github.com/padamson/playwright-rust\"")
+        .await
+        .expect("dev build's install block uses a git dependency");
+
     let webauthn = page.locator("#feature-webauthn").await;
     expect(webauthn.clone())
         .to_be_visible()
