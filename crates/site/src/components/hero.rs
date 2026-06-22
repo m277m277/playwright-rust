@@ -90,7 +90,7 @@ pub fn Hero() -> impl IntoView {
                     href=CRATES_IO
                     class="inline-flex items-center gap-2 rounded-lg border border-rust-700/50 px-5 py-2.5 font-semibold text-rust-50 transition hover:border-rust-500"
                 >
-                    <img src="/crates-io.png" alt="" class="h-5 w-auto"/>
+                    <img src="crates-io.png" alt="" class="h-5 w-auto"/>
                     "crates.io"
                 </a>
             </div>

@@ -4,10 +4,10 @@ const E2E_TEST: &str =
     "https://github.com/padamson/playwright-rust/blob/main/crates/site-e2e/tests/landing_page.rs";
 const TRACE_VIEWER: &str = "https://trace.playwright.dev";
 // Receipts written by the dogfood test into dist/receipts/ on each deploy.
-const TRACE: &str = "/receipts/trace.zip";
-const HAR: &str = "/receipts/dogfood.har";
-const ARIA: &str = "/receipts/aria-snapshot.txt";
-const SCREENCAST: &str = "/receipts/screencast.jpeg";
+const TRACE: &str = "receipts/trace.zip";
+const HAR: &str = "receipts/dogfood.har";
+const ARIA: &str = "receipts/aria-snapshot.txt";
+const SCREENCAST: &str = "receipts/screencast.jpeg";
 
 #[component]
 pub fn DogfoodBanner() -> impl IntoView {

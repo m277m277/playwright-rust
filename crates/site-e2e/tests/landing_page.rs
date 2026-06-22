@@ -117,6 +117,21 @@ async fn landing_page_works_as_advertised() {
         .await
         .expect("navigate to site");
 
+    // Asset paths (receipts, images) must be RELATIVE so they resolve under the
+    // version subpath (/vX.Y.Z/ or /dev/) on the deployed site, not the domain
+    // root. Root-absolute "/receipts/..." 404'd on the versioned deploy. The
+    // gate serves at root (where both resolve), so guard the invariant directly.
+    let abs_assets = page
+        .locator("img[src^='/receipts'], a[href^='/receipts'], img[src^='/crates-io']")
+        .await
+        .count()
+        .await
+        .expect("count root-absolute asset paths");
+    assert_eq!(
+        abs_assets, 0,
+        "receipt/image paths must be relative so they resolve under the version subpath"
+    );
+
     // Step 1: the SPA renders. The locator auto-waits for the WASM app to mount
     // and paint the hero, so there is no sleep or readiness polling.
     expect(page.locator("#hero-title").await)
