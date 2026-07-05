@@ -156,8 +156,7 @@ async fn test_api_response_server_addr_and_security_details() {
 
     // Plain HTTP carries no TLS details, and the server omits a remote address
     // for this fetch. The accessors must resolve cleanly (the new initializer
-    // fields must not break fetch deserialization). The populated case is
-    // covered by the deserialization unit tests in response.rs.
+    // fields must not break fetch deserialization).
     assert!(
         response.security_details().is_none(),
         "plain HTTP should have no security details"
@@ -165,6 +164,25 @@ async fn test_api_response_server_addr_and_security_details() {
     if let Some(addr) = response.server_addr() {
         assert!(addr.port > 0, "if present, server port should be set");
     }
+
+    // HTTPS should populate both accessors (the populated case, matching the
+    // `page.goto("https://example.com", ...)` precedent used elsewhere in
+    // this suite for real-network TLS coverage).
+    let https_response: APIResponse = ctx
+        .get("https://example.com", None)
+        .await
+        .expect("HTTPS GET should succeed");
+    let security_details = https_response
+        .security_details()
+        .expect("HTTPS response should carry security details");
+    assert!(
+        security_details.protocol.as_deref().unwrap_or_default() != "",
+        "security details should report a TLS protocol version"
+    );
+    let addr = https_response
+        .server_addr()
+        .expect("HTTPS response should carry a server address");
+    assert_eq!(addr.port, 443, "HTTPS server address should be port 443");
 
     ctx.dispose().await.expect("dispose should succeed");
     playwright

@@ -1,5 +1,5 @@
 use playwright_rs::protocol::{
-    ChapterOptions, ScreencastStartOptions, ShowActionsOptions, ShowOverlayOptions,
+    ActionCursor, ChapterOptions, ScreencastStartOptions, ShowActionsOptions, ShowOverlayOptions,
 };
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -17,14 +17,18 @@ async fn test_screencast_streams_frames_to_handler() {
 
     let frames = Arc::new(AtomicUsize::new(0));
     let bytes_seen = Arc::new(parking_lot::Mutex::new(0usize));
+    let timestamp_seen = Arc::new(parking_lot::Mutex::new(None::<f64>));
     let counter = frames.clone();
     let bytes = bytes_seen.clone();
+    let timestamp = timestamp_seen.clone();
     page.screencast().on_frame(move |frame| {
         let counter = counter.clone();
         let bytes = bytes.clone();
+        let timestamp = timestamp.clone();
         async move {
             counter.fetch_add(1, Ordering::SeqCst);
             *bytes.lock() = frame.data.len();
+            *timestamp.lock() = frame.timestamp;
             Ok(())
         }
     });
@@ -56,6 +60,10 @@ async fn test_screencast_streams_frames_to_handler() {
     assert!(
         *bytes_seen.lock() > 0,
         "frame data should be a non-empty JPEG byte buffer"
+    );
+    assert!(
+        timestamp_seen.lock().is_some(),
+        "screencast frame should carry a presentation timestamp (Playwright 1.61)"
     );
 
     browser.close().await.expect("Failed to close browser");
@@ -118,7 +126,11 @@ async fn test_screencast_overlay_and_chapter_calls_succeed() {
         .expect("start failed");
 
     screencast
-        .show_actions(ShowActionsOptions::default().duration(500.0))
+        .show_actions(
+            ShowActionsOptions::default()
+                .duration(500.0)
+                .cursor(ActionCursor::Pointer),
+        )
         .await
         .expect("show_actions failed");
     screencast

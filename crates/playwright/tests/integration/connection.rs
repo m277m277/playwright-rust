@@ -414,10 +414,29 @@ async fn test_connect_over_cdp_real_chrome() {
         }
     };
 
+    // Exercise `artifacts_dir` (Playwright 1.61): verify the option is
+    // plumbed through to the CDP connect RPC and accepted, following the
+    // same "accepted, not exact placement" contract as
+    // `test_launch_with_artifacts_dir` in launch_context.rs.
+    let artifacts_dir = std::env::temp_dir().join(format!(
+        "pw-rust-cdp-artifacts-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&artifacts_dir).expect("Failed to create temp artifacts dir");
+
     // Connect over CDP
     let browser = match playwright
         .chromium()
-        .connect_over_cdp(&cdp_endpoint, None)
+        .connect_over_cdp(
+            &cdp_endpoint,
+            Some(
+                playwright_rs::ConnectOverCdpOptions::new()
+                    .artifacts_dir(artifacts_dir.to_string_lossy().into_owned()),
+            ),
+        )
         .await
     {
         Ok(b) => b,
@@ -425,6 +444,7 @@ async fn test_connect_over_cdp_real_chrome() {
             tracing::error!("Failed to connect over CDP: {}", e);
             let _ = playwright.shutdown().await;
             let _ = chrome_process.kill().await;
+            let _ = std::fs::remove_dir_all(&artifacts_dir);
             panic!("connect_over_cdp failed: {:?}", e);
         }
     };
@@ -451,6 +471,7 @@ async fn test_connect_over_cdp_real_chrome() {
     browser.close().await.ok();
     playwright.shutdown().await.ok();
     let _ = chrome_process.kill().await;
+    let _ = std::fs::remove_dir_all(&artifacts_dir);
 }
 
 #[tokio::test]
