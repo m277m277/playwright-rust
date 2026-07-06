@@ -371,9 +371,6 @@ fn extract_no_run_blocks(path: &Path, content: &str) -> Vec<ExtractedBlock> {
     blocks
 }
 
-/// Resolve the workspace root by walking up from the xtask binary's
-/// `CARGO_MANIFEST_DIR` (which Cargo sets at compile time for the
-/// xtask crate to `crates/xtask`).
 /// Parses `PLAYWRIGHT_VERSION` out of `crates/playwright/build.rs`, the single
 /// source of truth for the bundled driver version.
 fn read_driver_version(root: &Path) -> Result<String> {
@@ -416,7 +413,9 @@ fn verify_driver_version() -> Result<()> {
 
     // (file, prefixes whose trailing version must equal `expected`). The README
     // is deliberately absent: it mirrors the latest crates.io release, which may
-    // lag the in-tree (unreleased) driver version until the next release.
+    // lag the in-tree (unreleased) driver version until the next release. Same
+    // reason for `hero.rs`'s `PLAYWRIGHT_RELEASED` — only its `PLAYWRIGHT_DEV`
+    // (which tracks main HEAD) is anchored below.
     let targets: &[(&str, &[&str])] = &[
         ("crates/playwright/src/lib.rs", &["playwright@"]),
         (
@@ -434,6 +433,17 @@ fn verify_driver_version() -> Result<()> {
         (
             ".github/workflows/pages.yml",
             &["pw-driver-", "playwright-browsers-"],
+        ),
+        // Site dev-build driver badge + its e2e assertion, both tracking main
+        // HEAD. Anchored so `PLAYWRIGHT_RELEASED` (the published-release driver,
+        // which lags) is left out.
+        (
+            "crates/site/src/components/hero.rs",
+            &["PLAYWRIGHT_DEV: &str = \""],
+        ),
+        (
+            "crates/site-e2e/tests/landing_page.rs",
+            &["alt='Playwright "],
         ),
     ];
 
@@ -469,6 +479,9 @@ fn verify_driver_version() -> Result<()> {
     Ok(())
 }
 
+/// Resolve the workspace root by walking up from the xtask binary's
+/// `CARGO_MANIFEST_DIR` (which Cargo sets at compile time for the
+/// xtask crate to `crates/xtask`).
 fn workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
