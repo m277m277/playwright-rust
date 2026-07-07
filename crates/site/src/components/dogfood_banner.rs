@@ -60,9 +60,7 @@ pub fn DogfoodBanner() -> impl IntoView {
                         <div class=card>
                             <div class="flex items-center gap-2">
                                 <h3 class="font-semibold text-rust-300">"Screencast frame"</h3>
-                                <span class="rounded-full border border-rust-500/50 bg-rust-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-rust-300">
-                                    "Unreleased"
-                                </span>
+                                <super::UnreleasedBadge />
                             </div>
                             <p class="mt-1 flex-1 text-sm text-rust-50/70">
                                 "A frame is captured with the new screencast API and "

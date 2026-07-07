@@ -27,14 +27,7 @@ pub fn FeatureCard(
         <div id=id class="flex flex-col rounded-xl border border-rust-700/30 bg-ink-800 p-5">
             <div class="flex items-center gap-2">
                 <h3 class="text-lg font-semibold text-rust-300">{title}</h3>
-                {unreleased
-                    .then(|| {
-                        view! {
-                            <span class="rounded-full border border-rust-500/50 bg-rust-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-rust-300">
-                                "Unreleased"
-                            </span>
-                        }
-                    })}
+                {unreleased.then(|| view! { <super::UnreleasedBadge /> })}
             </div>
             <p class="mt-1 mb-4 text-sm text-rust-50/70">{blurb}</p>
             <div class="mt-auto">{children()}</div>

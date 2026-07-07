@@ -8,6 +8,7 @@ mod footer;
 mod hero;
 pub mod icons;
 mod install;
+mod unreleased_badge;
 mod version_switcher;
 mod walkthrough;
 
@@ -20,5 +21,6 @@ pub use features::Features;
 pub use footer::Footer;
 pub use hero::Hero;
 pub use install::Install;
+pub use unreleased_badge::UnreleasedBadge;
 pub use version_switcher::VersionSwitcher;
 pub use walkthrough::Walkthrough;
