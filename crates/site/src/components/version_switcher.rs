@@ -72,6 +72,34 @@ fn version_options(current: &str, manifest: Option<&Manifest>) -> Vec<VersionOpt
     opts
 }
 
+/// A nudge banner: a message and, when there's somewhere useful to go, a link.
+struct Banner {
+    message: String,
+    /// `(link label, href)`.
+    link: Option<(String, String)>,
+}
+
+/// The banner (if any) for the given build and the manifest's `latest` release.
+fn banner_for(is_dev: bool, current: &str, latest: &str) -> Option<Banner> {
+    if is_dev {
+        // Link to the latest release only if one exists — with no release the
+        // root redirect points back to /dev/, so a link would just loop.
+        let link =
+            (!latest.is_empty()).then(|| (format!("Go to v{latest} →"), format!("/v{latest}/")));
+        Some(Banner {
+            message: "Unreleased dev build (main) — APIs may change.".to_string(),
+            link,
+        })
+    } else if !latest.is_empty() && current != latest {
+        Some(Banner {
+            message: format!("You're viewing v{current} — a newer release is available."),
+            link: Some((format!("Go to v{latest} →"), format!("/v{latest}/"))),
+        })
+    } else {
+        None
+    }
+}
+
 /// Top bar showing the current docs version, a dropdown to switch between the
 /// `dev` (main HEAD) build and every published release, and a banner when the
 /// viewer is not on the latest stable version.
@@ -92,29 +120,10 @@ pub fn VersionSwitcher() -> impl IntoView {
 
     let is_dev = is_dev();
 
-    // (message, link label, link href) when the viewer should be nudged elsewhere.
-    let banner = move || -> Option<(String, String, String)> {
+    // Only nudge once the manifest has loaded (so we know the latest release).
+    let banner = move || -> Option<Banner> {
         let m = manifest.get()?;
-        if is_dev {
-            let (label, href) = if m.latest.is_empty() {
-                ("the latest release".to_string(), "/".to_string())
-            } else {
-                (format!("v{}", m.latest), format!("/v{}/", m.latest))
-            };
-            Some((
-                "Unreleased dev build (main) — APIs may change.".to_string(),
-                format!("Go to {label} →"),
-                href,
-            ))
-        } else if !m.latest.is_empty() && SITE_VERSION != m.latest {
-            Some((
-                format!("You're viewing v{SITE_VERSION} — a newer release is available."),
-                format!("Go to v{} →", m.latest),
-                format!("/v{}/", m.latest),
-            ))
-        } else {
-            None
-        }
+        banner_for(is_dev, SITE_VERSION, &m.latest)
     };
 
     view! {
@@ -142,13 +151,21 @@ pub fn VersionSwitcher() -> impl IntoView {
 
                 {move || {
                     banner()
-                        .map(|(msg, label, href)| {
+                        .map(|b| {
                             view! {
                                 <span class="ml-auto flex items-center gap-2 text-rust-300">
-                                    <span>{msg}</span>
-                                    <a href=href class="font-semibold underline hover:text-rust-500">
-                                        {label}
-                                    </a>
+                                    <span>{b.message}</span>
+                                    {b.link
+                                        .map(|(label, href)| {
+                                            view! {
+                                                <a
+                                                    href=href
+                                                    class="font-semibold underline hover:text-rust-500"
+                                                >
+                                                    {label}
+                                                </a>
+                                            }
+                                        })}
                                 </span>
                             }
                         })
@@ -208,5 +225,37 @@ mod tests {
         let m = manifest("0.14.0", &["0.14.0"]);
         let opts = version_options("dev", Some(&m));
         assert_eq!(selected_values(&opts), ["dev"]);
+    }
+
+    #[test]
+    fn dev_banner_has_no_link_when_no_release_exists() {
+        // With no published release, the root redirect points back to /dev/, so a
+        // "go to the latest release" link would just loop. It must be omitted.
+        let b = banner_for(true, "dev", "").expect("dev build always shows a banner");
+        assert!(b.link.is_none());
+    }
+
+    #[test]
+    fn dev_banner_links_to_latest_release_when_one_exists() {
+        let b = banner_for(true, "dev", "0.14.0").expect("dev banner");
+        assert_eq!(
+            b.link,
+            Some(("Go to v0.14.0 →".to_string(), "/v0.14.0/".to_string()))
+        );
+    }
+
+    #[test]
+    fn release_banner_nudges_to_newer_release() {
+        let b = banner_for(false, "0.13.0", "0.14.0").expect("outdated-release banner");
+        assert_eq!(
+            b.link,
+            Some(("Go to v0.14.0 →".to_string(), "/v0.14.0/".to_string()))
+        );
+    }
+
+    #[test]
+    fn no_banner_on_the_latest_release() {
+        assert!(banner_for(false, "0.14.0", "0.14.0").is_none());
+        assert!(banner_for(false, "0.14.0", "").is_none());
     }
 }
