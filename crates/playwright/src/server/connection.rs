@@ -200,11 +200,14 @@ pub struct Response {
     pub result: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<ErrorWrapper>,
-    /// Structured failure details, a top-level sibling of `error`. Populated for
-    /// methods that declare `errorDetails` in the protocol (currently only
-    /// `Frame.expect`, used for auto-retrying assertions).
+    /// Failure details, a top-level sibling of `error`. Populated for methods
+    /// that declare `errorDetails` in the protocol (currently only
+    /// `Frame.expect`, used for auto-retrying assertions). Kept as raw JSON, not
+    /// a typed struct, so a future driver's shape change can never fail the whole
+    /// message parse (which would drop the message and hang the caller);
+    /// `parse_protocol_error` interprets it best-effort.
     #[serde(rename = "errorDetails", skip_serializing_if = "Option::is_none")]
-    pub error_details: Option<ExpectErrorDetails>,
+    pub error_details: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -703,5 +706,32 @@ impl ConnectionLike for Connection {
 
     fn selectors(&self) -> Arc<Selectors> {
         Arc::clone(&self.selectors)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn response_parses_with_unexpected_error_details_shape() {
+        // A future driver could change the `errorDetails` wire shape (here
+        // `timedOut` arrives as a number, not a bool). The Response must still
+        // deserialize: a parse failure drops the message in the run loop, so the
+        // pending callback never resolves and the caller — which has no
+        // client-side timeout — hangs forever.
+        let raw = serde_json::json!({
+            "id": 7,
+            "error": { "error": { "message": "boom" } },
+            "errorDetails": { "timedOut": 1 }
+        });
+        let msg: Message =
+            serde_json::from_value(raw).expect("Response must parse despite an odd errorDetails");
+        let Message::Response(response) = msg else {
+            panic!("expected a Response");
+        };
+        assert_eq!(response.id, 7);
+        assert!(response.error.is_some());
+        assert!(response.error_details.is_some());
     }
 }

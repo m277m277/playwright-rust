@@ -31,7 +31,7 @@ fn extract_browser_name(message: &str) -> &str {
 
 pub(crate) fn parse_protocol_error(
     payload: ErrorPayload,
-    details: Option<ExpectErrorDetails>,
+    details: Option<serde_json::Value>,
 ) -> Error {
     // Auto-retrying assertions (`Frame.expect`) report a mismatch or timeout via
     // structured `errorDetails`. The 1.61 driver attaches `errorDetails` to
@@ -40,7 +40,12 @@ pub(crate) fn parse_protocol_error(
     // `{}`. Only a genuine assertion result populates a field, so classify on
     // content: an empty details object is a real error and falls through to the
     // generic handling below.
-    if let Some(details) = details
+    //
+    // The details arrive as raw JSON and are parsed best-effort: a shape we can't
+    // interpret (e.g. a future driver's wire change) is treated as no details, so
+    // the error still surfaces (as a protocol error) rather than being lost.
+    if let Some(details) =
+        details.and_then(|v| serde_json::from_value::<ExpectErrorDetails>(v).ok())
         && (details.timed_out.is_some()
             || details.custom_error_message.is_some()
             || details.received.is_some())
@@ -95,12 +100,13 @@ mod tests {
         timed_out: Option<bool>,
         custom: Option<&str>,
         received: Option<serde_json::Value>,
-    ) -> ExpectErrorDetails {
-        ExpectErrorDetails {
+    ) -> serde_json::Value {
+        serde_json::to_value(ExpectErrorDetails {
             timed_out,
             custom_error_message: custom.map(str::to_string),
             received,
-        }
+        })
+        .unwrap()
     }
 
     #[test]
@@ -163,15 +169,19 @@ mod tests {
 
     #[test]
     fn empty_expect_details_is_a_protocol_error_not_an_assertion() {
-        let empty = ExpectErrorDetails {
-            timed_out: None,
-            custom_error_message: None,
-            received: None,
-        };
         let err = parse_protocol_error(
             payload("Target page, context or browser has been closed"),
-            Some(empty),
+            Some(serde_json::json!({})),
         );
+        assert!(matches!(err, Error::ProtocolError(_)));
+    }
+
+    #[test]
+    fn unparseable_expect_details_degrade_to_a_protocol_error() {
+        // A future driver could send an `errorDetails` shape we can't interpret
+        // (here `timedOut` as a number). It must not be lost — the error still
+        // surfaces, as a protocol error, rather than hanging the caller.
+        let err = parse_protocol_error(payload("boom"), Some(serde_json::json!({ "timedOut": 1 })));
         assert!(matches!(err, Error::ProtocolError(_)));
     }
 
