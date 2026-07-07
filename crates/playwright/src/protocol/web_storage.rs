@@ -22,8 +22,7 @@
 //! See: <https://playwright.dev/docs/api/class-webstorage>
 
 use crate::error::Result;
-use crate::protocol::page::Page;
-use crate::server::channel_owner::ChannelOwner;
+use crate::server::channel::Channel;
 use serde_json::json;
 
 /// Which storage area a [`WebStorage`] handle targets.
@@ -51,15 +50,23 @@ impl WebStorageKind {
 /// and [`Page::session_storage`](crate::protocol::Page::session_storage).
 ///
 /// See: <https://playwright.dev/docs/api/class-webstorage>
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct WebStorage {
-    page: Page,
+    channel: Channel,
     kind: WebStorageKind,
 }
 
+impl std::fmt::Debug for WebStorage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WebStorage")
+            .field("kind", &self.kind)
+            .finish_non_exhaustive()
+    }
+}
+
 impl WebStorage {
-    pub(crate) fn new(page: Page, kind: WebStorageKind) -> Self {
-        Self { page, kind }
+    pub(crate) fn new(channel: Channel, kind: WebStorageKind) -> Self {
+        Self { channel, kind }
     }
 
     /// Returns the value for `name`, or `None` if the key is not set.
@@ -78,8 +85,7 @@ impl WebStorage {
             value: Option<String>,
         }
         let r: R = self
-            .page
-            .channel()
+            .channel
             .send(
                 "webStorageGetItem",
                 json!({ "kind": self.kind.as_str(), "name": name }),
@@ -98,8 +104,7 @@ impl WebStorage {
     ///
     /// See: <https://playwright.dev/docs/api/class-webstorage#web-storage-set-item>
     pub async fn set_item(&self, name: &str, value: &str) -> Result<()> {
-        self.page
-            .channel()
+        self.channel
             .send_no_result(
                 "webStorageSetItem",
                 json!({ "kind": self.kind.as_str(), "name": name, "value": value }),
@@ -117,8 +122,7 @@ impl WebStorage {
     ///
     /// See: <https://playwright.dev/docs/api/class-webstorage#web-storage-remove-item>
     pub async fn remove_item(&self, name: &str) -> Result<()> {
-        self.page
-            .channel()
+        self.channel
             .send_no_result(
                 "webStorageRemoveItem",
                 json!({ "kind": self.kind.as_str(), "name": name }),
@@ -136,8 +140,7 @@ impl WebStorage {
     ///
     /// See: <https://playwright.dev/docs/api/class-webstorage#web-storage-clear>
     pub async fn clear(&self) -> Result<()> {
-        self.page
-            .channel()
+        self.channel
             .send_no_result("webStorageClear", json!({ "kind": self.kind.as_str() }))
             .await
     }
@@ -162,8 +165,7 @@ impl WebStorage {
             items: Vec<Item>,
         }
         let r: R = self
-            .page
-            .channel()
+            .channel
             .send("webStorageItems", json!({ "kind": self.kind.as_str() }))
             .await?;
         Ok(r.items.into_iter().map(|i| (i.name, i.value)).collect())
