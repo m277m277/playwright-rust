@@ -374,17 +374,36 @@ fn extract_no_run_blocks(path: &Path, content: &str) -> Vec<ExtractedBlock> {
 /// Parses `PLAYWRIGHT_VERSION` out of `crates/playwright/build.rs`, the single
 /// source of truth for the bundled driver version.
 fn read_driver_version(root: &Path) -> Result<String> {
-    let build_rs = root.join("crates/playwright/build.rs");
-    let content = std::fs::read_to_string(&build_rs)
-        .with_context(|| format!("read {}", build_rs.display()))?;
-    let marker = "const PLAYWRIGHT_VERSION: &str = \"";
+    read_version_const(
+        &root.join("crates/playwright/build.rs"),
+        "const PLAYWRIGHT_VERSION: &str = \"",
+    )
+}
+
+/// Parses `NODE_VERSION` out of the shared acquisition module, the single
+/// source of truth for the Node runtime the driver is assembled with.
+fn read_node_version(root: &Path) -> Result<String> {
+    read_version_const(
+        &root.join("crates/playwright/src/build_support/driver_urls.rs"),
+        "const NODE_VERSION: &str = \"",
+    )
+}
+
+fn read_version_const(path: &Path, marker: &str) -> Result<String> {
+    let content =
+        std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
+    let name = marker
+        .trim_start_matches("const ")
+        .split(':')
+        .next()
+        .unwrap_or(marker);
     let start = content
         .find(marker)
-        .context("PLAYWRIGHT_VERSION constant not found in build.rs")?
+        .with_context(|| format!("{name} constant not found in {}", path.display()))?
         + marker.len();
     let end = content[start..]
         .find('"')
-        .context("unterminated PLAYWRIGHT_VERSION string literal")?
+        .with_context(|| format!("unterminated {name} string literal"))?
         + start;
     Ok(content[start..end].to_string())
 }
@@ -473,8 +492,17 @@ fn verify_driver_version() -> Result<()> {
         );
     }
 
+    // The Node pin the driver is assembled with (ADR 0006). No cross-file
+    // drift targets yet — it lives only in driver_urls.rs — but a rename or
+    // malformed value must fail here loudly, because the weekly upstream
+    // check greps the constant to probe the nodejs.org download URL.
+    let node = read_node_version(&root)?;
+    if node.split('.').count() != 3 || node.split('.').any(|p| p.parse::<u32>().is_err()) {
+        bail!("verify-driver-version: NODE_VERSION = \"{node}\" is not a bare MAJOR.MINOR.PATCH");
+    }
+
     println!(
-        "verify-driver-version: {checked} reference(s) match build.rs PLAYWRIGHT_VERSION = {expected}"
+        "verify-driver-version: {checked} reference(s) match build.rs PLAYWRIGHT_VERSION = {expected}; NODE_VERSION = {node}"
     );
     Ok(())
 }

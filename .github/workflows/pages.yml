@@ -87,7 +87,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ${{ github.workspace }}/.playwright-driver
-          key: ${{ runner.os }}-pw-driver-1.61.1
+          key: ${{ runner.os }}-pw-driver-1.61.1-assembled
 
       - name: Cache Playwright browsers
         uses: actions/cache@v6
