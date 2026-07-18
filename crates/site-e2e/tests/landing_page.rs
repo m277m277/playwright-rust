@@ -403,6 +403,20 @@ async fn dev_build_shows_unreleased_features() {
         .await
         .expect("WebAuthn card carries the Unreleased badge");
 
+    let fake_fs = page.locator("#feature-fake-fs");
+    expect(fake_fs.clone())
+        .to_be_visible()
+        .await
+        .expect("File System Access card renders on the dev build");
+    expect(fake_fs.clone())
+        .to_contain_text("UNRELEASED")
+        .await
+        .expect("File System Access card carries the Unreleased badge");
+    expect(fake_fs)
+        .to_contain_text("fake_file_system")
+        .await
+        .expect("File System Access card shows the fake_file_system snippet");
+
     // The dev build's hero badges reflect unreleased reality: crates.io shows
     // "unreleased" (not the published version) and the Playwright badge tracks
     // the newer bundled driver. Match on alt text (robust to the external

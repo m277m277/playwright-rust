@@ -78,6 +78,14 @@ pub fn Features() -> impl IntoView {
                 >
                     <CodeBlock html=snippets::CARD_WEBAUTHN_RS/>
                 </FeatureCard>
+                <FeatureCard
+                    id="feature-fake-fs"
+                    title="File System Access testing"
+                    blurb="Fake showSaveFilePicker / showOpenFilePicker to test save/open flows with no native dialog."
+                    unreleased=true
+                >
+                    <CodeBlock html=snippets::CARD_FAKE_FS_RS/>
+                </FeatureCard>
             </div>
         </section>
     }
