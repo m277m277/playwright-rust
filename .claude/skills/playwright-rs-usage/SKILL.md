@@ -107,6 +107,23 @@ Concept-level pointers; the exact options live on docs.rs.
   `stop_har()` records all network traffic to a HAR — inspect it in
   browser devtools or replay it deterministically with
   `route_from_har`. A sibling to trace capture.
+- **Typed page probes.** `page.evaluate::<R, T>(expr, arg)`
+  deserializes the JS return value straight into any serde
+  `Deserialize` type — define a struct for the shape and skip manual
+  parsing (`None::<&()>` for the no-argument case). `evaluate_value`
+  (returns `String`) is only for one-off scalar probes; if you catch
+  yourself returning delimited strings from JS and splitting them in
+  Rust, switch to `evaluate`. Runnable walkthroughs:
+  `examples/evaluate_typed.rs` and `examples/canvas_pixels.rs` (canvas
+  pixel assertions for wasm/canvas frontends).
+- **Drags: `Locator::drag_to` covers everything, including canvas.**
+  It drives the real `pointerdown` → capture → `pointermove` →
+  `pointerup` chain (works against `setPointerCapture` UIs), and
+  `DragToOptions::target_position` — an offset from the target's
+  top-left — turns it into "drag to a coordinate": pass the containing
+  canvas/stage as the target. Prefer it over held-button
+  `Mouse::move_to` sequences, which hang on headless Linux. Don't
+  hand-roll synthetic `PointerEvent` dispatch via evaluate.
 - **External drag-and-drop.** `Locator::drop` simulates dragging files
   or data in from outside the page (upload zones), distinct from
   `drag_to`, which drags one element onto another within the page.

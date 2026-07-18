@@ -1632,19 +1632,42 @@ impl Page {
         frame.frame_evaluate_expression(expression).await
     }
 
-    /// Evaluates JavaScript in the page context with optional arguments.
+    /// Evaluates JavaScript in the page context with optional arguments,
+    /// deserializing the result into any `DeserializeOwned` type.
     ///
-    /// Executes the provided JavaScript expression or function within the page's
-    /// context and returns the result. The return value must be JSON-serializable.
+    /// This is the right method whenever a test needs structured data out of
+    /// the page: define a struct for the shape the JS returns and let serde do
+    /// the parsing. Reaching for [`evaluate_value`](Self::evaluate_value) and
+    /// string-parsing its output is never necessary.
     ///
     /// # Arguments
     ///
     /// * `expression` - JavaScript code to evaluate
-    /// * `arg` - Optional argument to pass to the expression (must implement Serialize)
+    /// * `arg` - Optional argument to pass to the expression (must implement
+    ///   Serialize). With no argument, name the type: `None::<&()>`.
     ///
-    /// # Returns
+    /// # Example
     ///
-    /// The result as a `serde_json::Value`
+    /// ```no_run
+    /// # use playwright_rs::Playwright;
+    /// # #[derive(serde::Deserialize)]
+    /// # struct Metrics { width: f64, height: f64, title: String }
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let pw = Playwright::launch().await?;
+    /// # let page = pw.chromium().launch().await?.new_page().await?;
+    /// let metrics: Metrics = page
+    ///     .evaluate(
+    ///         "() => ({ width: innerWidth, height: innerHeight, title: document.title })",
+    ///         None::<&()>,
+    ///     )
+    ///     .await?;
+    /// assert!(!metrics.title.is_empty());
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// A runnable walkthrough (structs in and out, element geometry) lives in
+    /// `examples/evaluate_typed.rs`.
     ///
     /// See: <https://playwright.dev/docs/api/class-page#page-evaluate>
     #[tracing::instrument(level = "info", skip_all, fields(guid = %self.guid()))]
@@ -1659,7 +1682,14 @@ impl Page {
         serde_json::from_value(result).map_err(Error::from)
     }
 
-    /// Evaluates a JavaScript expression and returns the result as a String.
+    /// Evaluates a JavaScript expression and returns the result coerced to a
+    /// String.
+    ///
+    /// Convenient for one-off scalar probes (`document.title`, a count, a
+    /// flag). For anything structured, prefer [`evaluate`](Self::evaluate),
+    /// which deserializes straight into your own type; returning delimited
+    /// strings from JS and splitting them in Rust is a smell that `evaluate`
+    /// removes.
     ///
     /// # Arguments
     ///

@@ -1611,13 +1611,42 @@ impl Locator {
     ///
     /// Both this locator and `target` must resolve to elements in the same frame.
     /// Playwright performs a series of mouse events (move, press, move to target, release)
-    /// to simulate the drag.
+    /// to simulate the drag, so it drives real pointer-event chains, including
+    /// UIs that call `setPointerCapture` in their `pointerdown` handler.
+    ///
+    /// `source_position` and `target_position` are offsets from the respective
+    /// element's top-left corner. Setting `target_position` with a containing
+    /// element (a canvas or stage) as `target` turns this into a drag to a
+    /// coordinate rather than onto an element, which also covers "drag by a
+    /// delta": compute the drop point from the source's position within the
+    /// container. Prefer this over a held-button
+    /// [`Mouse::move_to`](crate::protocol::Mouse::move_to) sequence, which can
+    /// hang on headless Linux (see the note on that method).
     ///
     /// # Arguments
     ///
     /// * `target` - The locator of the element to drag onto
     /// * `options` - Optional [`DragToOptions`](crate::protocol::DragToOptions) (force, no_wait_after, timeout, trial,
     ///   source_position, target_position)
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use playwright_rs::{Playwright, DragToOptions, Position};
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let pw = Playwright::launch().await?;
+    /// # let page = pw.chromium().launch().await?.new_page().await?;
+    /// let handle = page.locator(".crop-handle");
+    /// let stage = page.locator("#stage");
+    ///
+    /// // Drop the handle 180px right, 120px down from the stage's top-left corner.
+    /// let opts = DragToOptions::builder()
+    ///     .target_position(Position { x: 180.0, y: 120.0 })
+    ///     .build();
+    /// handle.drag_to(&stage, Some(opts)).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     ///
     /// # Errors
     ///

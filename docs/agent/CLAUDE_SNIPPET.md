@@ -54,6 +54,16 @@ overlay.
   playwright-python / java / .NET semantics. When in doubt, the
   [upstream Playwright docs](https://playwright.dev/docs/api) are
   authoritative.
+- **Structured data out of the page: typed `evaluate`.** The generic
+  `page.evaluate` deserializes the JS return value into your own serde
+  type — never return delimited strings from JS and split them in Rust.
+  `evaluate_value` (String) is for one-off scalar probes only.
+- **Drags go through `Locator::drag_to`** — it drives real
+  pointer-capture event chains, and its `target_position` option (an
+  offset from the target's top-left) handles drag-to-coordinate when
+  you pass the containing canvas/stage as the target. Held-button
+  `Mouse::move_to` sequences hang on headless Linux; don't use them
+  for drags.
 - **Newer surface worth knowing (options on docs.rs):** stable/redacted
   screenshots (`animations(Disabled)`, `mask`); context-level events
   (`BrowserContext::on_download` / `on_page_load` / `on_frame_*`,
