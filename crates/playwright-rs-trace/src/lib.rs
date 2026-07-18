@@ -1,5 +1,6 @@
 //! Programmatic parser for [Playwright][pw] trace zip files
-//! (trace format v8).
+//! (trace format v8, verified against traces recorded by the bundled
+//! Playwright 1.61 driver).
 //!
 //! # When to reach for this crate
 //!

@@ -9,6 +9,15 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+### Changed
+
+- **Confirmed trace-format v8 compatibility with the Playwright 1.61 driver.**
+  The checked-in fixture was regenerated with the 1.61.1 driver (previously a
+  1.59.1 trace, predating two driver bumps); 1.61 still emits format version
+  8, so the parser is unchanged. The crate docs state the verified driver
+  line again, which had been reduced to a bare "trace format v8" while the
+  claim was unverified.
+
 ## [0.1.0] - 2026-05-23
 
 ### Added
