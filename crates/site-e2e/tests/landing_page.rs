@@ -195,18 +195,14 @@ async fn landing_page_works_as_advertised() {
         .click(None)
         .await
         .expect("click the Firefox engine tab");
-    expect(
-        page.locator("#feature-cross-browser [data-lang='Firefox']"),
-    )
-    .to_have_attribute("aria-selected", "true")
-    .await
-    .expect("the Firefox tab becomes selected");
-    expect(
-        page.locator("#feature-cross-browser [data-lang='Chromium']"),
-    )
-    .to_have_attribute("aria-selected", "false")
-    .await
-    .expect("the Chromium tab deselects");
+    expect(page.locator("#feature-cross-browser [data-lang='Firefox']"))
+        .to_have_attribute("aria-selected", "true")
+        .await
+        .expect("the Firefox tab becomes selected");
+    expect(page.locator("#feature-cross-browser [data-lang='Chromium']"))
+        .to_have_attribute("aria-selected", "false")
+        .await
+        .expect("the Chromium tab deselects");
     expect(page.locator("#feature-cross-browser"))
         .to_contain_text("firefox")
         .await
@@ -236,7 +232,7 @@ async fn landing_page_works_as_advertised() {
             .await
             .unwrap_or_else(|e| panic!("feature card {id} should show its snippet: {e:?}"));
         let colored = page
-            .locator(&format!("{id} span[style*='color']"))
+            .locator(format!("{id} span[style*='color']"))
             .count()
             .await
             .unwrap_or_else(|e| panic!("count colored spans in {id}: {e:?}"));
