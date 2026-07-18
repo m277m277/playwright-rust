@@ -211,6 +211,11 @@ user-id = 3618
 user-login = "dtolnay"
 user-name = "David Tolnay"
 
+[[publisher.rand]]
+version = "0.9.3"
+when = "2026-04-11"
+trusted-publisher = "github:rust-random/rand"
+
 [[publisher.regex]]
 version = "1.13.0"
 when = "2026-07-09"
@@ -295,6 +300,20 @@ user-id = 3618
 user-login = "dtolnay"
 user-name = "David Tolnay"
 
+[[publisher.tokio]]
+version = "1.52.3"
+when = "2026-05-08"
+user-id = 6741
+user-login = "Darksonn"
+user-name = "Alice Ryhl"
+
+[[publisher.tokio-tungstenite]]
+version = "0.29.0"
+when = "2026-03-17"
+user-id = 96974
+user-login = "daniel-abramov"
+user-name = "Daniel Abramov"
+
 [[publisher.toml]]
 version = "1.1.2+spec-1.1.0"
 when = "2026-04-01"
@@ -343,6 +362,13 @@ when = "2026-06-22"
 user-id = 3618
 user-login = "dtolnay"
 user-name = "David Tolnay"
+
+[[publisher.tungstenite]]
+version = "0.29.0"
+when = "2026-03-17"
+user-id = 96974
+user-login = "daniel-abramov"
+user-name = "Daniel Abramov"
 
 [[publisher.unicode-ident]]
 version = "1.0.24"

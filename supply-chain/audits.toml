@@ -51,6 +51,12 @@ user-id = 3618 # David Tolnay (dtolnay)
 start = "2019-07-23"
 end = "2027-05-23"
 
+[[trusted.block-buffer]]
+criteria = "safe-to-deploy"
+trusted-publisher = "github:RustCrypto/utils"
+start = "2026-02-24"
+end = "2027-07-18"
+
 [[trusted.bytemuck]]
 criteria = "safe-to-deploy"
 user-id = 7211 # Lokathor (Lokathor)
@@ -68,6 +74,12 @@ criteria = "safe-to-deploy"
 user-id = 6741 # Alice Ryhl (Darksonn)
 start = "2021-01-11"
 end = "2027-06-20"
+
+[[trusted.chacha20]]
+criteria = "safe-to-deploy"
+trusted-publisher = "github:RustCrypto/stream-ciphers"
+start = "2026-02-06"
+end = "2027-07-18"
 
 [[trusted.clap]]
 criteria = "safe-to-deploy"
@@ -99,6 +111,24 @@ user-id = 6743 # Ed Page (epage)
 start = "2023-04-13"
 end = "2027-05-16"
 
+[[trusted.const-oid]]
+criteria = "safe-to-deploy"
+user-id = 267
+start = "2020-08-04"
+end = "2027-07-18"
+
+[[trusted.crypto-common]]
+criteria = "safe-to-deploy"
+trusted-publisher = "github:RustCrypto/traits"
+start = "2026-02-04"
+end = "2027-07-18"
+
+[[trusted.digest]]
+criteria = "safe-to-deploy"
+trusted-publisher = "github:RustCrypto/traits"
+start = "2026-02-12"
+end = "2027-07-18"
+
 [[trusted.filetime]]
 criteria = "safe-to-deploy"
 user-id = 1 # Alex Crichton (alexcrichton)
@@ -128,6 +158,12 @@ criteria = "safe-to-deploy"
 user-id = 359 # Sean McArthur (seanmonstar)
 start = "2019-07-03"
 end = "2027-05-16"
+
+[[trusted.hybrid-array]]
+criteria = "safe-to-deploy"
+trusted-publisher = "github:RustCrypto/hybrid-array"
+start = "2026-03-08"
+end = "2027-07-18"
 
 [[trusted.hyper]]
 criteria = "safe-to-deploy"
@@ -183,6 +219,18 @@ user-id = 3618 # David Tolnay (dtolnay)
 start = "2019-04-09"
 end = "2027-06-27"
 
+[[trusted.rand]]
+criteria = "safe-to-deploy"
+trusted-publisher = "github:rust-random/rand"
+start = "2026-01-26"
+end = "2027-07-18"
+
+[[trusted.rand_core]]
+criteria = "safe-to-deploy"
+trusted-publisher = "github:rust-random/rand_core"
+start = "2026-01-20"
+end = "2027-07-18"
+
 [[trusted.regex]]
 criteria = "safe-to-deploy"
 user-id = 189 # Andrew Gallant (BurntSushi)
@@ -225,6 +273,12 @@ user-id = 6743 # Ed Page (epage)
 start = "2023-01-20"
 end = "2027-05-16"
 
+[[trusted.sha1]]
+criteria = "safe-to-deploy"
+trusted-publisher = "github:RustCrypto/hashes"
+start = "2026-03-27"
+end = "2027-07-18"
+
 [[trusted.syn]]
 criteria = "safe-to-deploy"
 user-id = 3618 # David Tolnay (dtolnay)
@@ -254,6 +308,18 @@ criteria = "safe-to-deploy"
 user-id = 3618 # David Tolnay (dtolnay)
 start = "2019-10-09"
 end = "2027-05-23"
+
+[[trusted.tokio]]
+criteria = "safe-to-deploy"
+user-id = 6741 # Alice Ryhl (Darksonn)
+start = "2020-12-25"
+end = "2027-07-18"
+
+[[trusted.tokio-tungstenite]]
+criteria = "safe-to-deploy"
+user-id = 96974 # Daniel Abramov (daniel-abramov)
+start = "2020-08-07"
+end = "2027-07-18"
 
 [[trusted.toml]]
 criteria = "safe-to-deploy"
@@ -296,6 +362,12 @@ criteria = "safe-to-deploy"
 user-id = 3618 # David Tolnay (dtolnay)
 start = "2019-05-06"
 end = "2027-05-23"
+
+[[trusted.tungstenite]]
+criteria = "safe-to-deploy"
+user-id = 96974 # Daniel Abramov (daniel-abramov)
+start = "2020-08-07"
+end = "2027-07-18"
 
 [[trusted.unicode-ident]]
 criteria = "safe-to-deploy"
