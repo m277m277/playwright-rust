@@ -127,6 +127,20 @@ user-id = 980
 user-login = "Byron"
 user-name = "Sebastian Thiel"
 
+[[publisher.futures-task]]
+version = "0.3.32"
+when = "2026-02-15"
+user-id = 33035
+user-login = "taiki-e"
+user-name = "Taiki Endo"
+
+[[publisher.futures-util]]
+version = "0.3.32"
+when = "2026-02-15"
+user-id = 33035
+user-login = "taiki-e"
+user-name = "Taiki Endo"
+
 [[publisher.http]]
 version = "1.4.0"
 when = "2025-11-24"
