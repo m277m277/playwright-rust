@@ -70,7 +70,9 @@ overlay.
   `Browser::on_context`) for multi-tab fixtures; HAR capture
   (`tracing().start_har` / `stop_har`, replayable via `route_from_har`);
   external file drop (`Locator::drop`, vs intra-page `drag_to`);
-  ARIA-tree assertions (`expect_page(..).to_match_aria_snapshot`).
+  ARIA-tree assertions (`expect_page(..).to_match_aria_snapshot`);
+  File System Access API testing (`page.fake_file_system()` fakes the
+  save/open pickers — don't hand-roll an init-script shim).
 
 ### Debugging failures
 

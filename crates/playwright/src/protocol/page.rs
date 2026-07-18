@@ -3650,6 +3650,29 @@ impl Page {
             .await
     }
 
+    /// Installs an opt-in fake of the File System Access API
+    /// (`showSaveFilePicker` / `showOpenFilePicker`) on this page, so
+    /// save/open flows are testable without a native picker dialog.
+    ///
+    /// Returns a [`FakeFileSystem`](crate::testing::FakeFileSystem) handle
+    /// for seeding openable files, reading back saved bytes, and controlling
+    /// the permission state. Install before the flow under test runs; see
+    /// the [`testing`](crate::testing) module docs for the pattern. Pages
+    /// that never call this keep the browser's real picker functions.
+    ///
+    /// This is a playwright-rs convenience with no upstream Playwright
+    /// equivalent (upstream cannot drive the native pickers either; see
+    /// <https://github.com/microsoft/playwright/issues/11288>).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the page is closed or installing the script
+    /// fails.
+    #[tracing::instrument(level = "debug", skip_all, fields(guid = %self.guid()))]
+    pub async fn fake_file_system(&self) -> Result<crate::testing::FakeFileSystem> {
+        crate::testing::FakeFileSystem::install(self).await
+    }
+
     /// Sets the viewport size for the page.
     ///
     /// This method allows dynamic resizing of the viewport after page creation,

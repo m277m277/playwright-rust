@@ -127,6 +127,11 @@ Concept-level pointers; the exact options live on docs.rs.
 - **External drag-and-drop.** `Locator::drop` simulates dragging files
   or data in from outside the page (upload zones), distinct from
   `drag_to`, which drags one element onto another within the page.
+- **File System Access API flows.** `page.fake_file_system()` installs
+  an opt-in fake of `showSaveFilePicker`/`showOpenFilePicker` (native
+  dialogs no automation tool can drive): seed opens with
+  `set_open_file`, assert saves with `last_saved_bytes()`, control
+  permission state. Don't hand-roll an `add_init_script` picker shim.
 - **Accessibility-tree assertions.** `expect_page(&page)
   .to_match_aria_snapshot(..)` (and the locator form) guard the page's
   ARIA structure as a regression check; `aria_snapshot` can emit
