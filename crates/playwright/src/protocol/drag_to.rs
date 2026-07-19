@@ -33,20 +33,27 @@ use crate::protocol::click::Position;
 /// ```
 ///
 /// See: <https://playwright.dev/docs/api/class-locator#locator-drag-to>
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub struct DragToOptions {
     /// Whether to bypass actionability checks
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub force: Option<bool>,
     /// Don't wait for navigation after the action
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub no_wait_after: Option<bool>,
     /// Maximum time in milliseconds
+    #[serde(serialize_with = "crate::protocol::serialize_timeout_or_default")]
     pub timeout: Option<f64>,
     /// Perform actionability checks without dragging
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub trial: Option<bool>,
     /// Where to click on the source element (relative to top-left corner)
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub source_position: Option<Position>,
     /// Where to drop on the target element (relative to top-left corner)
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub target_position: Option<Position>,
 }
 
@@ -58,38 +65,7 @@ impl DragToOptions {
 
     /// Convert options to JSON value for protocol
     pub(crate) fn to_json(&self) -> serde_json::Value {
-        let mut json = serde_json::json!({});
-
-        if let Some(force) = self.force {
-            json["force"] = serde_json::json!(force);
-        }
-
-        if let Some(no_wait_after) = self.no_wait_after {
-            json["noWaitAfter"] = serde_json::json!(no_wait_after);
-        }
-
-        // Timeout is required in Playwright 1.56.1+
-        if let Some(timeout) = self.timeout {
-            json["timeout"] = serde_json::json!(timeout);
-        } else {
-            json["timeout"] = serde_json::json!(crate::DEFAULT_TIMEOUT_MS);
-        }
-
-        if let Some(trial) = self.trial {
-            json["trial"] = serde_json::json!(trial);
-        }
-
-        if let Some(source_position) = &self.source_position {
-            json["sourcePosition"] = serde_json::to_value(source_position)
-                .expect("serialization of position cannot fail");
-        }
-
-        if let Some(target_position) = &self.target_position {
-            json["targetPosition"] = serde_json::to_value(target_position)
-                .expect("serialization of position cannot fail");
-        }
-
-        json
+        serde_json::to_value(self).expect("DragToOptions serialization cannot fail")
     }
 }
 

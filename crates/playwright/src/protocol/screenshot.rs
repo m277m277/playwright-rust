@@ -118,33 +118,46 @@ pub struct ScreenshotClip {
 /// ```
 ///
 /// See: <https://playwright.dev/docs/api/class-page#page-screenshot>
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub struct ScreenshotOptions {
     /// Image format (png or jpeg)
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
     pub screenshot_type: Option<ScreenshotType>,
     /// JPEG quality (0-100), only applies to jpeg format
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub quality: Option<u8>,
     /// Capture full scrollable page
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub full_page: Option<bool>,
     /// Clip region to capture
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub clip: Option<ScreenshotClip>,
     /// Hide default white background (PNG only)
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub omit_background: Option<bool>,
     /// Freeze CSS animations and transitions before capturing (stable shots)
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub animations: Option<Animations>,
     /// Hide or keep the text caret
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub caret: Option<Caret>,
     /// CSS-pixel vs device-pixel scale
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub scale: Option<Scale>,
     /// CSS to inject into the page before capturing (e.g. hide dynamic elements)
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub style: Option<String>,
     /// Locators to mask out (overpaint) with a solid box, pre-serialized to the
     /// protocol `{ frame, selector }` shape. Build via the builder's `mask`.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub mask: Option<Vec<serde_json::Value>>,
     /// CSS color of the mask boxes (e.g. `"#FF00FF"`); Playwright defaults to pink.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub mask_color: Option<String>,
     /// Screenshot timeout in milliseconds
+    #[serde(serialize_with = "crate::protocol::serialize_timeout_or_default")]
     pub timeout: Option<f64>,
 }
 
@@ -156,64 +169,7 @@ impl ScreenshotOptions {
 
     /// Convert options to JSON value for protocol
     pub(crate) fn to_json(&self) -> serde_json::Value {
-        let mut json = serde_json::json!({});
-
-        if let Some(screenshot_type) = &self.screenshot_type {
-            json["type"] = serde_json::to_value(screenshot_type)
-                .expect("serialization of ScreenshotType cannot fail");
-        }
-
-        if let Some(quality) = self.quality {
-            json["quality"] = serde_json::json!(quality);
-        }
-
-        if let Some(full_page) = self.full_page {
-            json["fullPage"] = serde_json::json!(full_page);
-        }
-
-        if let Some(clip) = &self.clip {
-            json["clip"] = serde_json::to_value(clip).expect("serialization of clip cannot fail");
-        }
-
-        if let Some(omit_background) = self.omit_background {
-            json["omitBackground"] = serde_json::json!(omit_background);
-        }
-
-        if let Some(animations) = &self.animations {
-            json["animations"] =
-                serde_json::to_value(animations).expect("serialization of Animations cannot fail");
-        }
-
-        if let Some(caret) = &self.caret {
-            json["caret"] =
-                serde_json::to_value(caret).expect("serialization of Caret cannot fail");
-        }
-
-        if let Some(scale) = &self.scale {
-            json["scale"] =
-                serde_json::to_value(scale).expect("serialization of Scale cannot fail");
-        }
-
-        if let Some(style) = &self.style {
-            json["style"] = serde_json::json!(style);
-        }
-
-        if let Some(mask) = &self.mask {
-            json["mask"] = serde_json::Value::Array(mask.clone());
-        }
-
-        if let Some(mask_color) = &self.mask_color {
-            json["maskColor"] = serde_json::json!(mask_color);
-        }
-
-        // Timeout is required in Playwright 1.56.1+
-        if let Some(timeout) = self.timeout {
-            json["timeout"] = serde_json::json!(timeout);
-        } else {
-            json["timeout"] = serde_json::json!(crate::DEFAULT_TIMEOUT_MS);
-        }
-
-        json
+        serde_json::to_value(self).expect("ScreenshotOptions serialization cannot fail")
     }
 }
 

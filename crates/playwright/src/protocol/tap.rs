@@ -28,18 +28,24 @@ use crate::protocol::click::{KeyboardModifier, Position};
 /// ```
 ///
 /// See: <https://playwright.dev/docs/api/class-locator#locator-tap>
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub struct TapOptions {
     /// Whether to bypass actionability checks
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub force: Option<bool>,
     /// Modifier keys to press during tap
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub modifiers: Option<Vec<KeyboardModifier>>,
     /// Position to tap relative to element top-left corner
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub position: Option<Position>,
     /// Maximum time in milliseconds
+    #[serde(serialize_with = "crate::protocol::serialize_timeout_or_default")]
     pub timeout: Option<f64>,
     /// Perform actionability checks without tapping
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub trial: Option<bool>,
 }
 
@@ -51,34 +57,7 @@ impl TapOptions {
 
     /// Convert options to JSON value for protocol
     pub(crate) fn to_json(&self) -> serde_json::Value {
-        let mut json = serde_json::json!({});
-
-        if let Some(force) = self.force {
-            json["force"] = serde_json::json!(force);
-        }
-
-        if let Some(modifiers) = &self.modifiers {
-            json["modifiers"] =
-                serde_json::to_value(modifiers).expect("serialization of modifiers cannot fail");
-        }
-
-        if let Some(position) = &self.position {
-            json["position"] =
-                serde_json::to_value(position).expect("serialization of position cannot fail");
-        }
-
-        // Timeout is required in Playwright 1.56.1+
-        if let Some(timeout) = self.timeout {
-            json["timeout"] = serde_json::json!(timeout);
-        } else {
-            json["timeout"] = serde_json::json!(crate::DEFAULT_TIMEOUT_MS);
-        }
-
-        if let Some(trial) = self.trial {
-            json["trial"] = serde_json::json!(trial);
-        }
-
-        json
+        serde_json::to_value(self).expect("TapOptions serialization cannot fail")
     }
 }
 

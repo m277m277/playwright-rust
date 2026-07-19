@@ -9,12 +9,15 @@ use super::click::{KeyboardModifier, Position};
 /// Configuration options for fill() action.
 ///
 /// See: <https://playwright.dev/docs/api/class-locator#locator-fill>
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub struct FillOptions {
     /// Whether to bypass actionability checks
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub force: Option<bool>,
     /// Maximum time in milliseconds
+    #[serde(serialize_with = "crate::protocol::serialize_timeout_or_default")]
     pub timeout: Option<f64>,
 }
 
@@ -26,20 +29,7 @@ impl FillOptions {
 
     /// Convert options to JSON value for protocol
     pub(crate) fn to_json(&self) -> serde_json::Value {
-        let mut json = serde_json::json!({});
-
-        if let Some(force) = self.force {
-            json["force"] = serde_json::json!(force);
-        }
-
-        // Timeout is required in Playwright 1.56.1+
-        if let Some(timeout) = self.timeout {
-            json["timeout"] = serde_json::json!(timeout);
-        } else {
-            json["timeout"] = serde_json::json!(crate::DEFAULT_TIMEOUT_MS);
-        }
-
-        json
+        serde_json::to_value(self).expect("FillOptions serialization cannot fail")
     }
 }
 
@@ -77,12 +67,15 @@ impl FillOptionsBuilder {
 /// Configuration options for press() action.
 ///
 /// See: <https://playwright.dev/docs/api/class-locator#locator-press>
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub struct PressOptions {
     /// Time to wait between keydown and keyup in milliseconds
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub delay: Option<f64>,
     /// Maximum time in milliseconds
+    #[serde(serialize_with = "crate::protocol::serialize_timeout_or_default")]
     pub timeout: Option<f64>,
 }
 
@@ -94,20 +87,7 @@ impl PressOptions {
 
     /// Convert options to JSON value for protocol
     pub(crate) fn to_json(&self) -> serde_json::Value {
-        let mut json = serde_json::json!({});
-
-        if let Some(delay) = self.delay {
-            json["delay"] = serde_json::json!(delay);
-        }
-
-        // Timeout is required in Playwright 1.56.1+
-        if let Some(timeout) = self.timeout {
-            json["timeout"] = serde_json::json!(timeout);
-        } else {
-            json["timeout"] = serde_json::json!(crate::DEFAULT_TIMEOUT_MS);
-        }
-
-        json
+        serde_json::to_value(self).expect("PressOptions serialization cannot fail")
     }
 }
 
@@ -145,16 +125,21 @@ impl PressOptionsBuilder {
 /// Configuration options for check() and uncheck() actions.
 ///
 /// See: <https://playwright.dev/docs/api/class-locator#locator-check>
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub struct CheckOptions {
     /// Whether to bypass actionability checks
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub force: Option<bool>,
     /// Position to click relative to element top-left corner
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub position: Option<Position>,
     /// Maximum time in milliseconds
+    #[serde(serialize_with = "crate::protocol::serialize_timeout_or_default")]
     pub timeout: Option<f64>,
     /// Perform actionability checks without checking
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub trial: Option<bool>,
 }
 
@@ -166,29 +151,7 @@ impl CheckOptions {
 
     /// Convert options to JSON value for protocol
     pub(crate) fn to_json(&self) -> serde_json::Value {
-        let mut json = serde_json::json!({});
-
-        if let Some(force) = self.force {
-            json["force"] = serde_json::json!(force);
-        }
-
-        if let Some(position) = &self.position {
-            json["position"] =
-                serde_json::to_value(position).expect("serialization of position cannot fail");
-        }
-
-        // Timeout is required in Playwright 1.56.1+
-        if let Some(timeout) = self.timeout {
-            json["timeout"] = serde_json::json!(timeout);
-        } else {
-            json["timeout"] = serde_json::json!(crate::DEFAULT_TIMEOUT_MS);
-        }
-
-        if let Some(trial) = self.trial {
-            json["trial"] = serde_json::json!(trial);
-        }
-
-        json
+        serde_json::to_value(self).expect("CheckOptions serialization cannot fail")
     }
 }
 
@@ -242,18 +205,24 @@ impl CheckOptionsBuilder {
 /// Configuration options for hover() action.
 ///
 /// See: <https://playwright.dev/docs/api/class-locator#locator-hover>
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub struct HoverOptions {
     /// Whether to bypass actionability checks
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub force: Option<bool>,
     /// Modifier keys to press during hover
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub modifiers: Option<Vec<KeyboardModifier>>,
     /// Position to hover relative to element top-left corner
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub position: Option<Position>,
     /// Maximum time in milliseconds
+    #[serde(serialize_with = "crate::protocol::serialize_timeout_or_default")]
     pub timeout: Option<f64>,
     /// Perform actionability checks without hovering
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub trial: Option<bool>,
 }
 
@@ -265,34 +234,7 @@ impl HoverOptions {
 
     /// Convert options to JSON value for protocol
     pub(crate) fn to_json(&self) -> serde_json::Value {
-        let mut json = serde_json::json!({});
-
-        if let Some(force) = self.force {
-            json["force"] = serde_json::json!(force);
-        }
-
-        if let Some(modifiers) = &self.modifiers {
-            json["modifiers"] =
-                serde_json::to_value(modifiers).expect("serialization of modifiers cannot fail");
-        }
-
-        if let Some(position) = &self.position {
-            json["position"] =
-                serde_json::to_value(position).expect("serialization of position cannot fail");
-        }
-
-        // Timeout is required in Playwright 1.56.1+
-        if let Some(timeout) = self.timeout {
-            json["timeout"] = serde_json::json!(timeout);
-        } else {
-            json["timeout"] = serde_json::json!(crate::DEFAULT_TIMEOUT_MS);
-        }
-
-        if let Some(trial) = self.trial {
-            json["trial"] = serde_json::json!(trial);
-        }
-
-        json
+        serde_json::to_value(self).expect("HoverOptions serialization cannot fail")
     }
 }
 
@@ -406,12 +348,15 @@ impl PressSequentiallyOptionsBuilder {
 /// Configuration options for select_option() action.
 ///
 /// See: <https://playwright.dev/docs/api/class-locator#locator-select-option>
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub struct SelectOptions {
     /// Whether to bypass actionability checks
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub force: Option<bool>,
     /// Maximum time in milliseconds
+    #[serde(serialize_with = "crate::protocol::serialize_timeout_or_default")]
     pub timeout: Option<f64>,
 }
 
@@ -423,20 +368,7 @@ impl SelectOptions {
 
     /// Convert options to JSON value for protocol
     pub(crate) fn to_json(&self) -> serde_json::Value {
-        let mut json = serde_json::json!({});
-
-        if let Some(force) = self.force {
-            json["force"] = serde_json::json!(force);
-        }
-
-        // Timeout is required in Playwright 1.56.1+
-        if let Some(timeout) = self.timeout {
-            json["timeout"] = serde_json::json!(timeout);
-        } else {
-            json["timeout"] = serde_json::json!(crate::DEFAULT_TIMEOUT_MS);
-        }
-
-        json
+        serde_json::to_value(self).expect("SelectOptions serialization cannot fail")
     }
 }
 
@@ -474,10 +406,12 @@ impl SelectOptionsBuilder {
 /// Configuration options for keyboard.press() and keyboard.type_text() methods.
 ///
 /// See: <https://playwright.dev/docs/api/class-keyboard#keyboard-press>
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub struct KeyboardOptions {
     /// Time to wait between key presses in milliseconds
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub delay: Option<f64>,
 }
 
@@ -489,13 +423,7 @@ impl KeyboardOptions {
 
     /// Convert options to JSON value for protocol
     pub(crate) fn to_json(&self) -> serde_json::Value {
-        let mut json = serde_json::json!({});
-
-        if let Some(delay) = self.delay {
-            json["delay"] = serde_json::json!(delay);
-        }
-
-        json
+        serde_json::to_value(self).expect("KeyboardOptions serialization cannot fail")
     }
 }
 
@@ -523,16 +451,21 @@ impl KeyboardOptionsBuilder {
 /// Configuration options for mouse methods.
 ///
 /// See: <https://playwright.dev/docs/api/class-mouse>
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub struct MouseOptions {
     /// Mouse button to use
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub button: Option<super::click::MouseButton>,
     /// Number of clicks
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub click_count: Option<u32>,
     /// Time to wait between mousedown and mouseup in milliseconds
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub delay: Option<f64>,
     /// Number of intermediate mousemove events (for move operations)
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub steps: Option<u32>,
 }
 
@@ -544,26 +477,7 @@ impl MouseOptions {
 
     /// Convert options to JSON value for protocol
     pub(crate) fn to_json(&self) -> serde_json::Value {
-        let mut json = serde_json::json!({});
-
-        if let Some(button) = &self.button {
-            json["button"] =
-                serde_json::to_value(button).expect("serialization of MouseButton cannot fail");
-        }
-
-        if let Some(click_count) = self.click_count {
-            json["clickCount"] = serde_json::json!(click_count);
-        }
-
-        if let Some(delay) = self.delay {
-            json["delay"] = serde_json::json!(delay);
-        }
-
-        if let Some(steps) = self.steps {
-            json["steps"] = serde_json::json!(steps);
-        }
-
-        json
+        serde_json::to_value(self).expect("MouseOptions serialization cannot fail")
     }
 }
 

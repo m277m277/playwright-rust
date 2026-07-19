@@ -11,6 +11,20 @@
 // - Objects are created by the object factory when server sends __create__ messages
 // - Objects communicate with the server via their Channel
 
+/// Serializes an option-struct `timeout` field, emitting the crate default
+/// when unset. Playwright 1.56.1+ requires the field to be present on action
+/// calls, so unlike other option fields `timeout` is never skipped. Used via
+/// `#[serde(serialize_with = "crate::protocol::serialize_timeout_or_default")]`.
+pub(crate) fn serialize_timeout_or_default<S>(
+    timeout: &Option<f64>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    serializer.serialize_f64(timeout.unwrap_or(crate::DEFAULT_TIMEOUT_MS))
+}
+
 pub mod accessibility;
 pub mod action_options;
 pub mod android;
