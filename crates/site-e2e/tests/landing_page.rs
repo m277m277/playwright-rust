@@ -351,12 +351,14 @@ async fn version_switcher_lists_versions_and_warns_on_dev() {
     server.abort();
 }
 
-/// The dev (main HEAD) build advertises unreleased features in the
-/// "coming next" section; release snapshots omit it. The dogfood build is
-/// SITE_VERSION=dev, so the section + its cards must render and show real
-/// snippets — proving the /dev channel showcases what's coming.
+/// The dev (main HEAD) build reflects its ahead-of-crates.io state: it installs
+/// from git and its hero badges read "unreleased", where a release snapshot pins
+/// the published version. The dogfood build is SITE_VERSION=dev, so these
+/// dev-only distinctives must render. (Unreleased feature cards, when any exist,
+/// also render only here — 0.15.0 shipped the previous set, so there are none
+/// flagged at the moment.)
 #[tokio::test]
-async fn dev_build_shows_unreleased_features() {
+async fn dev_build_reflects_unreleased_state() {
     let dist = dist_dir();
     if !dist.join("index.html").exists() {
         eprintln!("skipping dev-features test: {} not built.", dist.display());
@@ -371,51 +373,11 @@ async fn dev_build_shows_unreleased_features() {
         .await
         .expect("navigate");
 
-    // The dev build adds unreleased feature cards into the Features grid, each
-    // carrying an "Unreleased" badge and a real (compile-checked) snippet.
-    let webstorage = page.locator("#feature-webstorage");
-    expect(webstorage.clone())
-        .to_be_visible()
-        .await
-        .expect("WebStorage card renders on the dev build");
-    expect(webstorage.clone())
-        .to_contain_text("UNRELEASED")
-        .await
-        .expect("WebStorage card carries the Unreleased badge");
-    expect(webstorage)
-        .to_contain_text("local_storage")
-        .await
-        .expect("WebStorage card shows the local_storage snippet");
-
     // The dev build installs from git (main HEAD), not the crates.io version.
     expect(page.locator("#install"))
         .to_contain_text("git = \"https://github.com/padamson/playwright-rust\"")
         .await
         .expect("dev build's install block uses a git dependency");
-
-    let webauthn = page.locator("#feature-webauthn");
-    expect(webauthn.clone())
-        .to_be_visible()
-        .await
-        .expect("WebAuthn card renders on the dev build");
-    expect(webauthn)
-        .to_contain_text("UNRELEASED")
-        .await
-        .expect("WebAuthn card carries the Unreleased badge");
-
-    let fake_fs = page.locator("#feature-fake-fs");
-    expect(fake_fs.clone())
-        .to_be_visible()
-        .await
-        .expect("File System Access card renders on the dev build");
-    expect(fake_fs.clone())
-        .to_contain_text("UNRELEASED")
-        .await
-        .expect("File System Access card carries the Unreleased badge");
-    expect(fake_fs)
-        .to_contain_text("fake_file_system")
-        .await
-        .expect("File System Access card shows the fake_file_system snippet");
 
     // The dev build's hero badges reflect unreleased reality: crates.io shows
     // "unreleased" (not the published version) and the Playwright badge tracks
