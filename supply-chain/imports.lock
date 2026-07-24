@@ -1,6 +1,14 @@
 
 # cargo-vet imports lock
 
+[[unpublished.playwright-rs]]
+version = "0.15.0"
+audited_as = "0.14.1"
+
+[[unpublished.playwright-rs-trace]]
+version = "0.1.1"
+audited_as = "0.1.0"
+
 [[publisher.aho-corasick]]
 version = "1.1.4"
 when = "2025-10-28"

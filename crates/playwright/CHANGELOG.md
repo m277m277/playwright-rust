@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-07-24
+
 ### Breaking changes
 
 Public-API type-consistency sweep — within the crate, the same conceptual quantity was typed several different ways. These align the types with each other and with upstream Playwright. All are mechanical call-site migrations.

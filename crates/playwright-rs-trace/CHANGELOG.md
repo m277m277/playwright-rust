@@ -9,6 +9,8 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-07-24
+
 ### Changed
 
 - **Confirmed trace-format v8 compatibility with the Playwright 1.61 driver.**
