@@ -105,10 +105,6 @@ criteria = "safe-to-deploy"
 version = "0.5.0"
 criteria = "safe-to-deploy"
 
-[[exemptions.dunce]]
-version = "1.0.5"
-criteria = "safe-to-deploy"
-
 [[exemptions.fastrand]]
 version = "2.4.1"
 criteria = "safe-to-deploy"
@@ -254,7 +250,7 @@ version = "0.2.17"
 criteria = "safe-to-deploy"
 
 [[exemptions.playwright-rs]]
-version = "0.14.1"
+version = "0.15.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.playwright-rs-macros]]
@@ -262,7 +258,7 @@ version = "0.1.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.playwright-rs-trace]]
-version = "0.1.0"
+version = "0.1.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.plotters]]
@@ -315,10 +311,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.rustix]]
 version = "1.1.4"
-criteria = "safe-to-deploy"
-
-[[exemptions.rustls]]
-version = "0.23.37"
 criteria = "safe-to-deploy"
 
 [[exemptions.rustls]]
