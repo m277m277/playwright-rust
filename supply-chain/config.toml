@@ -45,6 +45,10 @@ criteria = "safe-to-deploy"
 version = "0.5.6"
 criteria = "safe-to-deploy"
 
+[[exemptions.base64]]
+version = "0.23.0"
+criteria = "safe-to-deploy"
+
 [[exemptions.bitflags]]
 version = "2.11.0"
 criteria = "safe-to-deploy"
@@ -193,10 +197,6 @@ criteria = "safe-to-deploy"
 version = "0.3.95"
 criteria = "safe-to-run"
 
-[[exemptions.libc]]
-version = "0.2.186"
-criteria = "safe-to-deploy"
-
 [[exemptions.libredox]]
 version = "0.1.16"
 criteria = "safe-to-deploy"
@@ -323,6 +323,10 @@ criteria = "safe-to-deploy"
 
 [[exemptions.rustls]]
 version = "0.23.37"
+criteria = "safe-to-deploy"
+
+[[exemptions.rustls]]
+version = "0.23.42"
 criteria = "safe-to-deploy"
 
 [[exemptions.rustls-native-certs]]
