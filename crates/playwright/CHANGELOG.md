@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A failed assertion against a pre-1.61 Playwright server no longer returns `Ok(())`.** Servers from 1.61 onward report a mismatch as a protocol error and apply `isNot` themselves; `<= 1.60` servers instead answer with a `{ matches: false }` *result* and leave negation to the client. The result body was discarded, so against such a server every `expect(...)` assertion passed regardless of the DOM — silently green, the worst failure mode a test library has. The verdict is now read and a mismatch raises `AssertionFailed`. Only reachable through `BrowserType::connect` to a version-mismatched remote, since `connect` opens a raw WebSocket with no version negotiation; the bundled driver was never affected. The error carries no `received`/`expected` detail because old servers do not send any — connect to a version-matched server for a fuller diagnostic.
+
 ## [0.15.0] - 2026-07-24
 
 ### Breaking changes

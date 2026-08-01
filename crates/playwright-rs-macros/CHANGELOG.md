@@ -10,6 +10,13 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+### Changed
+
+- **`syn` bumped to 3.0.** Build-time only: `syn` does not appear in this
+  crate's public API, so the macro's behavior and diagnostics are
+  unchanged. Publishing this lets dependents that have already moved to
+  `syn` 3 build one copy instead of two.
+
 ## [0.1.0] - 2026-05-23
 
 ### Added
