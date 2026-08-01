@@ -466,3 +466,141 @@ async fn dev_build_reflects_unreleased_state() {
     browser.close().await.ok();
     server.abort();
 }
+
+/// The artifact that actually deploys — not the build the gate above drives.
+///
+/// The Pages workflow builds `dist/` at `SITE_VERSION=dev` with public-url `/`
+/// for the dogfood gate, then builds a *second* time into `dist-snapshot/` at
+/// `SITE_VERSION=<ver>` with public-url `/<dest>/`, and ships that. Two classes
+/// of breakage are invisible to the gate by construction:
+///
+/// - **Sub-path resolution.** A root-absolute asset resolves at `/` and 404s
+///   under `/vX.Y.Z/`. This already shipped once (`46f12fa`).
+/// - **Release-only rendering.** Components branch on `version::is_dev()`, so
+///   the release values (`PLAYWRIGHT_RELEASED`, `install.toml`) are unreachable
+///   from a dev build. These shipped stale to `/v0.15.0/` and were caught by
+///   eye, not by test.
+///
+/// Driven by env so it exercises the real artifact rather than rebuilding one:
+///   `SNAPSHOT_DIST`     path to the snapshot dist dir
+///   `SNAPSHOT_BASE`     base path it was built for, e.g. `/v0.15.0/`
+///   `SNAPSHOT_VERSION`  the `SITE_VERSION` used, e.g. `0.15.0` or `dev`
+///
+/// Skips when unset, so a plain `cargo test` stays useful locally.
+#[tokio::test]
+async fn deployed_snapshot_is_sound() {
+    let (Ok(dist), Ok(base), Ok(version)) = (
+        std::env::var("SNAPSHOT_DIST"),
+        std::env::var("SNAPSHOT_BASE"),
+        std::env::var("SNAPSHOT_VERSION"),
+    ) else {
+        eprintln!("skipping snapshot test: SNAPSHOT_DIST/BASE/VERSION not set.");
+        return;
+    };
+    let dist = PathBuf::from(dist);
+    assert!(
+        dist.join("index.html").exists(),
+        "SNAPSHOT_DIST has no index.html: {}",
+        dist.display()
+    );
+
+    // Mirror the real gh-pages layout: the snapshot lives under its base path,
+    // while the version manifest sits at the *root*, shared by every snapshot.
+    // Serving only the sub-path would 404 the switcher's `/versions.json` fetch
+    // and misreport it as broken — the first run of this test did exactly that.
+    let mount = base.trim_end_matches('/').to_string();
+    let manifest = format!(r#"{{"latest":"{version}","versions":["{version}"]}}"#);
+    let overlay = Router::new()
+        .route(
+            "/versions.json",
+            axum::routing::get(|| async move {
+                (
+                    [(axum::http::header::CONTENT_TYPE, "application/json")],
+                    manifest,
+                )
+            }),
+        )
+        .nest_service(&mount, ServeDir::new(&dist));
+    let (addr, server) = serve_with(&dist, Some(overlay)).await;
+
+    let pw = Playwright::launch().await.expect("launch playwright");
+    let browser = pw.chromium().launch().await.expect("launch chromium");
+    let page = browser.new_page().await.expect("new page");
+
+    // Registered before navigating: any 4xx/5xx here is an asset the snapshot
+    // build pointed at the wrong place. This is the sub-path guard.
+    let broken: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let sink = broken.clone();
+    page.on_response(move |resp| {
+        let sink = sink.clone();
+        let (status, url) = (resp.status(), resp.url().to_string());
+        async move {
+            if status >= 400 {
+                sink.lock().unwrap().push(format!("{status} {url}"));
+            }
+            Ok(())
+        }
+    })
+    .await
+    .expect("register response listener");
+
+    page.goto(&format!("http://{addr}{base}"), None)
+        .await
+        .expect("navigate to snapshot under its base path");
+
+    // The hero only renders once the WASM bundle boots, which it cannot do if
+    // its own assets 404 — so this doubles as the "bundle loads" assertion.
+    expect(page.locator("#hero"))
+        .to_be_visible()
+        .await
+        .expect("snapshot renders under its base path");
+
+    if version == "dev" {
+        expect(page.locator("#install"))
+            .to_contain_text("git = \"https://github.com/padamson/playwright-rust\"")
+            .await
+            .expect("dev snapshot installs from git");
+    } else {
+        // Invariants that are only true at release time, which is exactly when
+        // this runs. `cargo xtask verify-driver-version` cannot cover the first
+        // one: it anchors only PLAYWRIGHT_DEV, because the released value
+        // legitimately lags main between releases.
+        let badge = format!("Playwright {}", playwright_rs::PLAYWRIGHT_VERSION);
+        let count = page
+            .locator(format!("#hero-badges img[alt='{badge}']"))
+            .count()
+            .await
+            .expect("count Playwright badge");
+        assert_eq!(
+            count, 1,
+            "release snapshot must advertise the driver it bundles ({badge}); \
+             PLAYWRIGHT_RELEASED in hero.rs is stale"
+        );
+
+        let minor = version.split('.').take(2).collect::<Vec<_>>().join(".");
+        let pin = format!("playwright-rs = \"{minor}\"");
+        expect(page.locator("#install"))
+            .to_contain_text(&pin)
+            .await
+            .unwrap_or_else(|e| panic!("release snapshot install pin should be {pin}: {e:?}"));
+
+        let unreleased = page
+            .locator("[data-unreleased-badge]")
+            .count()
+            .await
+            .expect("count unreleased badges");
+        assert_eq!(
+            unreleased, 0,
+            "unreleased feature cards are dev-only; they must not ship in a release snapshot"
+        );
+    }
+
+    let broken = broken.lock().unwrap().clone();
+    assert!(
+        broken.is_empty(),
+        "snapshot requested assets that do not resolve under {base}: {broken:#?}"
+    );
+
+    browser.close().await.ok();
+    server.abort();
+}

@@ -132,6 +132,18 @@ jobs:
           rm -rf dist-snapshot/receipts
           cp -r public/receipts dist-snapshot/receipts
 
+      # Gate the artifact that actually ships. The dogfood test above drives the
+      # root-served SITE_VERSION=dev build, so it cannot see sub-path asset
+      # breakage (shipped once, 46f12fa) or release-only rendering (shipped
+      # again in 0.15.0: a stale driver badge and install pin). This serves
+      # dist-snapshot under its real base path and asserts both.
+      - name: Snapshot smoke test (deploy gate)
+        env:
+          SNAPSHOT_DIST: ${{ github.workspace }}/crates/site/dist-snapshot
+          SNAPSHOT_BASE: /${{ steps.target.outputs.dest }}/
+          SNAPSHOT_VERSION: ${{ steps.target.outputs.site_version }}
+        run: cargo test --manifest-path crates/site-e2e/Cargo.toml deployed_snapshot_is_sound
+
       - name: Check out gh-pages
         run: |
           git config user.name "github-actions[bot]"
