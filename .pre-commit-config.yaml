@@ -129,3 +129,14 @@ repos:
         pass_filenames: false
         # Only run when dependency or supply-chain config files change
         files: (Cargo\.toml|Cargo\.lock|supply-chain/)$
+
+      - id: site-lockfiles-current
+        name: site lockfiles current
+        description: The site crates sit outside the workspace, so their lockfiles go stale when workspace deps move
+        entry: scripts/check-site-lockfiles.sh
+        language: system
+        pass_filenames: false
+        # Fires on the commits that CAUSE the drift — workspace manifest/lock
+        # changes. The Pages workflow can't catch this: it only triggers on
+        # crates/site**, which such a commit never touches.
+        files: ^(Cargo\.toml|Cargo\.lock|crates/playwright/Cargo\.toml)$

@@ -27,11 +27,34 @@ crates/playwright/      single crate (consolidated from playwright-core in v0.7)
   examples/             usage examples
   fuzz/                 cargo-fuzz targets
   build.rs              assembles the pinned driver (npm + Node, ADR 0006)
+crates/playwright-rs-macros/  locator!() proc macro (published separately)
+crates/playwright-rs-trace/   trace-zip parser (published separately)
+crates/xtask/           repo tasks (verify-driver-version, site snippets); publish = false
+crates/site/            playwright-rust.dev landing page (Leptos/WASM, built by Trunk)
+crates/site-e2e/        dogfoods the bindings against that site; also the deploy gate
 supply-chain/           cargo-vet audit config (see skill)
 docs/                   roadmap, ADRs, implementation plans, technical notes
 docs/agent/             agent-integration guidance for downstream users
 .claude/skills/         procedural reference (see below)
 ```
+
+**`crates/site` and `crates/site-e2e` are excluded from the workspace**
+(wasm target; features that would conflict with the root build). Two
+consequences worth knowing before they cost you time:
+
+- **Workspace-wide commands miss them.** `cargo fmt`/`clippy --workspace`
+  and `cargo nextest run --workspace` never reach these crates; only the
+  per-manifest steps in [`pages.yml`](.github/workflows/pages.yml) do. After
+  touching either crate, run those four commands (`--manifest-path
+  crates/site{,-e2e}/Cargo.toml`, plus `--target wasm32-unknown-unknown`
+  for `site`) rather than trusting a green workspace run.
+- **They carry their own `Cargo.lock`.** `site-e2e` depends on
+  `playwright-rs` by path, so a workspace dependency change silently
+  staleness its lockfile, which then refreshes the next time anyone runs a
+  cargo command there — surfacing as unrelated-looking dirt in `git status`.
+  A pre-commit hook (`scripts/check-site-lockfiles.sh`) now flags it on the
+  commits that cause it, with the refresh command. Nothing breaks meanwhile;
+  no CI job uses `--locked` against these crates.
 
 ## Skills (procedural reference)
 
