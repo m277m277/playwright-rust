@@ -33,8 +33,16 @@ fn dist_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../site/dist")
 }
 
-async fn serve(dist: &PathBuf) -> (SocketAddr, tokio::task::JoinHandle<()>) {
-    let app = Router::new().fallback_service(ServeDir::new(dist));
+/// Serve `dist` on an ephemeral port. `overlay` routes are merged ahead of the
+/// static fallback, so a test can stub an endpoint the built site fetches (the
+/// switcher's `/versions.json`, say) without hand-rolling a second server.
+async fn serve_with(
+    dist: &PathBuf,
+    overlay: Option<Router>,
+) -> (SocketAddr, tokio::task::JoinHandle<()>) {
+    let app = overlay
+        .unwrap_or_else(Router::new)
+        .fallback_service(ServeDir::new(dist));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind site server");
@@ -43,6 +51,49 @@ async fn serve(dist: &PathBuf) -> (SocketAddr, tokio::task::JoinHandle<()>) {
         axum::serve(listener, app).await.expect("serve site");
     });
     (addr, handle)
+}
+
+async fn serve(dist: &PathBuf) -> (SocketAddr, tokio::task::JoinHandle<()>) {
+    serve_with(dist, None).await
+}
+
+/// The built site, or `None` when it is absent — these tests skip rather than
+/// fail so `cargo test` is useful without a prior `trunk build`.
+fn dist_or_skip(what: &str) -> Option<PathBuf> {
+    let dist = dist_dir();
+    if dist.join("index.html").exists() {
+        return Some(dist);
+    }
+    eprintln!(
+        "skipping {what}: {} not built. Run `trunk build` in crates/site first.",
+        dist.display()
+    );
+    None
+}
+
+/// Serve the site and open its landing page in a fresh browser.
+///
+/// Returns the `Playwright` and `Browser` handles alongside the page: dropping
+/// either tears down the browser, so the caller must hold them for the life of
+/// the test. Tests that need a `BrowserContext` (tracing, HAR, video) build
+/// their own rather than using this.
+async fn open_site(
+    dist: &PathBuf,
+    overlay: Option<Router>,
+) -> (
+    Playwright,
+    playwright_rs::protocol::Browser,
+    Page,
+    tokio::task::JoinHandle<()>,
+) {
+    let (addr, server) = serve_with(dist, overlay).await;
+    let pw = Playwright::launch().await.expect("launch playwright");
+    let browser = pw.chromium().launch().await.expect("launch chromium");
+    let page = browser.new_page().await.expect("new page");
+    page.goto(&format!("http://{addr}"), None)
+        .await
+        .expect("navigate to site");
+    (pw, browser, page, server)
 }
 
 /// Write an element screenshot of `selector` to the step file. An element
@@ -67,14 +118,9 @@ async fn shot(page: &Page, steps: &Path, file: &str, selector: &str) {
 
 #[tokio::test]
 async fn landing_page_works_as_advertised() {
-    let dist = dist_dir();
-    if !dist.join("index.html").exists() {
-        eprintln!(
-            "skipping dogfood test: {} not built. Run `trunk build` in crates/site first.",
-            dist.display()
-        );
+    let Some(dist) = dist_or_skip("dogfood test") else {
         return;
-    }
+    };
     // Write receipts into the site's `public/receipts/` source dir (not dist/).
     // Trunk's copy-dir re-copies it into dist on every build, so receipts
     // survive `trunk serve` rebuilds and show up with hot reload.
@@ -301,36 +347,21 @@ async fn landing_page_works_as_advertised() {
 /// "unreleased" banner on the dev build — served with a fixture manifest.
 #[tokio::test]
 async fn version_switcher_lists_versions_and_warns_on_dev() {
-    let dist = dist_dir();
-    if !dist.join("index.html").exists() {
-        eprintln!("skipping switcher test: {} not built.", dist.display());
+    let Some(dist) = dist_or_skip("switcher test") else {
         return;
-    }
+    };
 
-    // Serve the built site, overlaying a fixture manifest the dev build can fetch.
-    let app = Router::new()
-        .route(
-            "/versions.json",
-            axum::routing::get(|| async {
-                (
-                    [(axum::http::header::CONTENT_TYPE, "application/json")],
-                    r#"{"latest":"9.9.9","versions":["9.9.9","0.14.0"]}"#,
-                )
-            }),
-        )
-        .fallback_service(ServeDir::new(&dist));
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind");
-    let addr = listener.local_addr().expect("addr");
-    let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
-
-    let pw = Playwright::launch().await.expect("launch playwright");
-    let browser = pw.chromium().launch().await.expect("launch chromium");
-    let page = browser.new_page().await.expect("new page");
-    page.goto(&format!("http://{addr}"), None)
-        .await
-        .expect("navigate");
+    // Overlay a fixture manifest the dev build can fetch.
+    let manifest = Router::new().route(
+        "/versions.json",
+        axum::routing::get(|| async {
+            (
+                [(axum::http::header::CONTENT_TYPE, "application/json")],
+                r#"{"latest":"9.9.9","versions":["9.9.9","0.14.0"]}"#,
+            )
+        }),
+    );
+    let (_pw, browser, page, server) = open_site(&dist, Some(manifest)).await;
 
     // The dropdown is always present; once the manifest loads it carries the
     // published versions, and the dev build shows the unreleased banner.
@@ -359,19 +390,10 @@ async fn version_switcher_lists_versions_and_warns_on_dev() {
 /// flagged at the moment.)
 #[tokio::test]
 async fn dev_build_reflects_unreleased_state() {
-    let dist = dist_dir();
-    if !dist.join("index.html").exists() {
-        eprintln!("skipping dev-features test: {} not built.", dist.display());
+    let Some(dist) = dist_or_skip("dev-features test") else {
         return;
-    }
-
-    let (addr, server) = serve(&dist).await;
-    let pw = Playwright::launch().await.expect("launch playwright");
-    let browser = pw.chromium().launch().await.expect("launch chromium");
-    let page = browser.new_page().await.expect("new page");
-    page.goto(&format!("http://{addr}"), None)
-        .await
-        .expect("navigate");
+    };
+    let (_pw, browser, page, server) = open_site(&dist, None).await;
 
     // The dev build installs from git (main HEAD), not the crates.io version.
     expect(page.locator("#install"))
