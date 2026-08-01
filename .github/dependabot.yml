@@ -22,6 +22,18 @@ updates:
       semver-major-days: 14
       semver-minor-days: 7
       semver-patch-days: 3
+    # Workaround, not policy — remove once the updater handles this. Every
+    # scheduled cargo run has aborted since 2026-07-18 with
+    # `Failed to update serde!` from the lockfile updater's
+    # validate_dependency_update, which takes down the whole run: no cargo
+    # dependency updates at all, security ones included. serde pins
+    # `serde_core =<same version>` exactly, so it cannot move on its own, which
+    # a single-dependency update appears unable to satisfy. Scoped to the one
+    # version that trips it, so later serde releases stay eligible. Tracked in
+    # issue #131; `cargo audit` still covers serde advisories meanwhile.
+    ignore:
+      - dependency-name: "serde"
+        versions: ["1.0.229"]
     # Group minor and patch updates to reduce noise
     groups:
       start-dependencies:
