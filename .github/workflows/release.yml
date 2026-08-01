@@ -155,6 +155,11 @@ jobs:
     name: Publish to crates.io
     needs: [test]
     runs-on: ubuntu-latest
+    # Scoped to this job, not the workflow: only publishing needs to mint an
+    # OIDC token, and `id-token: write` is what lets a job request one.
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v7
 
@@ -163,15 +168,19 @@ jobs:
         with:
           toolchain: stable
 
-      - name: Check if token is set
-        id: check_token
-        run: |
-          if [ -z "${{ secrets.CARGO_REGISTRY_TOKEN }}" ]; then
-            echo "skip=true" >> $GITHUB_OUTPUT
-            echo "⚠️ CARGO_REGISTRY_TOKEN not set, skipping crates.io publishing"
-          else
-            echo "skip=false" >> $GITHUB_OUTPUT
-          fi
+      # Trusted publishing: exchange a GitHub OIDC token for a crates.io token
+      # scoped to this repo + workflow and valid for minutes, instead of holding
+      # a long-lived CARGO_REGISTRY_TOKEN that works from anywhere and never
+      # expires. The action's post step revokes it when the job ends.
+      #
+      # This replaces a soft "skip if the secret is missing" guard. That guard
+      # would now be actively harmful: with the secret gone it would skip every
+      # publish and report success, turning a broken release into a silent
+      # no-op. Failing here is the correct behavior — it means the trusted
+      # publisher is not configured for the crate being released.
+      - name: Authenticate to crates.io
+        id: auth
+        uses: rust-lang/crates-io-auth-action@v1
 
       # Each tag prefix publishes exactly one crate. Independent
       # versioning means a coordinated release pushes multiple tags
@@ -186,19 +195,19 @@ jobs:
       # cycle, just push the `v*` tag — the existing published versions
       # already satisfy `playwright-rs`'s dep constraints.
       - name: Publish playwright-rs-macros
-        if: steps.check_token.outputs.skip == 'false' && startsWith(github.ref_name, 'macros-v')
+        if: startsWith(github.ref_name, 'macros-v')
         run: cargo publish -p playwright-rs-macros
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
 
       - name: Publish playwright-rs-trace
-        if: steps.check_token.outputs.skip == 'false' && startsWith(github.ref_name, 'trace-v')
+        if: startsWith(github.ref_name, 'trace-v')
         run: cargo publish -p playwright-rs-trace
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
 
       - name: Publish playwright-rs
-        if: steps.check_token.outputs.skip == 'false' && startsWith(github.ref_name, 'v')
+        if: startsWith(github.ref_name, 'v')
         run: cargo publish -p playwright-rs
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
