@@ -84,6 +84,28 @@ pub(crate) fn parse_protocol_error(
     ))
 }
 
+/// Verdict carried in an `expect` **result body**, if any.
+///
+/// Playwright 1.61+ reports a failed assertion as a protocol error carrying
+/// `errorDetails` and returns no result on success: the server applies `isNot`
+/// itself, so a successful call already means the assertion held, and there is
+/// no verdict to read. A `<= 1.60` server instead answers with a
+/// `{ matches: bool }` *result* and no error, leaving `isNot` for the client to
+/// apply — discarding that body makes a failed assertion return `Ok(())`.
+///
+/// Only reachable via `BrowserType::connect` to a version-mismatched remote,
+/// which does no version negotiation. Belt-and-suspenders: a stale server
+/// should fail loudly rather than pass silently.
+///
+/// Returns `None` when the body carries no boolean `matches` (the 1.61+ shape),
+/// or `Some(assertion_held)` for a legacy body.
+pub(crate) fn legacy_expect_verdict(result: &serde_json::Value, is_not: bool) -> Option<bool> {
+    let matches = result.get("matches")?.as_bool()?;
+    // The old protocol reports whether the *expression* matched; the client
+    // applies negation. A negated assertion holds precisely when it did not.
+    Some(matches != is_not)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -216,5 +238,50 @@ mod tests {
         assert_eq!(extract_browser_name("webkit missing"), "webkit");
         assert_eq!(extract_browser_name("chromium gone"), "chromium");
         assert_eq!(extract_browser_name("something generic"), "browsers");
+    }
+
+    // --- legacy_expect_verdict: <= 1.60 servers report the outcome in the body
+
+    #[test]
+    fn legacy_body_reports_a_plain_assertion_holding_or_failing() {
+        let matched = serde_json::json!({ "matches": true });
+        let missed = serde_json::json!({ "matches": false });
+        assert_eq!(legacy_expect_verdict(&matched, false), Some(true));
+        assert_eq!(legacy_expect_verdict(&missed, false), Some(false));
+    }
+
+    #[test]
+    fn legacy_body_applies_is_not_client_side() {
+        // A negated assertion holds precisely when the expression did NOT match.
+        let matched = serde_json::json!({ "matches": true });
+        let missed = serde_json::json!({ "matches": false });
+        assert_eq!(legacy_expect_verdict(&matched, true), Some(false));
+        assert_eq!(legacy_expect_verdict(&missed, true), Some(true));
+    }
+
+    #[test]
+    fn modern_body_carries_no_verdict_to_read() {
+        // 1.61+ success: nothing (or an empty object) comes back, and a failure
+        // would have arrived as an error instead. Nothing to second-guess.
+        for body in [
+            serde_json::Value::Null,
+            serde_json::json!({}),
+            serde_json::json!({ "other": 1 }),
+        ] {
+            assert_eq!(legacy_expect_verdict(&body, false), None);
+            assert_eq!(legacy_expect_verdict(&body, true), None);
+        }
+    }
+
+    #[test]
+    fn non_boolean_matches_is_not_a_verdict() {
+        // Drifted or hostile shape: degrade to "no verdict" rather than guess.
+        for body in [
+            serde_json::json!({ "matches": "true" }),
+            serde_json::json!({ "matches": 1 }),
+            serde_json::json!({ "matches": serde_json::Value::Null }),
+        ] {
+            assert_eq!(legacy_expect_verdict(&body, false), None);
+        }
     }
 }

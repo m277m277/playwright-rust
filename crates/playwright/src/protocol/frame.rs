@@ -2370,7 +2370,24 @@ impl Frame {
         // itself, so a successful call always means the assertion held. A genuine
         // infrastructure error arrives with an empty `errorDetails` and is
         // classified as a protocol error, propagating unchanged.
-        self.channel().send_no_result("expect", params).await
+        let result: serde_json::Value = self.channel().send("expect", params).await?;
+
+        // Belt-and-suspenders for a version-mismatched remote. `connect` opens a
+        // raw WebSocket to a user-supplied endpoint with no version negotiation,
+        // so a <= 1.60 server can answer here — and it reports a mismatch as a
+        // `{ matches: false }` *result* with no error. Discarding the body would
+        // turn a failed assertion into `Ok(())`: silently green, the worst
+        // failure mode a test library has. Modern servers carry no verdict to
+        // read, so this is inert against the bundled driver.
+        if crate::server::error_parsing::legacy_expect_verdict(&result, is_not) == Some(false) {
+            return Err(crate::error::Error::AssertionFailed(format!(
+                "Assertion failed for selector '{selector}' ({expression}). \
+                 Reported by a pre-1.61 Playwright server, which does not send \
+                 assertion details; connect to a version-matched server for a \
+                 fuller diagnostic."
+            )));
+        }
+        Ok(())
     }
 
     /// Adds a `<script>` tag into the frame with the desired content.
