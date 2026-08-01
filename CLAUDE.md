@@ -26,7 +26,7 @@ crates/playwright/      single crate (consolidated from playwright-core in v0.7)
   tests/integration/    integration tests
   examples/             usage examples
   fuzz/                 cargo-fuzz targets
-drivers/                Playwright server binaries (gitignored)
+  build.rs              assembles the pinned driver (npm + Node, ADR 0006)
 supply-chain/           cargo-vet audit config (see skill)
 docs/                   roadmap, ADRs, implementation plans, technical notes
 docs/agent/             agent-integration guidance for downstream users
@@ -179,4 +179,14 @@ proven through dogfooding (see roadmap). For release mechanics see the
 - Playwright docs: <https://playwright.dev/docs/api>
 - playwright-python (reference impl): <https://github.com/microsoft/playwright-python>
 - Playwright server source: <https://github.com/microsoft/playwright/tree/main/packages/playwright-core/src/server>
-- Driver protocol schema: `drivers/playwright-*/package/protocol.yml`
+- Driver protocol schema — the wire contract this crate implements, and
+  the authoritative thing to diff when bumping the driver. It is **not
+  in the driver we assemble**: the `playwright-core` npm package ships
+  no schema (only the retired CDN zips did), so fetch it from the source
+  repo at the tag you care about:
+  `https://raw.githubusercontent.com/microsoft/playwright/v<VERSION>/packages/protocol/spec/<file>.yml`
+  Upstream split the former single `protocol.yml` into a
+  [`packages/protocol/spec/`](https://github.com/microsoft/playwright/tree/main/packages/protocol/spec)
+  directory (~19 files: `frame.yml`, `page.yml`, `browserContext.yml`,
+  `core.yml`, ...), so a driver-bump review means diffing the directory
+  across both tags, not one file.
