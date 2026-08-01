@@ -40,3 +40,10 @@ updates:
       time: "04:00"
       timezone: "America/New_York"
     open-pull-requests-limit: 10
+    # Only `default-days` here: Dependabot's schema rejects the per-semver keys
+    # for github-actions (actions are not semver-versioned the way crates are),
+    # and one unsupported key invalidates the whole file, including the cargo
+    # block above. Value is a plain wait for a tag to prove itself, since the
+    # cargo-vet lag argument does not apply to actions.
+    cooldown:
+      default-days: 7
