@@ -180,9 +180,11 @@ keeps the loop fast enough to use while the test is still warm.
 CI runs the per-diff variant on every push and PR
 (`mutation-testing-diff` in [`security.yml`](.github/workflows/security.yml)).
 The full-codebase job (`mutation-testing`) runs on the weekly
-Saturday cron, on release tag pushes, and on demand via
-`workflow_dispatch` — kept on a cadence so test-quality drift across
-files outside the recent diff still gets caught.
+Saturday cron and on demand via `workflow_dispatch` — kept on a cadence
+so test-quality drift across files outside the recent diff still gets
+caught. Release tags are **not** a trigger: `security.yml` filters
+`on.push` to branches, which excludes tag pushes entirely. Dispatch a
+run manually if you want full coverage before cutting a release.
 
 Scope is set by [`.cargo/mutants.toml`](.cargo/mutants.toml)
 (`examine_globs` lists the files that get mutated at all; `exclude_re`

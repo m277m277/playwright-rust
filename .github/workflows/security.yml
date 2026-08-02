@@ -59,32 +59,20 @@ jobs:
     - name: Run cargo vet
       run: cargo vet
 
-  semver-checks:
-    name: Semver Compatibility
-    runs-on: ubuntu-latest
-    # Only check on release tags — compares against last published version
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    steps:
-    - uses: actions/checkout@v7
-
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-
-    - name: Install cargo-semver-checks
-      run: cargo install cargo-semver-checks
-
-    - name: Check semver compatibility
-      run: cargo semver-checks check-release
+  # Semver compatibility is checked in release.yml, where it can gate the
+  # publish. This workflow never triggers on tag pushes, so a tag-gated job
+  # here would silently never run.
 
   mutation-testing:
     name: Mutation Testing (full)
     runs-on: ubuntu-latest
     # Full-codebase run is too slow for every push; per-PR coverage is
-    # handled by mutation-testing-diff.
+    # handled by mutation-testing-diff. This workflow does not trigger on
+    # tag pushes (`on.push` filters to branches), so release tags are not
+    # a trigger here — dispatch manually if a run is wanted before a tag.
     if: >
       github.event_name == 'schedule' ||
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
+      github.event_name == 'workflow_dispatch'
 
     # mutants runs lib + serialization tests only (no browser) so skip the
     # 42 MB driver download, and re-enable incremental (off globally) since
