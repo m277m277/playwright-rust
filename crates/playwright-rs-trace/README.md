@@ -5,17 +5,20 @@ Programmatic parser for [Playwright][pw] trace zip files (trace format v8).
 The Playwright JS ecosystem ships a trace-viewer UI but no documented
 parsing API. This crate fills that gap for Rust:
 
-```rust,ignore
-use playwright_rs_trace::{open, TraceEvent};
+```no_run
+use playwright_rs_trace::{TraceError, open};
 
-let mut reader = open("trace.zip")?;
-println!("trace v{} from {}", reader.context().version, reader.context().browser_name);
+fn main() -> Result<(), TraceError> {
+    let mut reader = open("trace.zip")?;
+    println!("trace v{} from {}", reader.context().version, reader.context().browser_name);
 
-for action in reader.actions() {
-    let action = action?;
-    if action.error.is_some() {
-        eprintln!("failed: {}.{} ({:?})", action.class, action.method, action.error);
+    for action in reader.actions()? {
+        let action = action?;
+        if action.error.is_some() {
+            eprintln!("failed: {}.{} ({:?})", action.class, action.method, action.error);
+        }
     }
+    Ok(())
 }
 ```
 

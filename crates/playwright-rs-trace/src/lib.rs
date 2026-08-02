@@ -20,8 +20,8 @@
 //!
 //! # Quick example
 //!
-//! ```rust,ignore
-//! use playwright_rs_trace::{open, TraceEvent};
+//! ```no_run
+//! use playwright_rs_trace::open;
 //!
 //! let mut reader = open("trace.zip")?;
 //! println!(
@@ -96,3 +96,12 @@ pub use network::{
     HeaderEntry, NetworkEntry, RequestPostData, RequestSnapshot, ResponseContent, ResponseSnapshot,
 };
 pub use trace::{TraceReader, open};
+
+// crates.io renders README.md, so its example is the first code a prospective
+// user copies — and it was marked `ignore`, which rustdoc never compiles. It
+// had rotted: `actions()` returns a `Result`, and the `?` was missing. Pull the
+// file into the doctest harness so `cargo test --doc` compiles it like any
+// other example.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct ReadmeDoctests;

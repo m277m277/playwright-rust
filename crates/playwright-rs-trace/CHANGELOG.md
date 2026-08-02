@@ -9,6 +9,15 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+### Fixed
+
+- **The README quick-start example did not compile.** `TraceReader::actions()`
+  returns a `Result`, and the example iterated it directly without `?`. Since
+  the README is what crates.io renders, this was the first code a prospective
+  user would copy. Both it and the crate-level example are now compiled by
+  `cargo test --doc` (they were marked ` ```ignore `, which rustdoc never
+  compiles), so neither can rot again.
+
 ## [0.1.1] - 2026-07-24
 
 ### Changed
