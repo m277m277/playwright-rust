@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.1] - 2026-08-02
+
 ### Fixed
 
 - **A failed assertion against a pre-1.61 Playwright server no longer returns `Ok(())`.** Servers from 1.61 onward report a mismatch as a protocol error and apply `isNot` themselves; `<= 1.60` servers instead answer with a `{ matches: false }` *result* and leave negation to the client. The result body was discarded, so against such a server every `expect(...)` assertion passed regardless of the DOM — silently green, the worst failure mode a test library has. The verdict is now read and a mismatch raises `AssertionFailed`. Only reachable through `BrowserType::connect` to a version-mismatched remote, since `connect` opens a raw WebSocket with no version negotiation; the bundled driver was never affected. The error carries no `received`/`expected` detail because old servers do not send any — connect to a version-matched server for a fuller diagnostic.
@@ -769,7 +771,11 @@ Public-API type-consistency sweep — within the crate, the same conceptual quan
   - Playwright returns null for data URLs and `about:blank` (valid behavior, not an error)
   - Migration: `page.goto("https://example.com").await?.expect("response")` or use `if let Some(response) = page.goto(...).await? { ... }`
 
-[Unreleased]: https://github.com/padamson/playwright-rust/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/padamson/playwright-rust/compare/v0.15.1...HEAD
+[0.15.1]: https://github.com/padamson/playwright-rust/compare/v0.15.0...v0.15.1
+[0.15.0]: https://github.com/padamson/playwright-rust/compare/v0.14.1...v0.15.0
+[0.14.1]: https://github.com/padamson/playwright-rust/compare/v0.14.0...v0.14.1
+[0.14.0]: https://github.com/padamson/playwright-rust/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/padamson/playwright-rust/compare/v0.12.3...v0.13.0
 [0.12.3]: https://github.com/padamson/playwright-rust/compare/v0.12.2...v0.12.3
 [0.12.2]: https://github.com/padamson/playwright-rust/compare/v0.12.1...v0.12.2

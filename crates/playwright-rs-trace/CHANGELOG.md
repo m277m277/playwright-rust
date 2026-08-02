@@ -9,6 +9,8 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-08-02
+
 ### Fixed
 
 - **The README quick-start example did not compile.** `TraceReader::actions()`
@@ -72,5 +74,7 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   the deterministic test fixture under `tests/fixtures/`. New
   `.cargo/config.toml` aliases `cargo xtask`.
 
-[Unreleased]: https://github.com/padamson/playwright-rust/compare/trace-v0.1.0...HEAD
+[Unreleased]: https://github.com/padamson/playwright-rust/compare/trace-v0.1.2...HEAD
+[0.1.2]: https://github.com/padamson/playwright-rust/compare/trace-v0.1.1...trace-v0.1.2
+[0.1.1]: https://github.com/padamson/playwright-rust/compare/trace-v0.1.0...trace-v0.1.1
 [0.1.0]: https://github.com/padamson/playwright-rust/releases/tag/trace-v0.1.0

@@ -10,6 +10,8 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-08-02
+
 ### Changed
 
 - **`syn` bumped to 3.0.** Build-time only: `syn` does not appear in this
@@ -38,5 +40,6 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
   Closes [#81](https://github.com/padamson/playwright-rust/issues/81).
 
-[Unreleased]: https://github.com/padamson/playwright-rust/compare/macros-v0.1.0...HEAD
+[Unreleased]: https://github.com/padamson/playwright-rust/compare/macros-v0.1.1...HEAD
+[0.1.1]: https://github.com/padamson/playwright-rust/compare/macros-v0.1.0...macros-v0.1.1
 [0.1.0]: https://github.com/padamson/playwright-rust/releases/tag/macros-v0.1.0
