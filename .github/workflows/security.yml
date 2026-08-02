@@ -202,18 +202,23 @@ jobs:
         tool: cargo-mutants
 
     # PR: merge base against target branch.
-    # Push: parent of HEAD (`before` SHA); first push to a branch has
-    # before = 000...0, in which case fall back to HEAD~1.
+    # Push: parent of HEAD (`before` SHA), when git can actually reach it.
+    # Two cases where it can't, both of which must fall back to HEAD~1
+    # rather than fail the job: the first push to a branch reports
+    # before = 000...0, and a force-push reports the commit it just
+    # replaced, which no longer exists on the remote (so `fetch-depth: 0`
+    # does not bring it in either). Probing reachability covers both.
     - name: Compute diff base
       id: base
       shell: bash
       run: |
         if [ "${{ github.event_name }}" = "pull_request" ]; then
           echo "ref=origin/${{ github.base_ref }}" >> $GITHUB_OUTPUT
-        elif [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
-          echo "ref=HEAD~1" >> $GITHUB_OUTPUT
-        else
+        elif git cat-file -e "${{ github.event.before }}^{commit}" 2>/dev/null; then
           echo "ref=${{ github.event.before }}" >> $GITHUB_OUTPUT
+        else
+          echo "unreachable base ${{ github.event.before }}; mutating HEAD alone"
+          echo "ref=HEAD~1" >> $GITHUB_OUTPUT
         fi
 
     - name: Run mutation testing on diff
