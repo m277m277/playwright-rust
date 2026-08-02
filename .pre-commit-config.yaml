@@ -100,6 +100,17 @@ repos:
         pass_filenames: false
         files: (crates/playwright/build\.rs|crates/playwright/src/lib\.rs|crates/playwright/examples/connect_over_cdp\.rs|\.github/workflows/(test|release|pages)\.yml|crates/xtask/src/)
 
+      # 5c. Verify each per-crate CHANGELOG's reference-link footer still
+      # agrees with its version headings. Hand-maintained at release time,
+      # and it had silently drifted across three releases before this.
+      - id: verify-changelog-links
+        name: cargo xtask verify-changelog-links
+        description: Check CHANGELOG compare-link footers against their version headings
+        entry: cargo xtask verify-changelog-links
+        language: system
+        pass_filenames: false
+        files: (crates/(playwright|playwright-rs-macros|playwright-rs-trace)/CHANGELOG\.md|crates/xtask/src/)
+
       # 6. Security audit (same as CI: cargo audit)
       - id: cargo-audit
         name: cargo audit

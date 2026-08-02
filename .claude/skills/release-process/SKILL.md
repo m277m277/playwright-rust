@@ -62,7 +62,12 @@ table above; the workflow is otherwise identical.
 6. **Update the relevant CHANGELOG** (`crates/<crate>/CHANGELOG.md`):
    - Rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD`
    - Add a fresh empty `## [Unreleased]` heading above
-   - Update any compare-link footer if present
+   - Update the compare-link footer: add `[X.Y.Z]: <compare/prevtag...thistag>`
+     and repoint `[Unreleased]` at the new tag. This step was skipped on
+     three consecutive releases, leaving those headings rendering as
+     literal `[0.14.0]` text, so it is now enforced by
+     `cargo xtask verify-changelog-links` (pre-commit; run it directly if
+     you want to check before committing).
 7. **Sync README.md to the release** — applies to `playwright-rs` only.
    The repo's `README.md` describes the **latest published release**, not
    `main`'s in-progress state. A pointer line under the **Status:** header

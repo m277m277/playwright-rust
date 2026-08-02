@@ -29,7 +29,8 @@ crates/playwright/      single crate (consolidated from playwright-core in v0.7)
   build.rs              assembles the pinned driver (npm + Node, ADR 0006)
 crates/playwright-rs-macros/  locator!() proc macro (published separately)
 crates/playwright-rs-trace/   trace-zip parser (published separately)
-crates/xtask/           repo tasks (verify-driver-version, site snippets); publish = false
+crates/xtask/           repo tasks (verify-driver-version, verify-changelog-links,
+                        site snippets); publish = false
 crates/site/            playwright-rust.dev landing page (Leptos/WASM, built by Trunk)
 crates/site-e2e/        dogfoods the bindings against that site; also the deploy gate
 supply-chain/           cargo-vet audit config (see skill)

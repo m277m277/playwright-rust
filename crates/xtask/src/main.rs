@@ -18,6 +18,9 @@
 //!   the bundled Playwright version (rustdoc/example install hints,
 //!   workflow cache keys) matches `PLAYWRIGHT_VERSION` in
 //!   `crates/playwright/build.rs`. The README is excluded on purpose.
+//! - `verify-changelog-links` — checks that each per-crate CHANGELOG's
+//!   reference-link footer matches its version headings, so a release
+//!   can't leave `[X.Y.Z]` rendering as literal text.
 
 use anyhow::{Context as _, Result, bail};
 use axum::Router;
@@ -56,6 +59,13 @@ enum Cmd {
     /// `crates/playwright/build.rs`. The README is intentionally excluded:
     /// it tracks the latest crates.io release, not the in-tree version.
     VerifyDriverVersion,
+    /// Verify that every per-crate CHANGELOG's reference-link footer
+    /// agrees with its version headings: every `## [X.Y.Z]` has a
+    /// matching `[X.Y.Z]:` definition, the compare links chain to the
+    /// preceding release, and `[Unreleased]` compares from the latest
+    /// one. These footers are maintained by hand at release time and
+    /// had drifted silently across three releases.
+    VerifyChangelogLinks,
 }
 
 #[tokio::main]
@@ -65,6 +75,7 @@ async fn main() -> Result<()> {
         Cmd::VerifyAgentDocs => verify_agent_docs(),
         Cmd::VerifySiteSnippets => verify_site_snippets(),
         Cmd::VerifyDriverVersion => verify_driver_version(),
+        Cmd::VerifyChangelogLinks => verify_changelog_links(),
     }
 }
 
@@ -506,6 +517,157 @@ fn verify_driver_version() -> Result<()> {
     Ok(())
 }
 
+const REPO_URL: &str = "https://github.com/padamson/playwright-rust";
+
+/// Each publishable crate's CHANGELOG and the git tag prefix its
+/// releases carry. The top-level `CHANGELOG.md` is an index, not a
+/// changelog, so it is deliberately absent.
+const CHANGELOGS: &[(&str, &str)] = &[
+    ("crates/playwright/CHANGELOG.md", "v"),
+    ("crates/playwright-rs-macros/CHANGELOG.md", "macros-v"),
+    ("crates/playwright-rs-trace/CHANGELOG.md", "trace-v"),
+];
+
+/// Version headings (`## [X]`) in document order — newest first, with
+/// `Unreleased` at the front.
+fn changelog_headings(content: &str) -> Vec<String> {
+    content
+        .lines()
+        .filter_map(|line| {
+            let rest = line.strip_prefix("## [")?;
+            let end = rest.find(']')?;
+            Some(rest[..end].to_string())
+        })
+        .collect()
+}
+
+/// Reference-style link definitions (`[X]: url`) as `(label, url)`.
+/// Only column-zero lines count, which is what distinguishes a
+/// definition from a heading or an inline link.
+fn changelog_link_defs(content: &str) -> Vec<(String, String)> {
+    content
+        .lines()
+        .filter_map(|line| {
+            let rest = line.strip_prefix('[')?;
+            let end = rest.find("]: ")?;
+            Some((rest[..end].to_string(), rest[end + 3..].trim().to_string()))
+        })
+        .collect()
+}
+
+/// Cross-check one CHANGELOG's headings against its link footer,
+/// returning a human-readable problem per mismatch.
+///
+/// Four ways the footer can be wrong, all of which have actually
+/// happened here: a heading with no definition (renders as literal
+/// `[0.15.0]`), a definition with no heading, an `[Unreleased]` link
+/// still comparing from a superseded release, and a compare link that
+/// doesn't chain to the version below it.
+fn changelog_link_problems(content: &str, prefix: &str) -> Vec<String> {
+    let headings = changelog_headings(content);
+    let defs = changelog_link_defs(content);
+    let url_for = |label: &str| {
+        defs.iter()
+            .find(|(l, _)| l == label)
+            .map(|(_, u)| u.as_str())
+    };
+
+    let mut problems = Vec::new();
+
+    for heading in &headings {
+        if url_for(heading).is_none() {
+            problems.push(format!(
+                "`## [{heading}]` has no `[{heading}]:` link definition (renders as literal text)"
+            ));
+        }
+    }
+    for (label, _) in &defs {
+        if !headings.iter().any(|h| h == label) {
+            problems.push(format!(
+                "`[{label}]:` is defined but there is no `## [{label}]` heading"
+            ));
+        }
+    }
+
+    let mut mismatch = |label: &str, found: &str, want: String, why: &str| {
+        if found != want {
+            problems.push(format!(
+                "`[{label}]:` {why}\n       found: {found}\n    expected: {want}"
+            ));
+        }
+    };
+
+    let released: Vec<&String> = headings.iter().filter(|h| *h != "Unreleased").collect();
+
+    if let (Some(latest), Some(found)) = (released.first(), url_for("Unreleased")) {
+        mismatch(
+            "Unreleased",
+            found,
+            format!("{REPO_URL}/compare/{prefix}{latest}...HEAD"),
+            "should compare from the latest release",
+        );
+    }
+
+    // Each release compares against the one directly below it.
+    for pair in released.windows(2) {
+        let (newer, older) = (pair[0], pair[1]);
+        if let Some(found) = url_for(newer) {
+            mismatch(
+                newer,
+                found,
+                format!("{REPO_URL}/compare/{prefix}{older}...{prefix}{newer}"),
+                &format!("should compare against {older}"),
+            );
+        }
+    }
+
+    // The oldest release has nothing to compare against, so it points at
+    // its own tag instead.
+    if let Some(oldest) = released.last()
+        && let Some(found) = url_for(oldest)
+    {
+        mismatch(
+            oldest,
+            found,
+            format!("{REPO_URL}/releases/tag/{prefix}{oldest}"),
+            "is the oldest release, so it should point at its release tag",
+        );
+    }
+
+    problems
+}
+
+fn verify_changelog_links() -> Result<()> {
+    let root = workspace_root();
+    let mut failures = Vec::new();
+    let mut checked = 0usize;
+
+    for (rel, prefix) in CHANGELOGS {
+        let content =
+            std::fs::read_to_string(root.join(rel)).with_context(|| format!("read {rel}"))?;
+        checked += changelog_headings(&content).len();
+        for problem in changelog_link_problems(&content, prefix) {
+            failures.push(format!("  {rel}: {problem}"));
+        }
+    }
+
+    if !failures.is_empty() {
+        bail!(
+            "verify-changelog-links: {} problem(s):\n{}\n\n\
+             These footers are hand-maintained at release time — see the \
+             release-process skill, step 6.",
+            failures.len(),
+            failures.join("\n"),
+        );
+    }
+
+    println!(
+        "verify-changelog-links: {checked} heading(s) across {} CHANGELOGs have matching, correctly-chained links",
+        CHANGELOGS.len()
+    );
+    Ok(())
+}
+
 /// Resolve the workspace root by walking up from the xtask binary's
 /// `CARGO_MANIFEST_DIR` (which Cargo sets at compile time for the
 /// xtask crate to `crates/xtask`).
@@ -552,5 +714,119 @@ mod driver_version_tests {
             3,
             "expected MAJOR.MINOR.PATCH, got {v}"
         );
+    }
+}
+
+#[cfg(test)]
+mod changelog_link_tests {
+    use super::*;
+
+    const GOOD: &str = "\
+# Changelog
+
+## [Unreleased]
+
+## [0.2.0] - 2026-08-02
+
+## [0.1.1] - 2026-07-01
+
+## [0.1.0] - 2026-05-23
+
+[Unreleased]: https://github.com/padamson/playwright-rust/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/padamson/playwright-rust/compare/v0.1.1...v0.2.0
+[0.1.1]: https://github.com/padamson/playwright-rust/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/padamson/playwright-rust/releases/tag/v0.1.0
+";
+
+    #[test]
+    fn a_correct_footer_reports_nothing() {
+        assert!(changelog_link_problems(GOOD, "v").is_empty());
+    }
+
+    #[test]
+    fn headings_and_defs_are_parsed_separately() {
+        assert_eq!(
+            changelog_headings(GOOD),
+            ["Unreleased", "0.2.0", "0.1.1", "0.1.0"]
+        );
+        let labels: Vec<String> = changelog_link_defs(GOOD)
+            .into_iter()
+            .map(|(l, _)| l)
+            .collect();
+        assert_eq!(labels, ["Unreleased", "0.2.0", "0.1.1", "0.1.0"]);
+    }
+
+    #[test]
+    fn a_heading_with_no_link_definition_is_caught() {
+        // The actual rot: three releases landed headings without ever
+        // adding the matching definition.
+        let broken = GOOD.replace(
+            "[0.2.0]: https://github.com/padamson/playwright-rust/compare/v0.1.1...v0.2.0\n",
+            "",
+        );
+        let problems = changelog_link_problems(&broken, "v");
+        assert!(
+            problems.iter().any(|p| p.contains("`## [0.2.0]` has no")),
+            "{problems:?}"
+        );
+    }
+
+    #[test]
+    fn a_stale_unreleased_base_is_caught() {
+        // What the main CHANGELOG looked like: still comparing from a
+        // release three versions behind.
+        let broken = GOOD.replace("compare/v0.2.0...HEAD", "compare/v0.1.0...HEAD");
+        let problems = changelog_link_problems(&broken, "v");
+        assert!(
+            problems
+                .iter()
+                .any(|p| p.contains("`[Unreleased]:`") && p.contains("latest release")),
+            "{problems:?}"
+        );
+    }
+
+    #[test]
+    fn a_compare_link_that_skips_a_version_is_caught() {
+        let broken = GOOD.replace("compare/v0.1.1...v0.2.0", "compare/v0.1.0...v0.2.0");
+        let problems = changelog_link_problems(&broken, "v");
+        assert!(
+            problems
+                .iter()
+                .any(|p| p.contains("should compare against 0.1.1")),
+            "{problems:?}"
+        );
+    }
+
+    #[test]
+    fn an_orphan_definition_is_caught() {
+        let broken = format!("{GOOD}[9.9.9]: https://example.com/nope\n");
+        let problems = changelog_link_problems(&broken, "v");
+        assert!(
+            problems
+                .iter()
+                .any(|p| p.contains("no `## [9.9.9]` heading")),
+            "{problems:?}"
+        );
+    }
+
+    #[test]
+    fn the_tag_prefix_is_honored_per_crate() {
+        // A macros/trace footer using the bare `v` prefix must fail.
+        let problems = changelog_link_problems(GOOD, "trace-v");
+        assert!(!problems.is_empty());
+        assert!(
+            problems.iter().any(|p| p.contains("trace-v0.2.0")),
+            "{problems:?}"
+        );
+    }
+
+    #[test]
+    fn the_real_changelogs_are_consistent() {
+        let root = workspace_root();
+        for (rel, prefix) in CHANGELOGS {
+            let content = std::fs::read_to_string(root.join(rel)).unwrap();
+            let problems = changelog_link_problems(&content, prefix);
+            assert!(problems.is_empty(), "{rel}:\n{}", problems.join("\n"));
+        }
     }
 }
