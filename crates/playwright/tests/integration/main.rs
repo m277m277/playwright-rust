@@ -16,6 +16,7 @@ mod assertions;
 mod back_references;
 mod browser;
 mod browser_context;
+mod browser_orphans;
 mod cdp_tracing;
 mod checkbox;
 #[cfg(feature = "cli")]

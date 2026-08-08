@@ -137,6 +137,41 @@ impl PlaywrightServer {
         Ok(Self { process: child })
     }
 
+    /// How long to let the driver close its browsers before force-killing it.
+    ///
+    /// Teardown of a headed Chromium measures around 200ms; the bound is
+    /// generous so a loaded machine still gets a clean exit, and it is only
+    /// paid in full when the driver is genuinely wedged.
+    pub const EXIT_GRACE: std::time::Duration = std::time::Duration::from_secs(5);
+
+    /// Wait for the driver to exit on its own, force-killing it if it doesn't.
+    ///
+    /// Blocking, so it can run from `Drop`. Call **after** closing the
+    /// transport writer — that is what tells the driver to shut down; this
+    /// only gives it the time to finish. Force-killing a driver that still
+    /// owns browsers leaks them (see [`crate::protocol::Playwright`]'s `Drop`).
+    ///
+    /// Returns `true` if the driver exited by itself.
+    pub fn wait_for_exit_blocking(&mut self, grace: std::time::Duration) -> bool {
+        let deadline = std::time::Instant::now() + grace;
+        loop {
+            match self.process.try_wait() {
+                // Already exited, or already reaped by the runtime.
+                Ok(Some(_)) | Err(_) => return true,
+                Ok(None) if std::time::Instant::now() >= deadline => break,
+                Ok(None) => std::thread::sleep(std::time::Duration::from_millis(25)),
+            }
+        }
+
+        tracing::warn!(
+            "Playwright driver did not exit within {:?}; force-killing it. \
+             Browsers it owns may survive as orphans.",
+            grace
+        );
+        let _ = self.process.start_kill();
+        false
+    }
+
     /// Shut down the server gracefully
     ///
     /// Sends a shutdown signal to the server and waits for it to exit.
@@ -162,42 +197,50 @@ impl PlaywrightServer {
             drop(self.process.stdout.take());
             drop(self.process.stderr.take());
 
-            // Kill the process
-            self.process
-                .kill()
-                .await
-                .map_err(|e| Error::LaunchFailed(format!("Failed to kill process: {}", e)))?;
-
-            // Wait for process to exit with timeout (Windows can hang without this)
-            match tokio::time::timeout(std::time::Duration::from_secs(5), self.process.wait()).await
-            {
+            // The caller has closed the transport writer, so the driver is
+            // already tearing its browsers down. Wait it out rather than
+            // killing it — a killed driver leaves its browsers running.
+            match tokio::time::timeout(Self::EXIT_GRACE, self.process.wait()).await {
                 Ok(Ok(_)) => Ok(()),
                 Ok(Err(e)) => Err(Error::LaunchFailed(format!(
                     "Failed to wait for process: {}",
                     e
                 ))),
                 Err(_) => {
-                    // Timeout - try one more kill
+                    tracing::warn!(
+                        "Playwright driver did not exit within {:?}; force-killing it. \
+                         Browsers it owns may survive as orphans.",
+                        Self::EXIT_GRACE
+                    );
                     let _ = self.process.start_kill();
-                    Err(Error::LaunchFailed(
-                        "Process shutdown timeout after 5 seconds".to_string(),
-                    ))
+                    Err(Error::LaunchFailed(format!(
+                        "Driver shutdown timed out after {:?}",
+                        Self::EXIT_GRACE
+                    )))
                 }
             }
         }
 
         #[cfg(not(windows))]
         {
-            // Unix: Standard graceful shutdown
-            self.process
-                .kill()
-                .await
-                .map_err(|e| Error::LaunchFailed(format!("Failed to kill process: {}", e)))?;
-
-            // Wait for process to exit
-            let _ = self.process.wait().await;
-
-            Ok(())
+            // The caller has closed the transport writer, so the driver is
+            // already tearing its browsers down. Wait it out rather than
+            // killing it — a killed driver leaves its browsers running.
+            match tokio::time::timeout(Self::EXIT_GRACE, self.process.wait()).await {
+                Ok(_) => Ok(()),
+                Err(_) => {
+                    tracing::warn!(
+                        "Playwright driver did not exit within {:?}; force-killing it. \
+                         Browsers it owns may survive as orphans.",
+                        Self::EXIT_GRACE
+                    );
+                    let _ = self.process.start_kill();
+                    Err(Error::LaunchFailed(format!(
+                        "Driver shutdown timed out after {:?}",
+                        Self::EXIT_GRACE
+                    )))
+                }
+            }
         }
     }
 

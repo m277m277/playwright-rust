@@ -61,6 +61,17 @@ pub trait ConnectionLike: Send + Sync {
     /// engine registrations and the test ID attribute, propagating them to
     /// all BrowserContext instances.
     fn selectors(&self) -> Arc<Selectors>;
+
+    /// Close the transport writer, signalling EOF on the driver's stdin.
+    ///
+    /// This is the driver's sanctioned shutdown: `run-driver` wires
+    /// `transport.onclose` to `gracefullyProcessExitDoNotHang`, which closes
+    /// every browser it owns before exiting. Sending the driver a signal is
+    /// not a substitute — see [`Playwright::drop`](crate::protocol::Playwright).
+    ///
+    /// Synchronous so it can run from `Drop`. Returns `false` if the writer
+    /// was already closed, or if a send is in flight and holds the lock.
+    fn close_writer(&self) -> bool;
 }
 
 /// Extension trait for typed object retrieval from a connection.
@@ -270,7 +281,7 @@ pub struct Connection {
     /// Transport writer. A tokio (async-aware) mutex on purpose: the guard is
     /// held across the `send().await`, which is what serializes whole-message
     /// writes onto the single pipe/socket.
-    sender: Arc<TokioMutex<Box<dyn TransportSender>>>,
+    sender: Arc<TokioMutex<Option<Box<dyn TransportSender>>>>,
     message_rx: Arc<TokioMutex<Option<mpsc::Receiver<Value>>>>,
     transport_receiver: Arc<TokioMutex<Option<Box<dyn TransportReceiver>>>>,
     objects: Arc<ParkingLotMutex<ObjectRegistry>>,
@@ -304,7 +315,7 @@ impl Connection {
         Self {
             last_id: AtomicU32::new(0),
             callbacks: Arc::new(ParkingLotMutex::new(HashMap::new())),
-            sender: Arc::new(TokioMutex::new(Box::new(sender))),
+            sender: Arc::new(TokioMutex::new(Some(Box::new(sender)))),
             message_rx: Arc::new(TokioMutex::new(Some(message_rx))),
             transport_receiver: Arc::new(TokioMutex::new(Some(Box::new(receiver)))),
             objects: Arc::new(ParkingLotMutex::new(HashMap::new())),
@@ -365,11 +376,15 @@ impl Connection {
         let request_value = serde_json::to_value(&request)?;
         tracing::trace!("Request JSON: {}", request_value);
 
-        match self.sender.lock().await.send(request_value).await {
-            Ok(()) => tracing::trace!("Message sent successfully, awaiting response"),
-            Err(e) => {
-                tracing::error!("Failed to send message: {:?}", e);
-                return Err(e);
+        {
+            let mut guard = self.sender.lock().await;
+            let writer = guard.as_mut().ok_or(Error::ChannelClosed)?;
+            match writer.send(request_value).await {
+                Ok(()) => tracing::trace!("Message sent successfully, awaiting response"),
+                Err(e) => {
+                    tracing::error!("Failed to send message: {:?}", e);
+                    return Err(e);
+                }
             }
         }
 
@@ -706,6 +721,13 @@ impl ConnectionLike for Connection {
 
     fn selectors(&self) -> Arc<Selectors> {
         Arc::clone(&self.selectors)
+    }
+
+    fn close_writer(&self) -> bool {
+        match self.sender.try_lock() {
+            Ok(mut guard) => guard.take().is_some(),
+            Err(_) => false,
+        }
     }
 }
 

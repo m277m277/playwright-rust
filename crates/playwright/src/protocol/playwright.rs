@@ -369,6 +369,9 @@ impl Playwright {
         let server = self.server.lock().take();
         if let Some(server) = server {
             tracing::debug!("Shutting down Playwright server");
+            // Closing the writer is what asks the driver to shut down; the
+            // wait inside `server.shutdown()` is only useful once it's closed.
+            self.connection().close_writer();
             server.shutdown().await?;
         }
         Ok(())
@@ -430,43 +433,43 @@ impl ChannelOwner for Playwright {
 }
 
 impl Drop for Playwright {
-    /// Ensures Playwright server is shut down when Playwright is dropped.
+    /// Shuts the driver down when `Playwright` is dropped, including on the
+    /// unwind path of a panicking test.
     ///
-    /// On Unix, the driver's `cli/driver.js` listens for stdin close as a
-    /// graceful-exit signal — closing the pipe lets it tear down browsers
-    /// cleanly instead of leaving them as orphans. We drop stdin first,
-    /// then `start_kill` as a SIGKILL fallback (still issued
-    /// synchronously because we don't want to block the Drop).
+    /// The driver owns the browser processes, and the only shutdown it
+    /// honours is EOF on its stdin: `run-driver` wires `transport.onclose`
+    /// to `gracefullyProcessExitDoNotHang`, which closes every browser
+    /// before exiting. So we close the transport writer and then wait.
     ///
-    /// On Windows, tokio's blocking stdio threadpool requires we drop
-    /// the pipes before killing or the cleanup hangs.
+    /// Signals are not a substitute. `run-driver` installs a no-op `SIGINT`
+    /// handler, and `SIGTERM` reaches the browsers only through node's exit
+    /// handler, which SIGKILLs them — truncating in-flight traces, videos
+    /// and HARs. `SIGKILL` doesn't reach them at all: headed Chrome does not
+    /// exit when its parent dies, so it is reparented to init and leaks.
+    ///
+    /// This blocks for up to [`PlaywrightServer::EXIT_GRACE`]. That is the
+    /// price of doing the cleanup on the drop path at all — `Drop` cannot
+    /// await, and a non-blocking `Drop` is what leaked browsers before.
+    /// Prefer `playwright.shutdown().await`, which does the same work
+    /// without blocking a runtime thread.
     ///
     /// Also restores any termios snapshot we took at launch time
     /// (defends against subprocesses that left the tty in raw mode —
     /// issue #59).
-    ///
-    /// For fully graceful shutdown, prefer calling
-    /// `playwright.shutdown().await` explicitly before dropping.
     fn drop(&mut self) {
         if let Some(mut server) = self.server.lock().take() {
             tracing::debug!("Drop: shutting down Playwright server");
 
-            // Close stdin first — driver.js's `process.stdin.on("close",
-            // gracefullyProcessExitDoNotHang)` triggers cleanup of
-            // browser children. On Windows we drop all stdio handles to
-            // avoid the blocking-threadpool hang.
-            drop(server.process.stdin.take());
+            self.connection().close_writer();
             #[cfg(windows)]
             {
+                // tokio's blocking stdio threadpool hangs the cleanup if
+                // these outlive the process.
                 drop(server.process.stdout.take());
                 drop(server.process.stderr.take());
             }
 
-            // SIGKILL fallback — non-blocking. If the driver was already
-            // exiting cleanly via stdin-close, this is a no-op.
-            if let Err(e) = server.process.start_kill() {
-                tracing::warn!("Failed to kill Playwright server in Drop: {}", e);
-            }
+            server.wait_for_exit_blocking(PlaywrightServer::EXIT_GRACE);
         }
 
         crate::tty_guard::restore();
