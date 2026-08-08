@@ -306,9 +306,26 @@ for a runnable end-to-end example. Open the resulting `trace.zip` at
 ## Using with Claude Code / AI agents
 
 If you're writing playwright-rs tests with Claude Code or another
-coding agent, two artifacts in this repo are designed to be copied
-into your downstream project so the agent has the right API model
-loaded:
+coding agent, this repo ships the API model in three forms so the
+agent isn't guessing from generic Playwright knowledge.
+
+The quickest is to install it as a Claude Code plugin, which tracks
+this repo and updates in place:
+
+```bash
+/plugin marketplace add padamson/playwright-rust
+/plugin install playwright-rs@playwright-rust
+```
+
+Third-party marketplaces don't refresh on their own, so pick up a later
+version with both commands, catalog first:
+
+```bash
+/plugin marketplace update playwright-rust
+/plugin update playwright-rs@playwright-rust
+```
+
+The other two are copied into your downstream project:
 
 - [**`docs/agent/CLAUDE_SNIPPET.md`**](docs/agent/CLAUDE_SNIPPET.md) —
   a ~50-line section to paste into your project's `CLAUDE.md`. Covers

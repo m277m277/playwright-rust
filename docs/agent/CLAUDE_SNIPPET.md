@@ -10,8 +10,15 @@ Source of truth for the API itself stays on
 "what to reach for, what to avoid" overlay.
 
 For a richer, auto-discovered version of the same guidance, see the
-companion [`playwright-rs-usage` skill](../../.claude/skills/playwright-rs-usage/).
-Either approach works; pick whichever fits your repo's convention.
+companion [`playwright-rs-usage` skill](../../.claude/skills/playwright-rs-usage/),
+which Claude Code can also install directly:
+
+```bash
+/plugin marketplace add padamson/playwright-rust
+/plugin install playwright-rs@playwright-rust
+```
+
+Any of the three works; pick whichever fits your repo's convention.
 
 The snippet intentionally avoids verbatim code so it can't silently
 drift from the crate API — the canonical, compile-checked examples

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The repo is now a Claude Code plugin marketplace.** `/plugin marketplace add padamson/playwright-rust` followed by `/plugin install playwright-rs@playwright-rust` installs the `playwright-rs-usage` skill, replacing the `cp -r` of `.claude/skills/playwright-rs-usage/` (which still works). Only that one skill is exposed; the contributor-facing skills stay in-repo. Updates are not automatic: run `/plugin marketplace update playwright-rust` before `/plugin update`, since the catalog clone is what goes stale.
+
 ### Fixed
 
 - **Dropping `Playwright` no longer orphans headed browsers.** `Drop` meant to close the driver's stdin (its graceful-shutdown signal) and then SIGKILL it as a fallback, but stdin had been handed to the transport at launch, so the take was always `None` and only the SIGKILL ever ran. A SIGKILLed driver never tears down its browsers, and headed Chrome does not exit when its parent dies — so a test that panicked or timed out before `browser.close()` left "Google Chrome for Testing" processes running until killed by hand (headless Chromium exits on its own, which is why the leak went unnoticed). `Drop` and `shutdown()` now close the transport writer — EOF on the driver's stdin triggers its browser-aware exit path, the same contract playwright-python and playwright-java rely on — and wait up to 5s for the driver to exit, force-killing only if it is genuinely wedged. `Drop` blocks for that teardown (~200ms in practice); prefer `playwright.shutdown().await` where you can await.

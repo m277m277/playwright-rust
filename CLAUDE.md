@@ -104,6 +104,18 @@ Just-in-time philosophy — write the right thing in the right file:
    `.claude/skills/`. Keep both in sync — the snippet is the
    short-form version of the skill.
 
+   The same skill is also installable as a Claude Code plugin:
+   [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json)
+   makes this repo a marketplace, and its explicit `skills` path
+   exposes `playwright-rs-usage` and nothing else, so the
+   contributor-facing skills alongside it stay in-repo. **Editing the
+   skill means bumping `version` in
+   [`.claude-plugin/plugin.json`](.claude-plugin/plugin.json)** — that
+   version is the update gate, and until it moves `/plugin update`
+   tells installed consumers they are already current. A pre-commit
+   hook (`scripts/check-plugin-version-bumped.sh`) enforces it.
+   Validate manifest changes with `claude plugin validate .`.
+
 ## Working on Features
 
 1. Always check Playwright's official API docs first (and
