@@ -14,6 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **URL glob matching now follows the driver's rules.** Both client-side matchers were hand-rolled and each diverged from Playwright differently, so a pattern could mean one thing to the server and another to us. They now share a port of the driver's `globToRegexPattern`.
+
+  `Page::route`, `BrowserContext::route` and `route_web_socket` matched with the `glob` crate, whose filesystem semantics are wrong for URLs: `?` matched any single character, `[...]` was a character class, and `{a,b}` alternation was unsupported entirely. A route registered as `**/*.{png,jpg}` matched nothing on the client while the server happily reported the request, so no handler ran, nothing called `continue_`/`fulfill`/`abort`, and the request hung until it timed out.
+
+  `Frame::wait_for_url` escaped `.` and let every other regex metacharacter through with its regex meaning. Query strings were the common casualty: `wait_for_url(".../search?q=*")` made the preceding `h` optional, so it never matched the URL it was written for while matching one that does not exist.
+
+  Newly supported as a result: `{a,b}` alternation, `\` to escape a literal `*`, and `/**/` matching zero directories (`a/**/b` now matches `a/b`). `?` is now literal in route patterns, matching Playwright; code relying on it as a single-character wildcard should use `*`. The `glob` dependency is dropped.
+
 - **Dropping `Playwright` no longer orphans headed browsers.** `Drop` meant to close the driver's stdin (its graceful-shutdown signal) and then SIGKILL it as a fallback, but stdin had been handed to the transport at launch, so the take was always `None` and only the SIGKILL ever ran. A SIGKILLed driver never tears down its browsers, and headed Chrome does not exit when its parent dies — so a test that panicked or timed out before `browser.close()` left "Google Chrome for Testing" processes running until killed by hand (headless Chromium exits on its own, which is why the leak went unnoticed). `Drop` and `shutdown()` now close the transport writer — EOF on the driver's stdin triggers its browser-aware exit path, the same contract playwright-python and playwright-java rely on — and wait up to 5s for the driver to exit, force-killing only if it is genuinely wedged. `Drop` blocks for that teardown (~200ms in practice); prefer `playwright.shutdown().await` where you can await.
 
 ## [0.15.1] - 2026-08-02

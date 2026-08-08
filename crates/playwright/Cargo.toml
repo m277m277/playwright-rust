@@ -43,7 +43,6 @@ parking_lot = "0.12"
 base64 = "0.22"
 bytes = "1.11.1"
 regex = "1.10"
-glob = "0.3"
 tokio-tungstenite = { version = "0.30" }
 futures-util = "0.3"
 url = "2.5"
@@ -67,6 +66,11 @@ tar = { version = "0.4", optional = true }
 libc = "0.2"
 
 [dev-dependencies]
+# Property-based testing: supplies its own inputs rather than only the ones
+# someone thought to write down, and shrinks a failure to a minimal
+# counterexample. Covers the space between the example tests, which mutation
+# testing cannot: it perturbs the code and reuses the existing inputs.
+proptest = "1"
 anyhow = { workspace = true }
 axum = { version = "0.8", features = ["ws"] }
 tower = "0.5"

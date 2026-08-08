@@ -734,10 +734,14 @@ impl Frame {
             .map(|d| d.as_millis() as u64)
             .unwrap_or(crate::DEFAULT_TIMEOUT_MS as u64);
 
-        // Convert glob pattern to regex for matching
-        // Playwright supports string (exact), glob (**), and regex patterns
-        // We support exact string and basic glob patterns
-        let is_glob = url.contains('*');
+        // Playwright supports string (exact), glob, and regex patterns; we
+        // support the first two. Compile the glob once rather than on every
+        // poll: a 30s wait polls ~600 times.
+        let matcher = if url.contains('*') {
+            Some(crate::protocol::glob::GlobMatcher::new(url))
+        } else {
+            None
+        };
 
         let poll_interval = std::time::Duration::from_millis(50);
         let start = std::time::Instant::now();
@@ -745,10 +749,10 @@ impl Frame {
         loop {
             let current_url = self.url();
 
-            let matches = if is_glob {
-                crate::protocol::glob::glob_match(url, &current_url)
-            } else {
-                current_url == url
+            let matches = match &matcher {
+                // A malformed glob matches nothing, as it does in the driver.
+                Some(matcher) => matcher.as_ref().is_some_and(|m| m.matches(&current_url)),
+                None => current_url == url,
             };
 
             if matches {

@@ -355,22 +355,22 @@ impl Route {
     }
 }
 
-/// Checks if a URL matches a glob pattern.
+/// Checks if a URL matches a Playwright URL glob.
 ///
-/// Supports standard glob patterns:
+/// Delegates to the shared port of the driver's globber, so the client picks
+/// the same handler the server picked when it decided to report the request.
+/// This previously used the `glob` crate, whose filesystem semantics differ
+/// in ways that matter for URLs: `?` matched any single character, `[…]` was
+/// a character class, and `{a,b}` alternation was unsupported. A pattern the
+/// server matched but the client did not left the route event unanswered and
+/// the request hanging until it timed out.
+///
 /// - `*` matches any characters except `/`
 /// - `**` matches any characters including `/`
-/// - `?` matches a single character
+/// - `{a,b}` is alternation; `\` escapes the next character
+/// - everything else, `?` included, is literal
 pub(crate) fn matches_pattern(pattern: &str, url: &str) -> bool {
-    use glob::Pattern;
-
-    match Pattern::new(pattern) {
-        Ok(glob_pattern) => glob_pattern.matches(url),
-        Err(_) => {
-            // If pattern is invalid, fall back to exact string match
-            pattern == url
-        }
-    }
+    crate::protocol::glob::glob_match(pattern, url)
 }
 
 /// Behavior when removing route handlers via `unroute_all()`.
