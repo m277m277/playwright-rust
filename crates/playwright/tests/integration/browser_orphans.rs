@@ -88,13 +88,20 @@ fn dropping_playwright_does_not_orphan_a_headed_browser() {
 
 /// Child half. Launches a headed browser and returns without closing it,
 /// standing in for a test that panics or times out before its cleanup runs.
+///
+/// Only meaningful when spawned by the parent, which passes the marker. CI
+/// also runs the whole ignored set directly (`--run-ignored ignored-only`);
+/// with no marker to tag the browser with, there is nothing to assert, so
+/// this returns rather than launching an unattributable browser.
 #[tokio::test]
 #[ignore = "spawned by dropping_playwright_does_not_orphan_a_headed_browser"]
 async fn child_leaves_a_headed_browser_running() {
     use playwright_rs::api::LaunchOptions;
     use playwright_rs::protocol::Playwright;
 
-    let marker = std::env::var(MARKER_ENV).expect("child needs the marker env var");
+    let Ok(marker) = std::env::var(MARKER_ENV) else {
+        return;
+    };
 
     let playwright = Playwright::launch().await.expect("launch Playwright");
     let browser = playwright
