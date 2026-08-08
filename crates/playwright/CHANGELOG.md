@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **The repo is now a Claude Code plugin marketplace.** `/plugin marketplace add padamson/playwright-rust` followed by `/plugin install playwright-rs@playwright-rust` installs the `playwright-rs-usage` skill, replacing the `cp -r` of `.claude/skills/playwright-rs-usage/` (which still works). Only that one skill is exposed; the contributor-facing skills stay in-repo. Updates are not automatic: run `/plugin marketplace update playwright-rust` before `/plugin update`, since the catalog clone is what goes stale.
+- **A root `LICENSE` file.** The workspace manifest has always declared `Apache-2.0`, but with no license file at the repo root GitHub's API reported no license, so downstream legal scans and package indexes read the project as unlicensed.
 
 ### Fixed
 
