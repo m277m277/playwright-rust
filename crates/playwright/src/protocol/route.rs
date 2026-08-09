@@ -228,7 +228,7 @@ impl Route {
     ///
     /// # Known Limitations
     ///
-    /// **Response body fulfillment is not supported in Playwright 1.49.0 - 1.61.1.**
+    /// **Response body fulfillment is not supported in Playwright 1.49.0 - 1.62.1.**
     ///
     /// The route.fulfill() method can successfully send requests for status codes and headers,
     /// but the response body is not transmitted to the browser JavaScript layer. This applies
@@ -241,8 +241,8 @@ impl Route {
     /// - But the body content does not reach the browser's fetch/network API
     ///
     /// This appears to be a limitation or bug in the Playwright server implementation.
-    /// Tested with versions 1.49.0, 1.56.1, 1.58.2, 1.59.1, 1.60.0, and 1.61.1
-    /// (the currently bundled driver). Re-verified against 1.61.1 by the
+    /// Tested with versions 1.49.0, 1.56.1, 1.58.2, 1.59.1, 1.60.0, 1.61.1, and
+    /// 1.62.1 (the currently bundled driver). Re-verified against 1.62.1 by the
     /// reverse-canary integration tests, which still pass — i.e. the limitation
     /// is unchanged. Those tests assert the broken behavior, so they fail the
     /// moment upstream fixes it; no manual re-check is needed.

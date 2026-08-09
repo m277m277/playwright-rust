@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Bundled Playwright driver is now 1.62.1** (was 1.61.1). Playwright dropped Debian 11 support in this release.
+
+  The wire contract moved with it: **1.62 removed `timeout` from every method's parameters and put it in the request metadata envelope** (`packages/protocol/spec/core.yml`). A 1.62 server ignores a `timeout` left in params, and with none in the envelope it waits indefinitely rather than falling back to a default, so any call with an explicit timeout hung instead of failing fast. The transport now relocates `timeout` into the metadata on the way out, matching how playwright-python handles the same change. Option structs are unaffected and still take `timeout`, since that is Playwright's public API in every binding.
+
+  Unchanged: `route.fulfill()` still does not transmit response bodies. The reverse-canary tests that assert this still pass against 1.62.1, so the documented affected range extends to 1.49.0-1.62.1.
+
 ### Added
 
 - **The repo is now a Claude Code plugin marketplace.** `/plugin marketplace add padamson/playwright-rust` followed by `/plugin install playwright-rs@playwright-rust` installs the `playwright-rs-usage` skill, replacing the `cp -r` of `.claude/skills/playwright-rs-usage/` (which still works). Only that one skill is exposed; the contributor-facing skills stay in-repo. Updates are not automatic: run `/plugin marketplace update playwright-rust` before `/plugin update`, since the catalog clone is what goes stale.

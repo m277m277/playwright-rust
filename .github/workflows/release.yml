@@ -63,7 +63,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ${{ github.workspace }}/.playwright-driver
-          key: ${{ runner.os }}-pw-driver-1.61.1-assembled
+          key: ${{ runner.os }}-pw-driver-1.62.1-assembled
 
       - name: Cache Playwright Browsers (Linux/macOS)
         if: runner.os != 'Windows'
@@ -72,18 +72,18 @@ jobs:
           path: |
             ~/.cache/ms-playwright
             ~/Library/Caches/ms-playwright
-          key: ${{ runner.os }}-playwright-browsers-1.61.1-v2
+          key: ${{ runner.os }}-playwright-browsers-1.62.1-v2
           restore-keys: |
-            ${{ runner.os }}-playwright-browsers-1.61.1-
+            ${{ runner.os }}-playwright-browsers-1.62.1-
 
       - name: Cache Playwright Browsers (Windows)
         if: runner.os == 'Windows'
         uses: actions/cache@v6
         with:
           path: ~\AppData\Local\ms-playwright
-          key: ${{ runner.os }}-playwright-browsers-1.61.1-v2
+          key: ${{ runner.os }}-playwright-browsers-1.62.1-v2
           restore-keys: |
-            ${{ runner.os }}-playwright-browsers-1.61.1-
+            ${{ runner.os }}-playwright-browsers-1.62.1-
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@v2.85.6

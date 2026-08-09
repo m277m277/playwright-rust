@@ -144,6 +144,17 @@ pub struct Metadata {
     pub location: Option<Location>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    /// Per-call action timeout, in milliseconds.
+    ///
+    /// Playwright 1.62 moved `timeout` out of every method's params and into
+    /// this envelope (`packages/protocol/spec/core.yml`). A server from 1.62
+    /// on ignores a `timeout` left in params, and with none here it waits
+    /// indefinitely rather than falling back to a default, so a call that
+    /// should fail fast hangs instead. [`Connection::send_message`] relocates
+    /// it; option structs still carry `timeout` because that is Playwright's
+    /// public API in every binding.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timeout: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -165,8 +176,24 @@ impl Metadata {
             internal: Some(false),
             location: None,
             title: None,
+            timeout: None,
         }
     }
+}
+
+/// Moves a `timeout` param into the metadata envelope, where the driver reads
+/// it from Playwright 1.62 on.
+///
+/// Returns the timeout if there was one, having removed it from `params`.
+/// Matches playwright-python, which does the same `params.pop("timeout")` in
+/// its connection layer rather than threading a timeout through every call
+/// signature. No 1.62 method declares a `timeout` param any more, so nothing
+/// else can be caught by the key.
+fn take_timeout(params: &mut Value) -> Option<f64> {
+    params
+        .as_object_mut()
+        .and_then(|obj| obj.remove("timeout"))
+        .and_then(|v| v.as_f64())
 }
 
 /// Protocol request message sent to Playwright server
@@ -356,7 +383,12 @@ impl Connection {
         skip_all,
         fields(guid = %guid, method = %method, id = tracing::field::Empty)
     )]
-    pub async fn send_message(&self, guid: String, method: String, params: Value) -> Result<Value> {
+    pub async fn send_message(
+        &self,
+        guid: String,
+        method: String,
+        mut params: Value,
+    ) -> Result<Value> {
         self.assert_same_runtime();
 
         let id = self.last_id.fetch_add(1, Ordering::SeqCst);
@@ -365,12 +397,15 @@ impl Connection {
         let (tx, rx) = oneshot::channel();
         self.callbacks.lock().insert(id, tx);
 
+        let mut metadata = Metadata::now();
+        metadata.timeout = take_timeout(&mut params);
+
         let request = Request {
             id,
             guid: Arc::from(guid),
             method,
             params,
-            metadata: Metadata::now(),
+            metadata,
         };
 
         let request_value = serde_json::to_value(&request)?;

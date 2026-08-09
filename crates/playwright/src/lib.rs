@@ -262,7 +262,7 @@ mod tty_guard;
 /// When installing browsers, use this version to ensure compatibility:
 ///
 /// ```bash
-/// npx playwright@1.61.1 install
+/// npx playwright@1.62.1 install
 /// ```
 ///
 /// See: <https://playwright.dev/docs/browsers>
