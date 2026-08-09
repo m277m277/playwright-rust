@@ -1991,9 +1991,6 @@ impl Frame {
             if let Some(mode) = opts.mode {
                 params["mode"] = serde_json::Value::String(mode.as_str().to_string());
             }
-            if let Some(ref track) = opts.track {
-                params["track"] = serde_json::Value::String(track.clone());
-            }
             if let Some(depth) = opts.depth {
                 params["depth"] = serde_json::Value::from(depth);
             }

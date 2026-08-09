@@ -31,9 +31,15 @@ pub struct AriaSnapshotOptions {
     /// Selects between human-readable (`Default`) and AI-friendly
     /// (`Ai`) snapshot output. Server default is `Default`.
     pub mode: Option<AriaSnapshotMode>,
-    /// Track identifier — when supplied, the server may return an
-    /// incremental snapshot relative to the previous request with the
-    /// same track string.
+    /// Track identifier for incremental snapshots.
+    ///
+    /// Playwright 1.62 removed this parameter from `frame.ariaSnapshot`. The
+    /// driver drops undeclared parameters without erroring, so setting it has
+    /// no effect and no longer reaches the wire.
+    #[deprecated(
+        since = "0.16.0",
+        note = "removed from the protocol in Playwright 1.62; setting it has no effect"
+    )]
     pub track: Option<String>,
     /// Maximum depth to descend in the accessibility tree.
     pub depth: Option<i32>,
@@ -50,9 +56,18 @@ impl AriaSnapshotOptions {
         self.mode = Some(mode);
         self
     }
-    /// Tracking identifier echoed back in the snapshot.
+    /// Tracking identifier for incremental snapshots.
+    ///
+    /// No longer has any effect: Playwright 1.62 removed the parameter.
+    #[deprecated(
+        since = "0.16.0",
+        note = "removed from the protocol in Playwright 1.62; setting it has no effect"
+    )]
     pub fn track(mut self, track: impl Into<String>) -> Self {
-        self.track = Some(track.into());
+        #[allow(deprecated)]
+        {
+            self.track = Some(track.into());
+        }
         self
     }
     /// Limit the snapshot to the given tree depth.

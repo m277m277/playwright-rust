@@ -2,6 +2,7 @@
 //
 // Provides configuration for drag_to actions, matching Playwright's API.
 
+use crate::protocol::action_options::Scroll;
 use crate::protocol::click::Position;
 
 /// Options for [`Locator::drag_to()`](crate::protocol::Locator::drag_to).
@@ -55,6 +56,9 @@ pub struct DragToOptions {
     /// Where to drop on the target element (relative to top-left corner)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target_position: Option<Position>,
+    /// Whether the action may scroll the element into view first
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scroll: Option<Scroll>,
 }
 
 impl DragToOptions {
@@ -80,6 +84,7 @@ pub struct DragToOptionsBuilder {
     trial: Option<bool>,
     source_position: Option<Position>,
     target_position: Option<Position>,
+    scroll: Option<Scroll>,
 }
 
 impl DragToOptionsBuilder {
@@ -119,6 +124,13 @@ impl DragToOptionsBuilder {
         self
     }
 
+    /// Opt out of scrolling the element into view (`Scroll::None`), or keep
+    /// Playwright's default (`Scroll::Auto`)
+    pub fn scroll(mut self, scroll: Scroll) -> Self {
+        self.scroll = Some(scroll);
+        self
+    }
+
     /// Build the DragToOptions
     pub fn build(self) -> DragToOptions {
         DragToOptions {
@@ -128,6 +140,7 @@ impl DragToOptionsBuilder {
             trial: self.trial,
             source_position: self.source_position,
             target_position: self.target_position,
+            scroll: self.scroll,
         }
     }
 }

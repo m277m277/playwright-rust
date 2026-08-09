@@ -141,6 +141,9 @@ pub struct CheckOptions {
     /// Perform actionability checks without checking
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trial: Option<bool>,
+    /// Whether the action may scroll the element into view first
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scroll: Option<Scroll>,
 }
 
 impl CheckOptions {
@@ -162,6 +165,7 @@ pub struct CheckOptionsBuilder {
     position: Option<Position>,
     timeout: Option<f64>,
     trial: Option<bool>,
+    scroll: Option<Scroll>,
 }
 
 impl CheckOptionsBuilder {
@@ -189,6 +193,13 @@ impl CheckOptionsBuilder {
         self
     }
 
+    /// Opt out of scrolling the element into view (`Scroll::None`), or keep
+    /// Playwright's default (`Scroll::Auto`)
+    pub fn scroll(mut self, scroll: Scroll) -> Self {
+        self.scroll = Some(scroll);
+        self
+    }
+
     /// Build the CheckOptions
     pub fn build(self) -> CheckOptions {
         CheckOptions {
@@ -196,6 +207,7 @@ impl CheckOptionsBuilder {
             position: self.position,
             timeout: self.timeout,
             trial: self.trial,
+            scroll: self.scroll,
         }
     }
 }
@@ -224,6 +236,9 @@ pub struct HoverOptions {
     /// Perform actionability checks without hovering
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trial: Option<bool>,
+    /// Whether the action may scroll the element into view first
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scroll: Option<Scroll>,
 }
 
 impl HoverOptions {
@@ -246,6 +261,7 @@ pub struct HoverOptionsBuilder {
     position: Option<Position>,
     timeout: Option<f64>,
     trial: Option<bool>,
+    scroll: Option<Scroll>,
 }
 
 impl HoverOptionsBuilder {
@@ -279,6 +295,13 @@ impl HoverOptionsBuilder {
         self
     }
 
+    /// Opt out of scrolling the element into view (`Scroll::None`), or keep
+    /// Playwright's default (`Scroll::Auto`)
+    pub fn scroll(mut self, scroll: Scroll) -> Self {
+        self.scroll = Some(scroll);
+        self
+    }
+
     /// Build the HoverOptions
     pub fn build(self) -> HoverOptions {
         HoverOptions {
@@ -287,6 +310,7 @@ impl HoverOptionsBuilder {
             position: self.position,
             timeout: self.timeout,
             trial: self.trial,
+            scroll: self.scroll,
         }
     }
 }
@@ -616,5 +640,48 @@ mod tests {
         assert_eq!(json["clickCount"], 2);
         assert_eq!(json["delay"], 100.0);
         assert_eq!(json["steps"], 10);
+    }
+}
+
+/// Whether an action may scroll the element into view first.
+///
+/// Playwright's actionability checks scroll the target into the viewport
+/// before acting. `None` opts out, so the action fails instead of scrolling
+/// when the element is out of view. Useful for asserting that something is
+/// already visible, and for pages where scrolling itself changes layout.
+///
+/// See: <https://playwright.dev/docs/api/class-locator#locator-click-option-scroll>
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+#[non_exhaustive]
+pub enum Scroll {
+    /// Scroll the element into view if needed (Playwright's default).
+    Auto,
+    /// Never scroll; act only if the element is already in view.
+    None,
+}
+
+#[cfg(test)]
+mod scroll_tests {
+    use super::{CheckOptions, HoverOptions, Scroll};
+
+    #[test]
+    fn scroll_serializes_lowercase() {
+        assert_eq!(serde_json::to_string(&Scroll::Auto).unwrap(), "\"auto\"");
+        assert_eq!(serde_json::to_string(&Scroll::None).unwrap(), "\"none\"");
+    }
+
+    #[test]
+    fn scroll_is_omitted_unless_set() {
+        // The driver defaults to "auto"; sending nothing keeps that, so an
+        // unset builder must not put the key on the wire.
+        let json = CheckOptions::builder().build().to_json();
+        assert!(json.get("scroll").is_none());
+
+        let json = HoverOptions::builder()
+            .scroll(Scroll::None)
+            .build()
+            .to_json();
+        assert_eq!(json["scroll"], "none");
     }
 }

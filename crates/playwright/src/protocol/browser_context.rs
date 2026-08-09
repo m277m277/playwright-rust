@@ -3955,11 +3955,7 @@ async fn extract_timing(
         .await
         .ok()?;
     let mut timing = resp_obj.initializer().get("timing")?.clone();
-    if let (Some(end), Some(obj)) = (response_end_timing, timing.as_object_mut())
-        && let Some(n) = serde_json::Number::from_f64(end)
-    {
-        obj.insert("responseEnd".to_string(), serde_json::Value::Number(n));
-    }
+    crate::protocol::ResourceTiming::merge_response_end(&mut timing, response_end_timing);
     Some(timing)
 }
 

@@ -4901,7 +4901,35 @@ impl ChannelOwner for Page {
                 );
             }
             "screencastFrame" => {
-                // params: {"data": "<base64 jpeg>"}
+                // params: {"frameId": <int>, "data": "<base64 jpeg>", ...}
+                //
+                // Playwright 1.62 made frame delivery flow-controlled: the
+                // driver sends a bounded number of frames and then waits for
+                // `screencastFrameAck` before sending more. Without the ack a
+                // live screencast delivers a handful of frames and then goes
+                // silent forever, which looks like the page stopped animating
+                // rather than like a protocol error. Ack as soon as the frame
+                // is taken, not after the handlers finish, so a slow handler
+                // throttles nothing.
+                if let Some(frame_id) = params.get("frameId").and_then(|v| v.as_i64()) {
+                    let self_clone = self.clone();
+                    tokio::spawn(
+                        async move {
+                            if let Err(e) = self_clone
+                                .channel()
+                                .send::<_, serde_json::Value>(
+                                    "screencastFrameAck",
+                                    serde_json::json!({ "frameId": frame_id }),
+                                )
+                                .await
+                            {
+                                tracing::warn!("Failed to ack screencast frame: {}", e);
+                            }
+                        }
+                        .in_current_span(),
+                    );
+                }
+
                 if let Some(b64) = params.get("data").and_then(|v| v.as_str()) {
                     if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(b64) {
                         // Wrap once in `Bytes`; each handler-clone below is a refcount bump.

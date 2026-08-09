@@ -224,11 +224,13 @@ impl APIRequestContext {
             fetch_uid: result.response.fetch_uid,
             security_details: result.response.security_details,
             server_addr: result.response.server_addr,
-            timing: result
-                .response
-                .timing
-                .as_ref()
-                .and_then(crate::protocol::ResourceTiming::from_protocol),
+            timing: result.response.timing.clone().and_then(|mut t| {
+                crate::protocol::ResourceTiming::merge_response_end(
+                    &mut t,
+                    result.response.response_end_timing,
+                );
+                crate::protocol::ResourceTiming::from_protocol(&t)
+            }),
             response_end_timing: result.response.response_end_timing,
         })
     }

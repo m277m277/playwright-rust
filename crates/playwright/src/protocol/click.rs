@@ -2,6 +2,7 @@
 //
 // Provides configuration for click and dblclick actions, matching Playwright's API.
 
+use crate::protocol::action_options::Scroll;
 use serde::Serialize;
 
 /// Mouse button for click actions
@@ -129,6 +130,9 @@ pub struct ClickOptions {
     /// Perform actionability checks without clicking
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trial: Option<bool>,
+    /// Whether the action may scroll the element into view first
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scroll: Option<Scroll>,
 }
 
 impl ClickOptions {
@@ -157,6 +161,7 @@ pub struct ClickOptionsBuilder {
     position: Option<Position>,
     timeout: Option<f64>,
     trial: Option<bool>,
+    scroll: Option<Scroll>,
 }
 
 impl ClickOptionsBuilder {
@@ -214,6 +219,13 @@ impl ClickOptionsBuilder {
         self
     }
 
+    /// Opt out of scrolling the element into view (`Scroll::None`), or keep
+    /// Playwright's default (`Scroll::Auto`)
+    pub fn scroll(mut self, scroll: Scroll) -> Self {
+        self.scroll = Some(scroll);
+        self
+    }
+
     /// Build the ClickOptions
     pub fn build(self) -> ClickOptions {
         ClickOptions {
@@ -226,6 +238,7 @@ impl ClickOptionsBuilder {
             position: self.position,
             timeout: self.timeout,
             trial: self.trial,
+            scroll: self.scroll,
         }
     }
 }

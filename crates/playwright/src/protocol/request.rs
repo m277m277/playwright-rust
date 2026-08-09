@@ -536,12 +536,31 @@ pub struct ResourceTiming {
 }
 
 impl ResourceTiming {
+    /// Folds the separately-reported response-end time into a timing object.
+    ///
+    /// The driver builds the timing before the body has finished arriving, so
+    /// `responseEnd` is absent there and the real value comes alongside as
+    /// `responseEndTiming`. Both the browser-side and API-side paths merge it,
+    /// through here, so a `ResourceTiming` means the same thing whichever
+    /// origin produced it.
+    pub(crate) fn merge_response_end(
+        timing: &mut serde_json::Value,
+        response_end_timing: Option<f64>,
+    ) {
+        if let (Some(end), Some(obj)) = (response_end_timing, timing.as_object_mut())
+            && let Some(n) = serde_json::Number::from_f64(end)
+        {
+            obj.insert("responseEnd".to_string(), serde_json::Value::Number(n));
+        }
+    }
+
     /// Parses the protocol's `ResourceTiming` shape.
     ///
     /// Every phase is optional on the wire and absent means "not reached",
     /// which Playwright represents as `-1` rather than a missing value. Shared
     /// by [`Request::timing`] and `APIResponse::timing` so the two cannot
-    /// disagree about that defaulting.
+    /// disagree about that defaulting. Callers that also have a
+    /// `responseEndTiming` should run [`Self::merge_response_end`] first.
     ///
     /// Returns `None` if the value is not a timing object at all.
     pub(crate) fn from_protocol(value: &serde_json::Value) -> Option<Self> {
@@ -694,5 +713,39 @@ mod tests {
     fn a_non_object_is_not_a_timing() {
         assert!(ResourceTiming::from_protocol(&json!("nope")).is_none());
         assert!(ResourceTiming::from_protocol(&json!(null)).is_none());
+    }
+}
+
+#[cfg(test)]
+mod merge_tests {
+    use super::ResourceTiming;
+    use serde_json::json;
+
+    #[test]
+    fn response_end_is_folded_into_the_timing() {
+        // The driver reports the end separately because the timing object is
+        // built before the body finishes. Both origins fold it back in here,
+        // so a ResourceTiming means the same thing whichever produced it.
+        let mut timing = json!({ "startTime": 100.0, "requestStart": 5.0 });
+        ResourceTiming::merge_response_end(&mut timing, Some(42.0));
+
+        let parsed = ResourceTiming::from_protocol(&timing).expect("parses");
+        assert_eq!(parsed.response_end, 42.0);
+    }
+
+    #[test]
+    fn without_a_reported_end_the_phase_stays_unreached() {
+        let mut timing = json!({ "startTime": 100.0 });
+        ResourceTiming::merge_response_end(&mut timing, None);
+
+        let parsed = ResourceTiming::from_protocol(&timing).expect("parses");
+        assert_eq!(parsed.response_end, -1.0);
+    }
+
+    #[test]
+    fn a_non_object_timing_is_left_alone() {
+        let mut timing = json!("not a timing");
+        ResourceTiming::merge_response_end(&mut timing, Some(42.0));
+        assert_eq!(timing, json!("not a timing"));
     }
 }

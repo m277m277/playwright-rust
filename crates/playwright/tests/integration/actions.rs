@@ -3,7 +3,9 @@ use playwright_rs::protocol::action_options::{
     CheckOptions, FillOptions, HoverOptions, KeyboardOptions, MouseOptions, PressOptions,
     SelectOptions,
 };
-use playwright_rs::protocol::{GotoOptions, MouseButton, Playwright, Position};
+use playwright_rs::protocol::{
+    ClickOptions, GotoOptions, MouseButton, Playwright, Position, Scroll,
+};
 
 // ============================================================================
 // Click Actions
@@ -455,4 +457,43 @@ async fn test_action_options_cross_browser_smoke() {
 
     webkit.close().await.expect("Failed to close WebKit");
     server.shutdown();
+}
+
+#[tokio::test]
+async fn test_scroll_none_refuses_to_scroll_into_view() {
+    let (_pw, _browser, page) = crate::common::setup().await;
+
+    // A button pushed far below the fold, so acting on it requires scrolling.
+    page.set_content(
+        "<div style='height:5000px'></div>\
+         <button id='below'>below the fold</button>",
+        None,
+    )
+    .await
+    .expect("set_content");
+
+    let button = page.locator("#below");
+
+    // Scroll::None opts out of the scroll-into-view that actionability
+    // normally performs, so the click can never become actionable and times
+    // out instead. Short timeout: we are asserting the refusal, not waiting.
+    let refused = button
+        .click(
+            ClickOptions::builder()
+                .scroll(Scroll::None)
+                .timeout(1500.0)
+                .build(),
+        )
+        .await;
+    assert!(
+        refused.is_err(),
+        "Scroll::None should refuse to scroll an out-of-view element into view"
+    );
+
+    // The default scrolls, so the same click succeeds. This is the half that
+    // proves the failure above came from the option and not from the fixture.
+    button
+        .click(ClickOptions::builder().timeout(5000.0).build())
+        .await
+        .expect("default scroll behaviour should bring the button into view");
 }

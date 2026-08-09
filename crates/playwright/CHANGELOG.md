@@ -15,12 +15,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Unchanged: `route.fulfill()` still does not transmit response bodies. The reverse-canary tests that assert this still pass against 1.62.1, so the documented affected range extends to 1.49.0-1.62.1.
 
+### Deprecated
+
+- **`AriaSnapshotOptions::track`** does nothing as of the 1.62 driver: Playwright removed the parameter from `frame.ariaSnapshot`, and the driver drops undeclared parameters without erroring, so it was silently a no-op. It is no longer sent on the wire and setting it now warns.
+
 ### Added
+
+- **WebP screenshots.** `ScreenshotType::Webp` joins `Png` and `Jpeg` on `page.screenshot()` and `locator.screenshot()`, honouring `quality` the way `Jpeg` does.
+- **`Scroll` action option** (`scroll(Scroll::None)`) opts out of the scroll-into-view that actionability checks normally perform, so an action fails instead of scrolling when the target is out of view. Available on `click`, `dblclick`, `hover`, `tap`, `check`, `uncheck` and `drag_to`. Leaving it unset keeps Playwright's `auto` default.
+- **`APIResponse::timing()` and `APIResponse::response_end_timing()`** report resource timing for an API request, reusing the same `ResourceTiming` type as the browser-side `Request::timing()`. Unlike that one this is synchronous and always available, because the driver sends it with the response rather than after a later event. The driver reports the end separately, since it builds the response before the body finishes; that value is folded into `response_end` so a `ResourceTiming` means the same thing whichever side produced it.
 
 - **The repo is now a Claude Code plugin marketplace.** `/plugin marketplace add padamson/playwright-rust` followed by `/plugin install playwright-rs@playwright-rust` installs the `playwright-rs-usage` skill, replacing the `cp -r` of `.claude/skills/playwright-rs-usage/` (which still works). Only that one skill is exposed; the contributor-facing skills stay in-repo. Updates are not automatic: run `/plugin marketplace update playwright-rust` before `/plugin update`, since the catalog clone is what goes stale.
 - **A root `LICENSE` file.** The workspace manifest has always declared `Apache-2.0`, but with no license file at the repo root GitHub's API reported no license, so downstream legal scans and package indexes read the project as unlicensed.
 
 ### Fixed
+
+- **Live screencasts no longer stall after a few frames.** Playwright 1.62 made frame delivery flow-controlled: the driver sends a small burst and then waits for `screencastFrameAck` before sending more. The crate never acked, so an `on_frame` handler received about three frames and then went silent for as long as the screencast ran, which looks like a page that stopped animating rather than a protocol problem. Recording to a path was unaffected. Frames are now acked as they arrive, so a slow handler throttles nothing.
 
 - **URL glob matching now follows the driver's rules.** Both client-side matchers were hand-rolled and each diverged from Playwright differently, so a pattern could mean one thing to the server and another to us. They now share a port of the driver's `globToRegexPattern`.
 

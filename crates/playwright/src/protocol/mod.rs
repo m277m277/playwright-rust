@@ -89,7 +89,7 @@ pub mod worker;
 pub use accessibility::{Accessibility, AccessibilitySnapshotOptions};
 pub use action_options::{
     CheckOptions, FillOptions, HoverOptions, KeyboardOptions, MouseOptions, PressOptions,
-    PressSequentiallyOptions, SelectOptions,
+    PressSequentiallyOptions, Scroll, SelectOptions,
 };
 pub use android::Android;
 pub use api_request_context::{

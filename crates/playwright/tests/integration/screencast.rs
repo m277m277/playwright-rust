@@ -70,6 +70,70 @@ async fn test_screencast_streams_frames_to_handler() {
 }
 
 #[tokio::test]
+async fn test_screencast_keeps_streaming_past_the_unacked_burst() {
+    let (_pw, browser, page) = crate::common::setup().await;
+
+    // Keep repainting so the driver always has a new frame to send.
+    page.set_content(
+        "<body style='font-size:64px'>0</body>\
+         <script>\
+           let n = 0;\
+           function tick() {\
+             n++;\
+             document.body.textContent = n;\
+             document.body.style.background = 'hsl(' + (n % 360) + ',90%,50%)';\
+             requestAnimationFrame(tick);\
+           }\
+           requestAnimationFrame(tick);\
+         </script>",
+        None,
+    )
+    .await
+    .expect("Failed to set content");
+
+    let frames = Arc::new(AtomicUsize::new(0));
+    let counter = frames.clone();
+    page.screencast().on_frame(move |_frame| {
+        let counter = counter.clone();
+        async move {
+            counter.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    });
+
+    page.screencast()
+        .start(ScreencastStartOptions::default())
+        .await
+        .expect("screencast start failed");
+
+    // Playwright 1.62 made delivery flow-controlled: the driver sends a small
+    // burst and then waits for `screencastFrameAck` before sending more.
+    // Without the ack this stalls at a handful of frames however long you
+    // wait, so a threshold comfortably above that burst is what distinguishes
+    // "streaming" from "stalled" -- `> 0` cannot.
+    const WELL_PAST_THE_BURST: usize = 12;
+    let streamed = crate::common::poll_until(std::time::Duration::from_secs(20), || {
+        frames.load(Ordering::SeqCst) >= WELL_PAST_THE_BURST
+    })
+    .await;
+
+    page.screencast()
+        .stop()
+        .await
+        .expect("screencast stop failed");
+
+    assert!(
+        streamed,
+        "screencast stalled after {} frames; expected at least {} \
+         (is `screencastFrameAck` still being sent?)",
+        frames.load(Ordering::SeqCst),
+        WELL_PAST_THE_BURST
+    );
+
+    browser.close().await.expect("Failed to close browser");
+}
+
+#[tokio::test]
 async fn test_screencast_records_to_path() {
     let (_pw, browser, page) = crate::common::setup().await;
 

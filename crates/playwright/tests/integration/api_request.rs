@@ -172,21 +172,21 @@ async fn test_api_response_server_addr_and_security_details() {
         timing.request_start
     );
 
-    // `timing.response_end` is -1 here, and that is not a bug: the driver
-    // builds the APIResponse before the body has finished arriving, so the
-    // phase genuinely has not been reached yet. That is why 1.62 added a
-    // separate `responseEndTiming` alongside the timing object rather than
-    // filling this field in.
-    assert_eq!(
-        timing.response_end, -1.0,
-        "response_end is not yet reached when the response object is created"
-    );
+    // The driver builds the response before the body finishes, so it reports
+    // the end separately as `responseEndTiming`. We fold that back in, the
+    // same way the browser-side Request::timing path does, so `response_end`
+    // means the same thing whichever origin produced the ResourceTiming.
     let end = response
         .response_end_timing()
-        .expect("responseEndTiming carries what timing.response_end cannot");
+        .expect("responseEndTiming should be reported for a completed fetch");
+    assert_eq!(
+        timing.response_end, end,
+        "response_end should be folded in from responseEndTiming, not left at -1"
+    );
     assert!(
-        end >= timing.request_start,
-        "response end ({end}) should not precede request_start ({})",
+        timing.response_end >= timing.request_start,
+        "response_end ({}) should not precede request_start ({})",
+        timing.response_end,
         timing.request_start
     );
 

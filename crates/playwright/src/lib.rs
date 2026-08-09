@@ -312,7 +312,7 @@ pub use protocol::{GotoOptions, WaitUntil};
 // Re-export action options
 pub use protocol::{
     CheckOptions, ClickOptions, DragToOptions, DropOptions, DropOptionsBuilder, FillOptions,
-    HoverOptions, PressOptions, PressSequentiallyOptions, SelectOptions, TapOptions,
+    HoverOptions, PressOptions, PressSequentiallyOptions, Scroll, SelectOptions, TapOptions,
     WaitForOptions, WaitForState,
 };
 
