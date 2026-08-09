@@ -198,6 +198,20 @@ async fn test_screenshot_all_page_options() {
         "Screenshot should be JPEG format"
     );
 
+    // Test 1b: WebP with quality (Playwright 1.62). Magic is the RIFF
+    // container plus the "WEBP" form type at offset 8.
+    let options = ScreenshotOptions::builder()
+        .screenshot_type(ScreenshotType::Webp)
+        .quality(70)
+        .build();
+    let bytes = page
+        .screenshot(Some(options))
+        .await
+        .expect("Failed to take WebP screenshot");
+    assert!(!bytes.is_empty(), "WebP screenshot should not be empty");
+    assert_eq!(&bytes[0..4], b"RIFF", "Should be a RIFF container");
+    assert_eq!(&bytes[8..12], b"WEBP", "RIFF form type should be WEBP");
+
     // Test 2: Explicit PNG format
     let options = ScreenshotOptions::builder()
         .screenshot_type(ScreenshotType::Png)

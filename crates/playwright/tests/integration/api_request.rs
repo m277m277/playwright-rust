@@ -154,6 +154,42 @@ async fn test_api_response_server_addr_and_security_details() {
     let url = format!("{}/api/data.json", server.url());
     let response: APIResponse = ctx.get(&url, None).await.expect("GET should succeed");
 
+    // Resource timing arrives in the response initializer (Playwright 1.62),
+    // so unlike the browser-side Request::timing it needs no event to have
+    // fired first. Phases that were never reached read as -1, so assert on
+    // start_time, which is always populated.
+    let timing = response
+        .timing()
+        .expect("a completed fetch should report timing");
+    assert!(
+        timing.start_time > 0.0,
+        "start_time should be a real epoch millisecond value, got {}",
+        timing.start_time
+    );
+    assert!(
+        timing.request_start >= 0.0,
+        "request_start should have been reached, got {}",
+        timing.request_start
+    );
+
+    // `timing.response_end` is -1 here, and that is not a bug: the driver
+    // builds the APIResponse before the body has finished arriving, so the
+    // phase genuinely has not been reached yet. That is why 1.62 added a
+    // separate `responseEndTiming` alongside the timing object rather than
+    // filling this field in.
+    assert_eq!(
+        timing.response_end, -1.0,
+        "response_end is not yet reached when the response object is created"
+    );
+    let end = response
+        .response_end_timing()
+        .expect("responseEndTiming carries what timing.response_end cannot");
+    assert!(
+        end >= timing.request_start,
+        "response end ({end}) should not precede request_start ({})",
+        timing.request_start
+    );
+
     // Plain HTTP carries no TLS details, and the server omits a remote address
     // for this fetch. The accessors must resolve cleanly (the new initializer
     // fields must not break fetch deserialization).

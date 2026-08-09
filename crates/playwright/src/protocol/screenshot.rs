@@ -37,6 +37,10 @@ pub enum ScreenshotType {
     Png,
     /// JPEG format (lossy compression, smaller file size)
     Jpeg,
+    /// WebP format (lossy compression, smaller than JPEG at equal quality)
+    ///
+    /// Honours `quality` the same way `Jpeg` does.
+    Webp,
 }
 
 /// Text-caret handling during screenshot capture.
@@ -122,10 +126,10 @@ pub struct ScreenshotClip {
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub struct ScreenshotOptions {
-    /// Image format (png or jpeg)
+    /// Image format (png, jpeg or webp)
     #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
     pub screenshot_type: Option<ScreenshotType>,
-    /// JPEG quality (0-100), only applies to jpeg format
+    /// Image quality (0-100). Applies to the lossy formats, `Jpeg` and `Webp`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quality: Option<u8>,
     /// Capture full scrollable page
@@ -193,15 +197,15 @@ pub struct ScreenshotOptionsBuilder {
 }
 
 impl ScreenshotOptionsBuilder {
-    /// Set the screenshot format (png or jpeg)
+    /// Set the screenshot format (png, jpeg or webp)
     pub fn screenshot_type(mut self, screenshot_type: ScreenshotType) -> Self {
         self.screenshot_type = Some(screenshot_type);
         self
     }
 
-    /// Set JPEG quality (0-100)
+    /// Set image quality (0-100), for the lossy formats (`Jpeg`, `Webp`)
     ///
-    /// Only applies when screenshot_type is Jpeg.
+    /// Ignored for `Png`, which is lossless.
     pub fn quality(mut self, quality: u8) -> Self {
         self.quality = Some(quality);
         self
@@ -306,6 +310,22 @@ mod tests {
             serde_json::to_string(&ScreenshotType::Jpeg).unwrap(),
             "\"jpeg\""
         );
+        assert_eq!(
+            serde_json::to_string(&ScreenshotType::Webp).unwrap(),
+            "\"webp\""
+        );
+    }
+
+    #[test]
+    fn test_builder_webp_with_quality() {
+        let options = ScreenshotOptions::builder()
+            .screenshot_type(ScreenshotType::Webp)
+            .quality(70)
+            .build();
+
+        let json = options.to_json();
+        assert_eq!(json["type"], "webp");
+        assert_eq!(json["quality"], 70);
     }
 
     #[test]

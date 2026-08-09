@@ -194,6 +194,10 @@ impl APIRequestContext {
             security_details: Option<crate::protocol::response::SecurityDetails>,
             #[serde(default)]
             server_addr: Option<crate::protocol::response::RemoteAddr>,
+            #[serde(default)]
+            timing: Option<serde_json::Value>,
+            #[serde(default)]
+            response_end_timing: Option<f64>,
         }
 
         #[derive(serde::Deserialize)]
@@ -220,6 +224,12 @@ impl APIRequestContext {
             fetch_uid: result.response.fetch_uid,
             security_details: result.response.security_details,
             server_addr: result.response.server_addr,
+            timing: result
+                .response
+                .timing
+                .as_ref()
+                .and_then(crate::protocol::ResourceTiming::from_protocol),
+            response_end_timing: result.response.response_end_timing,
         })
     }
 
@@ -384,6 +394,8 @@ pub struct APIResponse {
     fetch_uid: String,
     security_details: Option<crate::protocol::response::SecurityDetails>,
     server_addr: Option<crate::protocol::response::RemoteAddr>,
+    timing: Option<crate::protocol::ResourceTiming>,
+    response_end_timing: Option<f64>,
 }
 
 impl APIResponse {
@@ -410,6 +422,29 @@ impl APIResponse {
     /// Returns the response headers as a `HashMap<String, String>`.
     pub fn headers(&self) -> &HashMap<String, String> {
         &self.headers
+    }
+
+    /// Returns resource timing for this response, or `None` if the server did
+    /// not report any.
+    ///
+    /// Mirrors the browser-side [`Request::timing`](crate::protocol::Request::timing),
+    /// and reuses the same type, so the phases mean the same thing on both
+    /// sides: milliseconds relative to `start_time`, with `-1` for a phase
+    /// that was not reached.
+    ///
+    /// Unlike the browser-side accessor this is synchronous and always
+    /// available, because the driver sends it in the response itself rather
+    /// than after a later event.
+    ///
+    /// See: <https://playwright.dev/docs/api/class-apiresponse#api-response-timing>
+    pub fn timing(&self) -> Option<&crate::protocol::ResourceTiming> {
+        self.timing.as_ref()
+    }
+
+    /// Returns the time at which the response finished, in milliseconds
+    /// relative to the timing's `start_time`, or `None` if unavailable.
+    pub fn response_end_timing(&self) -> Option<f64> {
+        self.response_end_timing
     }
 
     /// Returns TLS/SSL security details for HTTPS responses, or `None` for

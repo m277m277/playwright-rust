@@ -482,22 +482,6 @@ impl Request {
     /// See: <https://playwright.dev/docs/api/class-request#request-timing>
     #[tracing::instrument(level = "debug", skip_all, fields(guid = %self.guid()))]
     pub async fn timing(&self) -> Result<ResourceTiming> {
-        use serde::Deserialize;
-
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct RawTiming {
-            start_time: Option<f64>,
-            domain_lookup_start: Option<f64>,
-            domain_lookup_end: Option<f64>,
-            connect_start: Option<f64>,
-            connect_end: Option<f64>,
-            secure_connection_start: Option<f64>,
-            request_start: Option<f64>,
-            response_start: Option<f64>,
-            response_end: Option<f64>,
-        }
-
         let timing_val = self.timing.lock().unwrap().clone().ok_or_else(|| {
             crate::error::Error::ProtocolError(
                 "Request timing is not yet available. Call timing() from \
@@ -506,20 +490,8 @@ impl Request {
             )
         })?;
 
-        let raw: RawTiming = serde_json::from_value(timing_val).map_err(|e| {
-            crate::error::Error::ProtocolError(format!("Failed to parse timing data: {}", e))
-        })?;
-
-        Ok(ResourceTiming {
-            start_time: raw.start_time.unwrap_or(-1.0),
-            domain_lookup_start: raw.domain_lookup_start.unwrap_or(-1.0),
-            domain_lookup_end: raw.domain_lookup_end.unwrap_or(-1.0),
-            connect_start: raw.connect_start.unwrap_or(-1.0),
-            connect_end: raw.connect_end.unwrap_or(-1.0),
-            secure_connection_start: raw.secure_connection_start.unwrap_or(-1.0),
-            request_start: raw.request_start.unwrap_or(-1.0),
-            response_start: raw.response_start.unwrap_or(-1.0),
-            response_end: raw.response_end.unwrap_or(-1.0),
+        ResourceTiming::from_protocol(&timing_val).ok_or_else(|| {
+            crate::error::Error::ProtocolError("Failed to parse timing data".to_string())
         })
     }
 }
@@ -561,6 +533,48 @@ pub struct ResourceTiming {
     /// Time immediately after the browser receives the last byte of the resource
     /// or immediately before the transport connection is closed, whichever comes first.
     pub response_end: f64,
+}
+
+impl ResourceTiming {
+    /// Parses the protocol's `ResourceTiming` shape.
+    ///
+    /// Every phase is optional on the wire and absent means "not reached",
+    /// which Playwright represents as `-1` rather than a missing value. Shared
+    /// by [`Request::timing`] and `APIResponse::timing` so the two cannot
+    /// disagree about that defaulting.
+    ///
+    /// Returns `None` if the value is not a timing object at all.
+    pub(crate) fn from_protocol(value: &serde_json::Value) -> Option<Self> {
+        use serde::Deserialize;
+
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct RawTiming {
+            start_time: Option<f64>,
+            domain_lookup_start: Option<f64>,
+            domain_lookup_end: Option<f64>,
+            connect_start: Option<f64>,
+            connect_end: Option<f64>,
+            secure_connection_start: Option<f64>,
+            request_start: Option<f64>,
+            response_start: Option<f64>,
+            response_end: Option<f64>,
+        }
+
+        let raw: RawTiming = serde_json::from_value(value.clone()).ok()?;
+
+        Some(Self {
+            start_time: raw.start_time.unwrap_or(-1.0),
+            domain_lookup_start: raw.domain_lookup_start.unwrap_or(-1.0),
+            domain_lookup_end: raw.domain_lookup_end.unwrap_or(-1.0),
+            connect_start: raw.connect_start.unwrap_or(-1.0),
+            connect_end: raw.connect_end.unwrap_or(-1.0),
+            secure_connection_start: raw.secure_connection_start.unwrap_or(-1.0),
+            request_start: raw.request_start.unwrap_or(-1.0),
+            response_start: raw.response_start.unwrap_or(-1.0),
+            response_end: raw.response_end.unwrap_or(-1.0),
+        })
+    }
 }
 
 impl ChannelOwner for Request {
@@ -622,5 +636,63 @@ impl std::fmt::Debug for Request {
         f.debug_struct("Request")
             .field("guid", &self.guid())
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ResourceTiming;
+    use serde_json::json;
+
+    #[test]
+    fn absent_phases_become_minus_one() {
+        // The driver omits phases that were never reached; Playwright's
+        // contract is that those read as -1, not as a missing value.
+        let timing = ResourceTiming::from_protocol(&json!({ "startTime": 1000.0 }))
+            .expect("an object with only startTime is still a timing");
+
+        assert_eq!(timing.start_time, 1000.0);
+        assert_eq!(timing.domain_lookup_start, -1.0);
+        assert_eq!(timing.domain_lookup_end, -1.0);
+        assert_eq!(timing.connect_start, -1.0);
+        assert_eq!(timing.connect_end, -1.0);
+        assert_eq!(timing.secure_connection_start, -1.0);
+        assert_eq!(timing.request_start, -1.0);
+        assert_eq!(timing.response_start, -1.0);
+        assert_eq!(timing.response_end, -1.0);
+    }
+
+    #[test]
+    fn every_phase_is_read_from_its_own_wire_name() {
+        // Pins the camelCase mapping: a swapped or misspelled rename would
+        // otherwise silently read as -1 and look like "phase not reached".
+        let timing = ResourceTiming::from_protocol(&json!({
+            "startTime": 1.0,
+            "domainLookupStart": 2.0,
+            "domainLookupEnd": 3.0,
+            "connectStart": 4.0,
+            "connectEnd": 5.0,
+            "secureConnectionStart": 6.0,
+            "requestStart": 7.0,
+            "responseStart": 8.0,
+            "responseEnd": 9.0,
+        }))
+        .expect("full timing parses");
+
+        assert_eq!(timing.start_time, 1.0);
+        assert_eq!(timing.domain_lookup_start, 2.0);
+        assert_eq!(timing.domain_lookup_end, 3.0);
+        assert_eq!(timing.connect_start, 4.0);
+        assert_eq!(timing.connect_end, 5.0);
+        assert_eq!(timing.secure_connection_start, 6.0);
+        assert_eq!(timing.request_start, 7.0);
+        assert_eq!(timing.response_start, 8.0);
+        assert_eq!(timing.response_end, 9.0);
+    }
+
+    #[test]
+    fn a_non_object_is_not_a_timing() {
+        assert!(ResourceTiming::from_protocol(&json!("nope")).is_none());
+        assert!(ResourceTiming::from_protocol(&json!(null)).is_none());
     }
 }
