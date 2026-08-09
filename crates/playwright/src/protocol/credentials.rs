@@ -27,7 +27,10 @@ use crate::server::channel::Channel;
 use serde_json::json;
 
 /// A virtual WebAuthn credential (passkey) held by the virtual authenticator.
-#[derive(Debug, Clone, serde::Deserialize)]
+///
+/// Serializable as well as deserializable so passkeys can be saved with a
+/// storage state and seeded back into a fresh context (Playwright 1.62).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub struct VirtualCredential {

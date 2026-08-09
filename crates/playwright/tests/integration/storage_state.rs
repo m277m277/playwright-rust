@@ -1,4 +1,4 @@
-use playwright_rs::protocol::{Cookie, StorageState};
+use playwright_rs::protocol::{Cookie, StorageState, StorageStateOptions};
 
 #[tokio::test]
 async fn test_storage_state_retrieve() {
@@ -25,7 +25,7 @@ async fn test_storage_state_retrieve() {
 
     // 2. Call storage_state()
     let state = context
-        .storage_state()
+        .storage_state(None)
         .await
         .expect("Failed to get storage state");
 
@@ -62,7 +62,7 @@ async fn test_set_storage_state() {
         .expect("set_storage_state should succeed");
 
     let state = context
-        .storage_state()
+        .storage_state(None)
         .await
         .expect("storage_state should succeed");
     assert!(
@@ -96,7 +96,7 @@ async fn test_set_storage_state_replaces_existing() {
         .expect("set_storage_state should succeed");
 
     let state = context
-        .storage_state()
+        .storage_state(None)
         .await
         .expect("storage_state should succeed");
     assert!(
@@ -124,6 +124,129 @@ async fn test_set_storage_state_with_origins() {
         .set_storage_state(state)
         .await
         .expect("set_storage_state with origins should succeed");
+
+    browser.close().await.expect("Failed to close browser");
+}
+
+#[tokio::test]
+async fn test_storage_state_captures_webauthn_credentials() {
+    let (_pw, browser, context) = crate::common::setup_context().await;
+    let page = context.new_page().await.expect("Failed to create page");
+    page.goto("https://example.com", None)
+        .await
+        .expect("Failed to navigate");
+
+    context
+        .credentials()
+        .install()
+        .await
+        .expect("install virtual authenticator");
+    let created = context
+        .credentials()
+        .create("example.com", None)
+        .await
+        .expect("create passkey");
+
+    // Passkeys are opt-in: a state captured without the flag must look exactly
+    // as it did before 1.62, so existing saved states stay meaningful.
+    let without = context
+        .storage_state(None)
+        .await
+        .expect("storage_state without credentials");
+    assert!(
+        without.credentials.is_none(),
+        "credentials should be absent unless asked for"
+    );
+
+    let with = context
+        .storage_state(StorageStateOptions::default().credentials(true))
+        .await
+        .expect("storage_state with credentials");
+    let creds = with
+        .credentials
+        .clone()
+        .expect("credentials should be present when requested");
+    assert!(
+        creds.iter().any(|c| c.id == created.id),
+        "the created passkey should appear in the captured state"
+    );
+
+    // The point of capturing them is restoring them, which needs the type to
+    // survive a save/load round-trip through JSON.
+    let json = serde_json::to_string(&with).expect("state serializes");
+    let restored: StorageState = serde_json::from_str(&json).expect("state deserializes");
+    assert_eq!(
+        restored
+            .credentials
+            .as_ref()
+            .map(|c| c.len())
+            .unwrap_or_default(),
+        creds.len(),
+        "credentials should survive a storage-state round-trip"
+    );
+
+    browser.close().await.expect("Failed to close browser");
+}
+
+#[tokio::test]
+async fn test_set_storage_state_restores_webauthn_credentials() {
+    let (_pw, browser, context) = crate::common::setup_context().await;
+    let page = context.new_page().await.expect("Failed to create page");
+    page.goto("https://example.com", None)
+        .await
+        .expect("Failed to navigate");
+
+    context
+        .credentials()
+        .install()
+        .await
+        .expect("install virtual authenticator");
+    let created = context
+        .credentials()
+        .create("example.com", None)
+        .await
+        .expect("create passkey");
+    let saved = context
+        .storage_state(StorageStateOptions::default().credentials(true))
+        .await
+        .expect("capture state with credentials");
+
+    // A fresh context starts with no passkeys. Restoring the saved state has
+    // to bring them back, which is what the client-side restore could not do:
+    // it replayed cookies and localStorage only.
+    let fresh = browser
+        .new_context()
+        .await
+        .expect("Failed to create second context");
+    fresh
+        .credentials()
+        .install()
+        .await
+        .expect("install virtual authenticator in fresh context");
+    assert!(
+        fresh
+            .credentials()
+            .get(None)
+            .await
+            .expect("list passkeys")
+            .is_empty(),
+        "a fresh context should hold no passkeys"
+    );
+
+    fresh
+        .set_storage_state(saved)
+        .await
+        .expect("restore state carrying credentials");
+
+    let restored = fresh
+        .credentials()
+        .get(None)
+        .await
+        .expect("list passkeys after restore");
+    assert!(
+        restored.iter().any(|c| c.id == created.id),
+        "the saved passkey should be restored into the new context"
+    );
 
     browser.close().await.expect("Failed to close browser");
 }

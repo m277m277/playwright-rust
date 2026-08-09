@@ -732,11 +732,16 @@ impl BrowserContext {
     ///
     /// See: <https://playwright.dev/docs/api/class-browsercontext#browser-context-storage-state>
     #[tracing::instrument(level = "debug", skip_all, fields(guid = %self.guid()))]
-    pub async fn storage_state(&self) -> Result<StorageState> {
-        let response: StorageState = self
-            .channel()
-            .send("storageState", serde_json::json!({}))
-            .await?;
+    pub async fn storage_state(
+        &self,
+        options: impl Into<Option<StorageStateOptions>>,
+    ) -> Result<StorageState> {
+        let params = match options.into() {
+            Some(opts) => serde_json::to_value(opts)
+                .map_err(|e| Error::ProtocolError(format!("Failed to serialize options: {e}")))?,
+            None => serde_json::json!({}),
+        };
+        let response: StorageState = self.channel().send("storageState", params).await?;
         Ok(response)
     }
 
@@ -777,40 +782,22 @@ impl BrowserContext {
     /// See: <https://playwright.dev/docs/api/class-browsercontext#browser-context-set-storage-state>
     #[tracing::instrument(level = "debug", skip_all, fields(guid = %self.guid()))]
     pub async fn set_storage_state(&self, state: StorageState) -> Result<()> {
-        // Step 1: Clear all existing cookies
-        self.clear_cookies(None).await?;
+        // Delegates to the driver rather than reconstructing the state
+        // client-side. The previous implementation cleared cookies, re-added
+        // them, then opened a throwaway page per origin to replay
+        // localStorage through `evaluate`. That could only ever restore what
+        // it knew how to replay, so WebAuthn passkeys (Playwright 1.62) and
+        // IndexedDB were silently dropped, and every origin cost a page
+        // navigation.
+        let storage_state = serde_json::to_value(&state)
+            .map_err(|e| Error::ProtocolError(format!("Failed to serialize storage state: {e}")))?;
 
-        // Step 2: Add cookies from the new state
-        if !state.cookies.is_empty() {
-            self.add_cookies(&state.cookies).await?;
-        }
-
-        // Step 3: Restore localStorage for each origin via a temporary page
-        if !state.origins.is_empty() {
-            let page = self.new_page().await?;
-            let result: Result<()> = async {
-                for origin in &state.origins {
-                    // Navigate the page to the origin so localStorage is in scope
-                    let _ = page.goto(&origin.origin, None).await;
-
-                    // Restore localStorage entries using JS evaluation
-                    if !origin.local_storage.is_empty() {
-                        let items_json = serde_json::to_string(&origin.local_storage)
-                            .map_err(|e| Error::ProtocolError(format!("Failed to serialize localStorage items: {}", e)))?;
-                        let items_value: serde_json::Value = serde_json::from_str(&items_json)
-                            .map_err(|e| Error::ProtocolError(format!("Failed to parse localStorage items: {}", e)))?;
-                        let script = "items => { localStorage.clear(); for (const {name, value} of items) localStorage.setItem(name, value); }";
-                        page.evaluate::<serde_json::Value, ()>(script, Some(&items_value)).await?;
-                    }
-                }
-                Ok(())
-            }
-            .await;
-            page.close().await?;
-            result?;
-        }
-
-        Ok(())
+        self.channel()
+            .send_no_result(
+                "setStorageState",
+                serde_json::json!({ "storageState": storage_state }),
+            )
+            .await
     }
 
     /// Returns whether this browser context has been closed.
@@ -3142,6 +3129,12 @@ pub struct StorageState {
     pub cookies: Vec<Cookie>,
     /// List of origins with local storage
     pub origins: Vec<Origin>,
+    /// WebAuthn passkeys held by the context's virtual authenticator
+    /// (Playwright 1.62). Only populated when the state was captured with
+    /// [`StorageStateOptions::credentials`]; omitted from the wire when empty
+    /// so a state captured without them is unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub credentials: Option<Vec<crate::protocol::VirtualCredential>>,
 }
 
 impl StorageState {
@@ -3153,6 +3146,39 @@ impl StorageState {
     /// Per-origin storage (localStorage) to seed the context with.
     pub fn origins(mut self, origins: Vec<Origin>) -> Self {
         self.origins = origins;
+        self
+    }
+    /// WebAuthn passkeys to seed the context's virtual authenticator with.
+    pub fn credentials(mut self, credentials: Vec<crate::protocol::VirtualCredential>) -> Self {
+        self.credentials = Some(credentials);
+        self
+    }
+}
+
+/// Options for [`BrowserContext::storage_state`].
+///
+/// See: <https://playwright.dev/docs/api/class-browsercontext#browser-context-storage-state>
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[non_exhaustive]
+pub struct StorageStateOptions {
+    /// Include IndexedDB contents in the captured state.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub indexed_db: Option<bool>,
+    /// Include the virtual authenticator's WebAuthn passkeys (Playwright 1.62).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub credentials: Option<bool>,
+}
+
+impl StorageStateOptions {
+    /// Include IndexedDB contents in the captured state.
+    pub fn indexed_db(mut self, include: bool) -> Self {
+        self.indexed_db = Some(include);
+        self
+    }
+    /// Include the virtual authenticator's WebAuthn passkeys.
+    pub fn credentials(mut self, include: bool) -> Self {
+        self.credentials = Some(include);
         self
     }
 }

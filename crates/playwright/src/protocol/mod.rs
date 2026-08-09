@@ -101,7 +101,7 @@ pub use browser::{BindOptions, BindResult, Browser, StartTracingOptions};
 pub use browser_context::{
     AcceptDownloads, BrowserContext, BrowserContextOptions, BrowserContextOptionsBuilder,
     ClearCookiesOptions, Cookie, Geolocation, GrantPermissionsOptions, LocalStorageItem, Origin,
-    RecordHar, RecordVideo, StorageState, Viewport,
+    RecordHar, RecordVideo, StorageState, StorageStateOptions, Viewport,
 };
 pub use browser_type::BrowserType;
 pub use cdp_session::CDPSession;
