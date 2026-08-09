@@ -140,6 +140,15 @@ jobs:
     - name: Build all examples
       run: cargo build --package playwright-rs --examples
 
+    # The fuzz crate is its own excluded workspace, so `--workspace` never
+    # reaches it and the only job that builds it is the weekly fuzz run. A
+    # target that stops compiling because the API it calls moved would sit
+    # broken until then. Checking is enough and works on stable; actually
+    # running the fuzzer still needs nightly and stays weekly.
+    - name: Check fuzz targets compile
+      if: runner.os == 'Linux'
+      run: cargo check --manifest-path crates/playwright/fuzz/Cargo.toml --all-targets
+
     - name: Generate documentation
       env:
         RUSTDOCFLAGS: "-D rustdoc::broken-intra-doc-links"
