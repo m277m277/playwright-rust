@@ -37,3 +37,10 @@ path = "fuzz_targets/fuzz_parse_result.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "fuzz_evaluate_round_trip"
+path = "fuzz_targets/fuzz_evaluate_round_trip.rs"
+test = false
+doc = false
+bench = false

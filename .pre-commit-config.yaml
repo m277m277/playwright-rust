@@ -20,12 +20,18 @@ repos:
         name: Check for case conflicts
       - id: detect-private-key
         name: Detect private keys
+      # Fuzz seeds are byte sequences fed to a parser, not source text.
+      # Appending a newline or trimming whitespace edits the input under test,
+      # and would silently corrupt any seed that is not newline-tolerant.
       - id: trailing-whitespace
         name: Trim trailing whitespace
+        exclude: ^crates/playwright/fuzz/seeds/
       - id: end-of-file-fixer
         name: Fix end of files
+        exclude: ^crates/playwright/fuzz/seeds/
       - id: mixed-line-ending
         name: Fix mixed line endings
+        exclude: ^crates/playwright/fuzz/seeds/
 
   # Rust-specific checks (matches CI exactly)
   - repo: local
@@ -154,13 +160,14 @@ repos:
         # Only run when dependency or supply-chain config files change
         files: (Cargo\.toml|Cargo\.lock|supply-chain/)$
 
-      - id: site-lockfiles-current
-        name: site lockfiles current
-        description: The site crates sit outside the workspace, so their lockfiles go stale when workspace deps move
-        entry: scripts/check-site-lockfiles.sh
+      - id: external-lockfiles-current
+        name: out-of-workspace lockfiles current
+        description: site, site-e2e and fuzz sit outside the workspace, so their lockfiles go stale when workspace deps move
+        entry: scripts/check-external-lockfiles.sh
         language: system
         pass_filenames: false
         # Fires on the commits that CAUSE the drift — workspace manifest/lock
-        # changes. The Pages workflow can't catch this: it only triggers on
-        # crates/site**, which such a commit never touches.
+        # changes. No workflow catches this: Pages only triggers on
+        # crates/site**, and the fuzz job is weekly and does not use --locked;
+        # such a commit touches neither path.
         files: ^(Cargo\.toml|Cargo\.lock|crates/playwright/Cargo\.toml)$

@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
 #
-# crates/site and crates/site-e2e are excluded from the workspace (wasm target,
-# conflicting features) and carry their own Cargo.lock files, but depend on
-# playwright-rs by path. So a workspace dependency change silently staleness
-# their lockfiles, and they only catch up whenever someone happens to run a
-# cargo command against those manifests — leaving a dirty tree that looks like
-# unrelated noise.
+# Several crates sit outside the workspace but depend on playwright-rs by
+# path, so each carries its own Cargo.lock:
+#
+#   crates/site, crates/site-e2e   wasm target, conflicting features
+#   crates/playwright/fuzz         cargo-fuzz needs its own excluded workspace
+#
+# A workspace dependency change silently staleness all of them, and they only
+# catch up whenever someone happens to run a cargo command against those
+# manifests — leaving a dirty tree that looks like unrelated noise. The fuzz
+# lockfile is the worst of the three for this, since nothing routine touches
+# it: it had drifted from playwright-rs 0.13.0 to 0.15.1 before anyone
+# noticed.
 #
 # This checks rather than rewrites: refreshing a lockfile is a dependency
 # resolution change, and it should be an explicit command you ran, not
@@ -17,7 +23,7 @@
 set -uo pipefail
 
 status=0
-for manifest in crates/site crates/site-e2e; do
+for manifest in crates/site crates/site-e2e crates/playwright/fuzz; do
   if ! cargo metadata --manifest-path "$manifest/Cargo.toml" --locked --format-version 1 \
        >/dev/null 2>&1; then
     echo "stale lockfile: $manifest/Cargo.lock is behind the workspace."

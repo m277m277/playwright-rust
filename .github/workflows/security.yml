@@ -139,12 +139,48 @@ jobs:
       with:
         workspaces: crates/playwright/fuzz
 
+    # Carry the corpus between runs. rust-cache covers ~/.cargo and the build
+    # directory but not corpus/, so without this every weekly run restarts
+    # from the committed seeds and the 60s budget buys the same shallow
+    # coverage forever. The rolling key means each run restores the newest
+    # prior corpus and saves the grown one under a fresh key.
+    - name: Restore fuzz corpus
+      uses: actions/cache@v4
+      with:
+        path: crates/playwright/fuzz/corpus
+        key: fuzz-corpus-${{ github.run_id }}
+        restore-keys: fuzz-corpus-
+
     - name: Run fuzz targets (60s each)
       working-directory: crates/playwright
       run: |
-        # Pin the glibc target: cargo-fuzz otherwise defaults to musl,
-        # whose statically linked libc is incompatible with AddressSanitizer.
-        for target in fuzz_parse_value fuzz_parse_result fuzz_serialize_argument; do
+        # Derive the target list rather than hardcoding it, so a target added
+        # to fuzz/Cargo.toml runs here without a workflow edit. A hardcoded
+        # list fails silently: the new target just never gets fuzzed.
+        #
+        # Assert the list is non-empty before looping. `for x in $(cmd)` runs
+        # zero iterations and exits 0 when the substitution fails or comes
+        # back empty, and errexit does not apply to a for word list — so the
+        # discovery step would itself become the silent failure it replaced.
+        targets=$(cargo +nightly fuzz list)
+        if [ -z "$targets" ]; then
+          echo "::error::cargo fuzz list returned no targets"
+          exit 1
+        fi
+        echo "fuzzing: $(echo "$targets" | tr '\n' ' ')"
+
+        for target in $targets; do
+          # Seed from the committed corpus. The cache below carries the grown
+          # corpus between runs, but a cache miss must not silently mean a
+          # cold start with a 60s budget: most random bytes fail the JSON
+          # parse and never reach the code under test.
+          if [ -d "fuzz/seeds/$target" ]; then
+            mkdir -p "fuzz/corpus/$target"
+            cp -n "fuzz/seeds/$target"/* "fuzz/corpus/$target/" 2>/dev/null || true
+          fi
+
+          # Pin the glibc target: cargo-fuzz otherwise defaults to musl,
+          # whose statically linked libc is incompatible with AddressSanitizer.
           cargo +nightly fuzz run "$target" \
             --target x86_64-unknown-linux-gnu -- -max_total_time=60 -timeout=10
         done

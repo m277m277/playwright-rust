@@ -153,8 +153,25 @@ impl GlobMatcher {
 
 #[cfg(test)]
 mod properties {
-    use super::glob_match;
+    use super::{GlobMatcher, glob_match, glob_to_regex_pattern};
     use proptest::prelude::*;
+
+    /// Glob-shaped text over the full syntax: wildcards, group punctuation,
+    /// escapes, separators and regex metacharacters, in any order.
+    ///
+    /// Unlike `url_atom` this is allowed to be malformed. The point is to
+    /// reach the states hand-written cases do not: an unbalanced brace, a
+    /// backslash at the very end, a run of stars against a separator.
+    fn glob_soup() -> impl Strategy<Value = String> {
+        proptest::collection::vec(
+            proptest::sample::select(vec![
+                "a", "/", "*", "**", "{", "}", ",", "\\", ".", "?", "[", "]", "(", ")", "|", "+",
+                "$", "^",
+            ]),
+            0..10,
+        )
+        .prop_map(|parts| parts.concat())
+    }
 
     /// URL-ish text containing no glob metacharacter, over a deliberately
     /// narrow alphabet that nonetheless includes the regex metacharacters a
@@ -209,6 +226,34 @@ mod properties {
                 glob_match(&pattern, &text),
                 "escaped `{}` should match `{}`", pattern, text
             );
+        }
+
+        /// Anything this accepts, the regex engine must accept too.
+        ///
+        /// The two failure modes are indistinguishable to a caller: a glob we
+        /// reject and a glob we translate into an uncompilable regex both come
+        /// back as "matches nothing". This is the invariant that keeps that
+        /// silence honest, and it is the shape of the bug this module was
+        /// rewritten to fix.
+        #[test]
+        fn an_accepted_pattern_always_compiles(pattern in glob_soup()) {
+            if let Some(translated) = glob_to_regex_pattern(&pattern) {
+                prop_assert!(
+                    regex::Regex::new(&translated).is_ok(),
+                    "accepted `{}` but produced uncompilable regex `{}`",
+                    pattern, translated
+                );
+                prop_assert!(
+                    GlobMatcher::new(&pattern).is_some(),
+                    "`{}` translated but did not compile", pattern
+                );
+            }
+        }
+
+        /// Matching is total: no pattern, however malformed, panics.
+        #[test]
+        fn matching_never_panics(pattern in glob_soup(), text in glob_soup()) {
+            let _ = glob_match(&pattern, &text);
         }
     }
 }

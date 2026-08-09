@@ -53,9 +53,15 @@ consequences worth knowing before they cost you time:
   `playwright-rs` by path, so a workspace dependency change silently
   staleness its lockfile, which then refreshes the next time anyone runs a
   cargo command there — surfacing as unrelated-looking dirt in `git status`.
-  A pre-commit hook (`scripts/check-site-lockfiles.sh`) now flags it on the
-  commits that cause it, with the refresh command. Nothing breaks meanwhile;
-  no CI job uses `--locked` against these crates.
+  A pre-commit hook (`scripts/check-external-lockfiles.sh`) now flags it on
+  the commits that cause it, with the refresh command. Nothing breaks
+  meanwhile; no CI job uses `--locked` against these crates.
+
+  **`crates/playwright/fuzz` has the same shape** (its own excluded
+  workspace, its own lockfile, a path dep on `playwright-rs`) and is covered
+  by the same hook. It drifts worse than the site crates because nothing
+  routine touches it: it sat on `playwright-rs` 0.13.0 until 0.15.1 before
+  anyone noticed.
 
 ## Skills (procedural reference)
 
