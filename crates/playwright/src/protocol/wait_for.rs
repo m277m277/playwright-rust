@@ -168,3 +168,34 @@ mod tests {
         assert_eq!(json["timeout"], 5000.0);
     }
 }
+
+/// Options for `wait_for_function()` on Page, Frame and Locator.
+///
+/// See: <https://playwright.dev/docs/api/class-page#page-wait-for-function>
+#[derive(Debug, Clone, Default)]
+#[non_exhaustive]
+pub struct WaitForFunctionOptions {
+    /// Poll every N milliseconds instead of on each animation frame.
+    ///
+    /// Leaving this unset polls on `requestAnimationFrame`, which is
+    /// Playwright's default and the right choice for anything driven by
+    /// rendering. Set it when waiting on something the page changes off-frame,
+    /// such as a timer or a network callback.
+    pub polling_interval: Option<f64>,
+    /// Maximum time to wait, in milliseconds.
+    pub timeout: Option<f64>,
+}
+
+impl WaitForFunctionOptions {
+    /// Poll every `ms` milliseconds rather than on each animation frame.
+    pub fn polling_interval(mut self, ms: f64) -> Self {
+        self.polling_interval = Some(ms);
+        self
+    }
+
+    /// Maximum time to wait, in milliseconds.
+    pub fn timeout(mut self, timeout: f64) -> Self {
+        self.timeout = Some(timeout);
+        self
+    }
+}

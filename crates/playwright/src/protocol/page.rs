@@ -593,6 +593,33 @@ impl Page {
         Ok(self.main_frame_wired())
     }
 
+    /// Waits until `expression` returns a truthy value in the main frame,
+    /// then resolves to its result as a [`JSHandle`](crate::protocol::JSHandle).
+    ///
+    /// Polls on `requestAnimationFrame` by default; set
+    /// [`WaitForFunctionOptions::polling_interval`](crate::protocol::WaitForFunctionOptions)
+    /// to poll on a timer instead, which is what you want for state the page
+    /// changes off-frame.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the expression does not become truthy within the
+    /// timeout (default 30s), or if the page closes first. The timeout is
+    /// enforced by the driver, so it surfaces as a protocol error carrying
+    /// the driver's "Timeout ...ms exceeded" message.
+    ///
+    /// See: <https://playwright.dev/docs/api/class-page#page-wait-for-function>
+    pub async fn wait_for_function(
+        &self,
+        expression: &str,
+        options: impl Into<Option<crate::protocol::WaitForFunctionOptions>>,
+    ) -> Result<std::sync::Arc<crate::protocol::JSHandle>> {
+        self.main_frame()
+            .await?
+            .wait_for_function(expression, options)
+            .await
+    }
+
     /// Clone of the construction-time main frame with the page back-reference
     /// wired, so `frame.page()` / `frame.locator()` work. Infallible: the
     /// frame is resolved when the Page is created.
@@ -3132,15 +3159,15 @@ impl Page {
         F: Fn(Vec<serde_json::Value>) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = serde_json::Value> + Send + 'static,
     {
-        self.expose_binding_internal(name, false, callback).await
+        self.expose_binding_internal(name, callback).await
     }
 
-    /// Exposes a Rust function to this page as `window[name]` in JavaScript,
-    /// with `needsHandle: true`.
+    /// Exposes a Rust function to this page as `window[name]` in JavaScript.
     ///
-    /// Identical to [`expose_function`](Self::expose_function) but the Playwright
-    /// server passes the first argument as a `JSHandle` object rather than a plain
-    /// value.
+    /// Currently identical to [`expose_function`](Self::expose_function):
+    /// arguments arrive as plain serialized values. Upstream Playwright's
+    /// `exposeBinding` can additionally hand the callback a source
+    /// (page/frame) descriptor, which this crate does not surface yet.
     ///
     /// # Arguments
     ///
@@ -3160,22 +3187,11 @@ impl Page {
         F: Fn(Vec<serde_json::Value>) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = serde_json::Value> + Send + 'static,
     {
-        self.expose_binding_internal(name, true, callback).await
+        self.expose_binding_internal(name, callback).await
     }
 
     /// Internal implementation shared by page-level expose_function and expose_binding.
-    ///
-    /// Both `expose_function` and `expose_binding` use `needsHandle: false` because
-    /// the current implementation does not support JSHandle objects. Using
-    /// `needsHandle: true` would cause the Playwright server to wrap the first
-    /// argument as a `JSHandle`, which requires a JSHandle protocol object that
-    /// is not yet implemented.
-    async fn expose_binding_internal<F, Fut>(
-        &self,
-        name: &str,
-        _needs_handle: bool,
-        callback: F,
-    ) -> Result<()>
+    async fn expose_binding_internal<F, Fut>(&self, name: &str, callback: F) -> Result<()>
     where
         F: Fn(Vec<serde_json::Value>) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = serde_json::Value> + Send + 'static,
@@ -3191,12 +3207,13 @@ impl Page {
             .insert(name.to_string(), callback);
 
         // Tell the Playwright server to inject window[name] into this page.
-        // Always use needsHandle: false — see note above.
+        //
+        // The protocol also accepts `noGlobal`, which suppresses that
+        // injection. It is deliberately not exposed: it exists to support
+        // passing functions as evaluate arguments, where the binding is
+        // called through the bindings controller rather than off `window`.
         self.channel()
-            .send_no_result(
-                "exposeBinding",
-                serde_json::json!({ "name": name, "needsHandle": false }),
-            )
+            .send_no_result("exposeBinding", serde_json::json!({ "name": name }))
             .await
     }
 

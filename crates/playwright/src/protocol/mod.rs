@@ -164,7 +164,7 @@ pub use tap::{TapOptions, TapOptionsBuilder};
 pub use touchscreen::Touchscreen;
 pub use tracing::{Tracing, TracingStartOptions, TracingStopOptions};
 pub use video::Video;
-pub use wait_for::{WaitForOptions, WaitForOptionsBuilder, WaitForState};
+pub use wait_for::{WaitForFunctionOptions, WaitForOptions, WaitForOptionsBuilder, WaitForState};
 pub use web_error::{WebError, WebErrorLocation};
 pub use web_socket::WebSocket;
 pub use web_socket_route::{WebSocketRoute, WebSocketRouteCloseOptions};

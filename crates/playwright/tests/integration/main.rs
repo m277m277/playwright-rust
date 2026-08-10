@@ -69,6 +69,7 @@ mod stability;
 mod storage_state;
 mod tracing_emission;
 mod transport;
+mod wait_for_function;
 mod web_error;
 mod web_storage;
 mod websocket;

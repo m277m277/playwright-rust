@@ -1788,16 +1788,16 @@ impl BrowserContext {
         F: Fn(Vec<serde_json::Value>) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = serde_json::Value> + Send + 'static,
     {
-        self.expose_binding_internal(name, false, callback).await
+        self.expose_binding_internal(name, callback).await
     }
 
     /// Exposes a Rust function to every page in this browser context as
-    /// `window[name]` in JavaScript, with `needsHandle: true`.
+    /// `window[name]` in JavaScript.
     ///
-    /// Identical to [`expose_function`](Self::expose_function) but the Playwright
-    /// server passes the first argument as a `JSHandle` object rather than a plain
-    /// value.  Use this when the JS caller passes complex objects that you want to
-    /// inspect on the Rust side.
+    /// Currently identical to [`expose_function`](Self::expose_function):
+    /// arguments arrive as plain serialized values. Upstream Playwright's
+    /// `exposeBinding` can additionally hand the callback a source
+    /// (page/frame) descriptor, which this crate does not surface yet.
     ///
     /// # Arguments
     ///
@@ -1817,22 +1817,11 @@ impl BrowserContext {
         F: Fn(Vec<serde_json::Value>) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = serde_json::Value> + Send + 'static,
     {
-        self.expose_binding_internal(name, true, callback).await
+        self.expose_binding_internal(name, callback).await
     }
 
     /// Internal implementation shared by expose_function and expose_binding.
-    ///
-    /// Both `expose_function` and `expose_binding` use `needsHandle: false` because
-    /// the current implementation does not support JSHandle objects. Using
-    /// `needsHandle: true` would cause the Playwright server to wrap the first
-    /// argument as a `JSHandle`, which requires a JSHandle protocol object that
-    /// is not yet implemented.
-    async fn expose_binding_internal<F, Fut>(
-        &self,
-        name: &str,
-        _needs_handle: bool,
-        callback: F,
-    ) -> Result<()>
+    async fn expose_binding_internal<F, Fut>(&self, name: &str, callback: F) -> Result<()>
     where
         F: Fn(Vec<serde_json::Value>) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = serde_json::Value> + Send + 'static,
@@ -1850,12 +1839,13 @@ impl BrowserContext {
             .insert(name.to_string(), callback);
 
         // Tell the Playwright server to inject window[name] into every page.
-        // Always use needsHandle: false — see note above.
+        //
+        // The protocol also accepts `noGlobal`, which suppresses that
+        // injection. It is deliberately not exposed: it exists to support
+        // passing functions as evaluate arguments, where the binding is
+        // called through the bindings controller rather than off `window`.
         self.channel()
-            .send_no_result(
-                "exposeBinding",
-                serde_json::json!({ "name": name, "needsHandle": false }),
-            )
+            .send_no_result("exposeBinding", serde_json::json!({ "name": name }))
             .await
     }
 

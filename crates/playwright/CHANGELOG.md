@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`BrowserContext::set_storage_state()` now calls the driver** instead of reconstructing the state client-side. It used to clear cookies, re-add them, then open a throwaway page per origin and replay `localStorage` through `evaluate`, which meant it could only restore what it knew how to replay and cost a navigation per origin. Behaviour for cookies and localStorage is unchanged and covered by the existing tests; WebAuthn passkeys and IndexedDB now survive a restore, and no page is opened.
 
+### Removed
+
+- **`exposeBinding` no longer sends `needsHandle`.** The parameter has never appeared in the protocol spec, and the string does not occur anywhere in the 1.62 driver, so it was being discarded by the parameter validator. No behaviour change; `expose_binding` and `expose_function` worked because the driver's default is what the crate wanted anyway.
+
 ### Deprecated
 
 - **`AriaSnapshotOptions::track`** does nothing as of the 1.62 driver: Playwright removed the parameter from `frame.ariaSnapshot`, and the driver drops undeclared parameters without erroring, so it was silently a no-op. It is no longer sent on the wire and setting it now warns.
@@ -29,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **WebP screenshots.** `ScreenshotType::Webp` joins `Png` and `Jpeg` on `page.screenshot()` and `locator.screenshot()`, honouring `quality` the way `Jpeg` does.
 - **`Scroll` action option** (`scroll(Scroll::None)`) opts out of the scroll-into-view that actionability checks normally perform, so an action fails instead of scrolling when the target is out of view. Available on `click`, `dblclick`, `hover`, `tap`, `check`, `uncheck` and `drag_to`. Leaving it unset keeps Playwright's `auto` default.
+- **`wait_for_function()` on `Page`, `Frame` and `Locator`.** Waits until a JavaScript expression returns truthy and resolves to its value as a `JSHandle`. Polls on `requestAnimationFrame` by default; `WaitForFunctionOptions::polling_interval` switches to a timer, which is what you need for state the page changes off-frame. The `Page`/`Frame` forms close a long-standing gap: the crate only ever sent `waitForSelector` and `waitForElementState`, so there was no way to wait on arbitrary page state. The `Locator` form is new in Playwright 1.62 and binds the matched element as the expression's first argument; it returns `()` rather than a handle, because the protocol omits the result when a selector is supplied.
 - **WebAuthn passkeys in storage state** (Playwright 1.62). `storage_state(StorageStateOptions::default().credentials(true))` captures the virtual authenticator's passkeys, and `set_storage_state()` restores them into another context, so an authenticated session can be saved and replayed. Passkeys are opt-in, so a state captured without the flag is byte-identical to before.
 - **`APIResponse::timing()` and `APIResponse::response_end_timing()`** report resource timing for an API request, reusing the same `ResourceTiming` type as the browser-side `Request::timing()`. Unlike that one this is synchronous and always available, because the driver sends it with the response rather than after a later event. The driver reports the end separately, since it builds the response before the body finishes; that value is folded into `response_end` so a `ResourceTiming` means the same thing whichever side produced it.
 

@@ -689,6 +689,35 @@ impl Locator {
         &self.frame
     }
 
+    /// Waits until `expression` returns a truthy value, with the matched
+    /// element passed as its first argument.
+    ///
+    /// New in Playwright 1.62. The element is resolved with strict matching,
+    /// so a selector matching more than one element is an error rather than a
+    /// silent pick of the first.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the expression does not become truthy within the
+    /// timeout (default 30s), or if the selector matches nothing or more
+    /// than one element. The timeout is enforced by the driver, so it
+    /// surfaces as a protocol error carrying the driver's
+    /// "Timeout ...ms exceeded" message.
+    ///
+    /// See: <https://playwright.dev/docs/api/class-locator#locator-wait-for-function>
+    /// Returns `()` rather than a handle: the protocol omits the result when a
+    /// selector is supplied, so there is nothing to hand back.
+    pub async fn wait_for_function(
+        &self,
+        expression: &str,
+        options: impl Into<Option<crate::protocol::WaitForFunctionOptions>>,
+    ) -> Result<()> {
+        self.frame
+            .wait_for_function_internal(expression, Some(&self.selector), options)
+            .await
+            .map(|_| ())
+    }
+
     /// Serializes this locator as a screenshot `mask` entry — `{ frame, selector }`
     /// with the frame sent as a channel reference — matching the protocol shape
     /// the driver expects. Used by [`crate::protocol::ScreenshotOptions`].

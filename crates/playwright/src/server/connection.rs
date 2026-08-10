@@ -62,6 +62,16 @@ pub trait ConnectionLike: Send + Sync {
     /// all BrowserContext instances.
     fn selectors(&self) -> Arc<Selectors>;
 
+    /// Waits for an object with `guid` to appear in the registry, with a 30s
+    /// deadline.
+    ///
+    /// The `__create__` for an object referenced in a response can arrive
+    /// just after the response itself, so "not in the registry yet" is a
+    /// race, not an error. This waits on the registration notification
+    /// rather than polling, so resolution is immediate once the object
+    /// lands.
+    async fn wait_for_object(&self, guid: &str) -> Result<Arc<dyn ChannelOwner>>;
+
     /// Close the transport writer, signalling EOF on the driver's stdin.
     ///
     /// This is the driver's sanctioned shutdown: `run-driver` wires
@@ -763,6 +773,10 @@ impl ConnectionLike for Connection {
             Ok(mut guard) => guard.take().is_some(),
             Err(_) => false,
         }
+    }
+
+    async fn wait_for_object(&self, guid: &str) -> Result<Arc<dyn ChannelOwner>> {
+        Connection::wait_for_object(self, guid).await
     }
 }
 

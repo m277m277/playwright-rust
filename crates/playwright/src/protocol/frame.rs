@@ -363,6 +363,140 @@ impl Frame {
         Ok(std::sync::Arc::new(handle))
     }
 
+    /// Waits until `expression` returns a truthy value, then resolves to its
+    /// result as a [`JSHandle`](crate::protocol::JSHandle).
+    ///
+    /// Polls on `requestAnimationFrame` by default; set
+    /// [`WaitForFunctionOptions::polling_interval`](crate::protocol::WaitForFunctionOptions)
+    /// to poll on a timer instead, which is what you want for state the page
+    /// changes off-frame.
+    ///
+    /// `selector` binds the matched element as the expression's first
+    /// argument, which is how `Locator::wait_for_function` scopes the wait
+    /// to an element. Pass `None` to wait on page-global state.
+    ///
+    /// No `isFunction` is sent: the driver's utility script auto-detects a
+    /// function expression when the flag is absent, and any client-side
+    /// guess (this crate used to check for a leading `(`/`function`/`async`)
+    /// misreads bare arrows like `el => ...`, which then evaluate to a
+    /// truthy function object and resolve the wait immediately.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the expression does not become truthy within the
+    /// timeout (default 30s), or if the frame detaches first. The timeout is
+    /// enforced by the driver, so it surfaces as a protocol error carrying
+    /// the driver's "Timeout ...ms exceeded" message.
+    ///
+    /// See: <https://playwright.dev/docs/api/class-frame#frame-wait-for-function>
+    #[tracing::instrument(level = "debug", skip_all, fields(guid = %self.guid()))]
+    pub(crate) async fn wait_for_function_internal(
+        &self,
+        expression: &str,
+        selector: Option<&str>,
+        options: impl Into<Option<crate::protocol::WaitForFunctionOptions>>,
+    ) -> Result<Option<std::sync::Arc<crate::protocol::JSHandle>>> {
+        let options = options.into().unwrap_or_default();
+
+        let mut params = serde_json::json!({
+            "expression": expression,
+            "arg": {"value": {"v": "undefined"}, "handles": []},
+            // Always sent: the driver treats an absent timeout as "no
+            // deadline at all", not as its 30s default, so leaving it off
+            // would turn a never-truthy expression into a permanent hang.
+            "timeout": options.timeout.unwrap_or(crate::DEFAULT_TIMEOUT_MS),
+        });
+        if let Some(interval) = options.polling_interval {
+            params["pollingInterval"] = serde_json::json!(interval);
+        }
+        if let Some(selector) = selector {
+            params["selector"] = serde_json::json!(selector);
+            params["strict"] = serde_json::json!(true);
+        }
+
+        #[derive(Deserialize)]
+        struct HandleRef {
+            guid: String,
+        }
+        #[derive(Deserialize)]
+        struct WaitForFunctionResponse {
+            handle: Option<HandleRef>,
+        }
+
+        let response: WaitForFunctionResponse =
+            self.channel().send("waitForFunction", params).await?;
+
+        // The protocol marks `handle` optional and omits it when `selector`
+        // was supplied, so an element-scoped wait legitimately resolves
+        // without one. Only the selector-less form is expected to carry it.
+        let Some(handle_ref) = response.handle else {
+            return Ok(None);
+        };
+
+        // Event-driven: resolves as soon as the handle's __create__ lands,
+        // instead of polling the registry.
+        let connection = self.base.connection();
+        let obj = connection.wait_for_object(&handle_ref.guid).await?;
+
+        // The driver returns a JSHandle, or an ElementHandle when the
+        // expression resolved to a DOM element. On the wire ElementHandle is
+        // a JSHandle subtype, so every JSHandle RPC (jsonValue, dispose,
+        // property access) is valid against its guid; Rust has no subtyping,
+        // so view it through a JSHandle over the same channel.
+        let handle = if let Some(h) = obj.as_any().downcast_ref::<crate::protocol::JSHandle>() {
+            h.clone()
+        } else if obj
+            .as_any()
+            .downcast_ref::<crate::protocol::ElementHandle>()
+            .is_some()
+        {
+            let parent = obj.parent().ok_or_else(|| {
+                crate::error::Error::ProtocolError(
+                    "ElementHandle result has no parent object".to_string(),
+                )
+            })?;
+            crate::protocol::JSHandle::new(
+                parent,
+                obj.type_name().to_string(),
+                std::sync::Arc::from(obj.guid()),
+                obj.initializer().clone(),
+            )?
+        } else {
+            return Err(crate::error::Error::TypeMismatch {
+                guid: handle_ref.guid,
+                expected: "JSHandle or ElementHandle".to_string(),
+                actual: obj.type_name().to_string(),
+            });
+        };
+
+        Ok(Some(std::sync::Arc::new(handle)))
+    }
+
+    /// Waits until `expression` returns a truthy value, then resolves to its
+    /// result as a [`JSHandle`](crate::protocol::JSHandle).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the expression does not become truthy within the
+    /// timeout (default 30s). The timeout is enforced by the driver, so it
+    /// surfaces as a protocol error carrying the driver's
+    /// "Timeout ...ms exceeded" message.
+    ///
+    /// See: <https://playwright.dev/docs/api/class-frame#frame-wait-for-function>
+    pub async fn wait_for_function(
+        &self,
+        expression: &str,
+        options: impl Into<Option<crate::protocol::WaitForFunctionOptions>>,
+    ) -> Result<std::sync::Arc<crate::protocol::JSHandle>> {
+        self.wait_for_function_internal(expression, None, options)
+            .await?
+            .ok_or_else(|| {
+                crate::error::Error::ProtocolError(
+                    "waitForFunction returned no handle for a selector-less wait".to_string(),
+                )
+            })
+    }
+
     /// Creates a [`Locator`](crate::protocol::Locator) scoped to this frame.
     ///
     /// The locator is lazy — it does not query the DOM until an action is performed on it.
