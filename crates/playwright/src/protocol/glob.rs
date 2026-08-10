@@ -120,7 +120,7 @@ pub(crate) fn glob_to_regex_pattern(glob: &str) -> Option<String> {
 
 /// Returns whether `text` matches the glob `pattern`.
 ///
-/// Returns `false` for a malformed pattern, matching the driver's behaviour
+/// Returns `false` for a malformed pattern, matching the driver's behavior
 /// of treating it as matching nothing rather than panicking.
 ///
 /// Callers that match repeatedly against one pattern should compile it once

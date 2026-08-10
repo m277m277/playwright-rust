@@ -39,7 +39,7 @@ pub enum ScreenshotType {
     Jpeg,
     /// WebP format (lossy compression, smaller than JPEG at equal quality)
     ///
-    /// Honours `quality` the same way `Jpeg` does.
+    /// Honors `quality` the same way `Jpeg` does.
     Webp,
 }
 

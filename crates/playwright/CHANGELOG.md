@@ -19,11 +19,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`BrowserContext::storage_state()` now takes options.** It gained `StorageStateOptions`, carrying the new `credentials` flag and the `indexedDB` flag the protocol has always accepted. Following the crate's option convention, migrate `storage_state()` to `storage_state(None)`; pass `StorageStateOptions::default().credentials(true)` to capture passkeys.
 
-- **`BrowserContext::set_storage_state()` now calls the driver** instead of reconstructing the state client-side. It used to clear cookies, re-add them, then open a throwaway page per origin and replay `localStorage` through `evaluate`, which meant it could only restore what it knew how to replay and cost a navigation per origin. Behaviour for cookies and localStorage is unchanged and covered by the existing tests; WebAuthn passkeys and IndexedDB now survive a restore, and no page is opened.
+- **`BrowserContext::set_storage_state()` now calls the driver** instead of reconstructing the state client-side. It used to clear cookies, re-add them, then open a throwaway page per origin and replay `localStorage` through `evaluate`, which meant it could only restore what it knew how to replay and cost a navigation per origin. WebAuthn passkeys and IndexedDB now survive a restore, and no page is opened.
+
+  The driver's semantics are stricter than the old client-side ones, and that strictness is now yours: it is a **replace**, not a merge. The driver clears the HTTP cache, clears storage (localStorage, sessionStorage, IndexedDB, service workers) for every origin the context has *visited* rather than only the origins listed in the state, and a state carrying no `credentials` disposes an installed virtual authenticator along with its passkeys. Capture with `StorageStateOptions::default().credentials(true)` if the restored context should keep WebAuthn working. Cookie replacement is covered by tests; the visited-origin sweep and authenticator disposal are driver behavior documented on the method.
 
 ### Removed
 
-- **`exposeBinding` no longer sends `needsHandle`.** The parameter has never appeared in the protocol spec, and the string does not occur anywhere in the 1.62 driver, so it was being discarded by the parameter validator. No behaviour change; `expose_binding` and `expose_function` worked because the driver's default is what the crate wanted anyway.
+- **`exposeBinding` no longer sends `needsHandle`.** The parameter has never appeared in the protocol spec, and the string does not occur anywhere in the 1.62 driver, so it was being discarded by the parameter validator. No behavior change; `expose_binding` and `expose_function` worked because the driver's default is what the crate wanted anyway.
 
 ### Deprecated
 

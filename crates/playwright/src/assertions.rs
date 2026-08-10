@@ -768,7 +768,7 @@ impl Expectation {
 
     /// Asserts that the element has exactly the specified `class` attribute string.
     ///
-    /// Mirrors Playwright's string-form behaviour: the element's full `class` attribute
+    /// Mirrors Playwright's string-form behavior: the element's full `class` attribute
     /// (whitespace-trimmed) must equal `expected`. To match against a regex, use
     /// [`to_have_class_regex`](Self::to_have_class_regex).
     ///

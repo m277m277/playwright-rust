@@ -106,6 +106,12 @@ async fn test_set_storage_state_replaces_existing() {
             .any(|c| c.name == "new_cookie" && c.value == "new_value"),
         "Expected 'new_cookie' after set_storage_state"
     );
+    // Replace means replace: the pre-existing cookie must be gone, not
+    // merged alongside the new one.
+    assert!(
+        !state.cookies.iter().any(|c| c.name == "old_cookie"),
+        "set_storage_state should replace existing cookies, but 'old_cookie' survived"
+    );
 
     browser.close().await.expect("Failed to close browser");
 }

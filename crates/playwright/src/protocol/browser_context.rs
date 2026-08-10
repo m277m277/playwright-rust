@@ -745,15 +745,25 @@ impl BrowserContext {
         Ok(response)
     }
 
-    /// Sets storage state (cookies and local storage) for this browser context in-place.
+    /// Replaces this context's storage state in-place via the driver's
+    /// `setStorageState`, matching `browserContext.setStorageState()` in the
+    /// JS/Python APIs. Useful for restoring authentication state without
+    /// recreating the context.
     ///
-    /// Clears all existing cookies, then adds cookies from `state.cookies`. For each
-    /// origin in `state.origins`, a temporary page is opened to that origin and its
-    /// `localStorage` is restored via JS evaluation, then the page is closed.
+    /// This is a **replace**, not a merge, and the driver is thorough about
+    /// it. Beyond installing the cookies, origins and passkeys carried by
+    /// `state`, it also:
     ///
-    /// This mirrors `browserContext.setStorageState()` from the JS/Python Playwright
-    /// APIs. It is useful for restoring authentication state without recreating the
-    /// context.
+    /// - clears the HTTP cache;
+    /// - clears storage (localStorage, sessionStorage, IndexedDB, service
+    ///   workers) for **every origin the context has visited**, not only the
+    ///   origins listed in `state`;
+    /// - when `state` carries no `credentials`, disposes an installed
+    ///   virtual authenticator along with its passkeys. Capture the state
+    ///   with [`StorageStateOptions::credentials`] if the context being
+    ///   restored into should keep WebAuthn working.
+    ///
+    /// No page is opened; the driver applies the state directly.
     ///
     /// # Example
     ///
@@ -3153,7 +3163,10 @@ impl StorageState {
 #[non_exhaustive]
 pub struct StorageStateOptions {
     /// Include IndexedDB contents in the captured state.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    // camelCase would render this "indexedDb"; the protocol field is
+    // "indexedDB", and the driver drops unknown parameters silently, so the
+    // wrong casing is not an error but a no-op.
+    #[serde(rename = "indexedDB", skip_serializing_if = "Option::is_none")]
     pub indexed_db: Option<bool>,
     /// Include the virtual authenticator's WebAuthn passkeys (Playwright 1.62).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -3979,6 +3992,21 @@ async fn extract_timing(
 mod tests {
     use super::*;
     use crate::api::launch_options::IgnoreDefaultArgs;
+
+    #[test]
+    fn storage_state_options_serialize_with_protocol_casing() {
+        // The driver validates "indexedDB" and silently drops unknown keys,
+        // so serde's camelCase ("indexedDb") would make the flag a no-op
+        // that reports success.
+        let opts = StorageStateOptions::default()
+            .indexed_db(true)
+            .credentials(true);
+        let value = serde_json::to_value(&opts).unwrap();
+        assert_eq!(
+            value,
+            serde_json::json!({ "indexedDB": true, "credentials": true })
+        );
+    }
 
     #[test]
     fn test_browser_context_options_ignore_default_args_bool_serialization() {

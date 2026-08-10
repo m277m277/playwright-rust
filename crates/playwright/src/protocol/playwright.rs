@@ -437,7 +437,7 @@ impl Drop for Playwright {
     /// unwind path of a panicking test.
     ///
     /// The driver owns the browser processes, and the only shutdown it
-    /// honours is EOF on its stdin: `run-driver` wires `transport.onclose`
+    /// honors is EOF on its stdin: `run-driver` wires `transport.onclose`
     /// to `gracefullyProcessExitDoNotHang`, which closes every browser
     /// before exiting. So we close the transport writer and then wait.
     ///
