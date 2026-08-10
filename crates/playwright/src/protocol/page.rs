@@ -1541,20 +1541,11 @@ impl Page {
         let result: NavigationResponse = self.channel().send(method, params).await?;
 
         if let Some(response_ref) = result.response {
-            let response_arc = {
-                let mut attempts = 0;
-                let max_attempts = 20;
-                loop {
-                    match self.connection().get_object(&response_ref.guid).await {
-                        Ok(obj) => break obj,
-                        Err(_) if attempts < max_attempts => {
-                            attempts += 1;
-                            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                        }
-                        Err(e) => return Err(e),
-                    }
-                }
-            };
+            // The Response's __create__ may arrive just after the response.
+            let response_arc = self
+                .connection()
+                .wait_for_object(&response_ref.guid)
+                .await?;
 
             let initializer = response_arc.initializer();
 

@@ -135,22 +135,11 @@ impl JSHandle {
             .await?;
 
         let guid = &response.handle.guid;
-        let connection = self.base.connection();
-        let mut attempts = 0;
-        let max_attempts = 20;
-
-        let handle = loop {
-            match connection.get_typed::<JSHandle>(guid).await {
-                Ok(h) => break h,
-                Err(_) if attempts < max_attempts => {
-                    attempts += 1;
-                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                }
-                Err(e) => return Err(e),
-            }
-        };
-
-        Ok(handle)
+        // The handle's __create__ may arrive just after the response.
+        self.base
+            .connection()
+            .wait_for_typed::<JSHandle>(guid)
+            .await
     }
 
     /// Returns a map of all enumerable own properties of this object.
@@ -186,19 +175,9 @@ impl JSHandle {
             let guid = &entry.name.clone();
             let handle_guid = &entry.value.guid;
 
-            let mut attempts = 0;
-            let max_attempts = 20;
-
-            let handle = loop {
-                match connection.get_typed::<JSHandle>(handle_guid).await {
-                    Ok(h) => break h,
-                    Err(_) if attempts < max_attempts => {
-                        attempts += 1;
-                        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                    }
-                    Err(e) => return Err(e),
-                }
-            };
+            // Each property handle's __create__ may arrive just after the
+            // response.
+            let handle = connection.wait_for_typed::<JSHandle>(handle_guid).await?;
 
             map.insert(guid.clone(), handle);
         }
@@ -298,22 +277,11 @@ impl JSHandle {
             .await?;
 
         let guid = &response.handle.guid;
-        let connection = self.base.connection();
-        let mut attempts = 0;
-        let max_attempts = 20;
-
-        let handle = loop {
-            match connection.get_typed::<JSHandle>(guid).await {
-                Ok(h) => break h,
-                Err(_) if attempts < max_attempts => {
-                    attempts += 1;
-                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                }
-                Err(e) => return Err(e),
-            }
-        };
-
-        Ok(handle)
+        // The handle's __create__ may arrive just after the response.
+        self.base
+            .connection()
+            .wait_for_typed::<JSHandle>(guid)
+            .await
     }
 
     /// Releases this handle and frees the associated browser resources.

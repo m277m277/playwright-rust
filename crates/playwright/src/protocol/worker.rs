@@ -143,14 +143,10 @@ impl Worker {
         &self,
         expression: &str,
     ) -> Result<Arc<crate::protocol::JSHandle>> {
-        let trimmed = expression.trim();
-        let is_function = trimmed.starts_with('(')
-            || trimmed.starts_with("function")
-            || trimmed.starts_with("async ");
-
+        // No isFunction: absent, the driver auto-detects a function
+        // expression; a client-side guess misreads bare arrows.
         let params = serde_json::json!({
             "expression": expression,
-            "isFunction": is_function,
             "arg": {"value": {"v": "undefined"}, "handles": []}
         });
 
@@ -169,23 +165,12 @@ impl Worker {
             .await?;
 
         let guid = &response.handle.guid;
-        let connection = self.base.connection();
-        let mut attempts = 0;
-        let max_attempts = 20;
-
-        let handle = loop {
-            match connection
-                .get_typed::<crate::protocol::JSHandle>(guid)
-                .await
-            {
-                Ok(h) => break h,
-                Err(_) if attempts < max_attempts => {
-                    attempts += 1;
-                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                }
-                Err(e) => return Err(e),
-            }
-        };
+        // The handle's __create__ may arrive just after the response.
+        let handle = self
+            .base
+            .connection()
+            .wait_for_typed::<crate::protocol::JSHandle>(guid)
+            .await?;
 
         Ok(Arc::new(handle))
     }

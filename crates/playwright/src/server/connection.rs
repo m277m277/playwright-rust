@@ -118,6 +118,26 @@ pub trait ConnectionExt: ConnectionLike {
                 actual: obj.type_name().to_string(),
             })
     }
+
+    /// Waits for the object to land in the registry, then downcasts to `T`.
+    ///
+    /// Use this to resolve a guid referenced in a response: its `__create__`
+    /// can arrive just after the response itself, so absence is a race and is
+    /// waited out (event-driven, 30s deadline). A wrong type, by contrast, is
+    /// deterministic — retrying it can never succeed — so `TypeMismatch`
+    /// fails immediately. Replaces the 20x50ms polling loops that treated
+    /// both cases alike, burning a second before reporting the mismatch.
+    async fn wait_for_typed<T: ChannelOwner + Clone + 'static>(&self, guid: &str) -> Result<T> {
+        let obj = self.wait_for_object(guid).await?;
+        obj.as_any()
+            .downcast_ref::<T>()
+            .cloned()
+            .ok_or_else(|| Error::TypeMismatch {
+                guid: guid.to_string(),
+                expected: std::any::type_name::<T>().to_string(),
+                actual: obj.type_name().to_string(),
+            })
+    }
 }
 
 // Blanket implementation: any ConnectionLike automatically gets ConnectionExt.

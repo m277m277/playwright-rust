@@ -240,9 +240,11 @@ impl Frame {
         &self,
         expression: &str,
     ) -> Result<Arc<crate::protocol::ElementHandle>> {
+        // No isFunction: the driver auto-detects when the flag is absent, so
+        // `evaluate_handle("() => document.body")` resolves to the body
+        // element rather than to a handle on the un-invoked closure.
         let params = serde_json::json!({
             "expression": expression,
-            "isFunction": false,
             "arg": {"value": {"v": "undefined"}, "handles": []}
         });
 
@@ -263,23 +265,12 @@ impl Frame {
 
         let guid = &response.handle.guid;
 
-        // Look up in the connection registry with retry (the __create__ may arrive slightly later)
-        let connection = self.base.connection();
-        let mut attempts = 0;
-        let max_attempts = 20;
-        let handle = loop {
-            match connection
-                .get_typed::<crate::protocol::ElementHandle>(guid)
-                .await
-            {
-                Ok(h) => break h,
-                Err(_) if attempts < max_attempts => {
-                    attempts += 1;
-                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                }
-                Err(e) => return Err(e),
-            }
-        };
+        // The handle's __create__ may arrive just after the response.
+        let handle = self
+            .base
+            .connection()
+            .wait_for_typed::<crate::protocol::ElementHandle>(guid)
+            .await?;
 
         Ok(Arc::new(handle))
     }
@@ -311,17 +302,12 @@ impl Frame {
         &self,
         expression: &str,
     ) -> Result<std::sync::Arc<crate::protocol::JSHandle>> {
-        // Detect whether the expression is a function (arrow function or function keyword)
-        // so we can set isFunction correctly and the server invokes it rather than
-        // evaluating the function literal.
-        let trimmed = expression.trim();
-        let is_function = trimmed.starts_with("(")
-            || trimmed.starts_with("function")
-            || trimmed.starts_with("async ");
-
+        // No isFunction: absent, the driver's utility script auto-detects a
+        // function expression and invokes it. Any client-side guess misreads
+        // bare arrows like `x => ...`, which then come back as a handle to
+        // the un-invoked function instead of its result.
         let params = serde_json::json!({
             "expression": expression,
-            "isFunction": is_function,
             "arg": {"value": {"v": "undefined"}, "handles": []}
         });
 
@@ -342,23 +328,12 @@ impl Frame {
 
         let guid = &response.handle.guid;
 
-        // Look up in the connection registry with retry (the __create__ may arrive slightly later)
-        let connection = self.base.connection();
-        let mut attempts = 0;
-        let max_attempts = 20;
-        let handle = loop {
-            match connection
-                .get_typed::<crate::protocol::JSHandle>(guid)
-                .await
-            {
-                Ok(h) => break h,
-                Err(_) if attempts < max_attempts => {
-                    attempts += 1;
-                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                }
-                Err(e) => return Err(e),
-            }
-        };
+        // The handle's __create__ may arrive just after the response.
+        let handle = self
+            .base
+            .connection()
+            .wait_for_typed::<crate::protocol::JSHandle>(guid)
+            .await?;
 
         Ok(std::sync::Arc::new(handle))
     }
@@ -656,25 +631,11 @@ impl Frame {
 
         // If navigation returned a response, get the Response object from the connection
         if let Some(response_ref) = goto_result.response {
-            // The server returns a Response GUID, but the __create__ message might not have
-            // arrived yet. Retry a few times to wait for the object to be created.
-            // TODO: Implement proper GUID replacement like Python's _replace_guids_with_channels
-            //   - Eliminates retry loop for better performance
-            //   - See: playwright-python's _replace_guids_with_channels method
-            let response_arc = {
-                let mut attempts = 0;
-                let max_attempts = 20; // 20 * 50ms = 1 second max wait
-                loop {
-                    match self.connection().get_object(&response_ref.guid).await {
-                        Ok(obj) => break obj,
-                        Err(_) if attempts < max_attempts => {
-                            attempts += 1;
-                            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                        }
-                        Err(e) => return Err(e),
-                    }
-                }
-            };
+            // The Response's __create__ may arrive just after the response.
+            let response_arc = self
+                .connection()
+                .wait_for_object(&response_ref.guid)
+                .await?;
 
             // Extract Response data from the initializer, and store the Arc for RPC calls
             // (body(), rawHeaders(), headerValue()) that need to contact the server.
