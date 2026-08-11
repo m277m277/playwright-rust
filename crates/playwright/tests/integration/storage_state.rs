@@ -177,20 +177,6 @@ async fn test_storage_state_captures_webauthn_credentials() {
         "the created passkey should appear in the captured state"
     );
 
-    // The point of capturing them is restoring them, which needs the type to
-    // survive a save/load round-trip through JSON.
-    let json = serde_json::to_string(&with).expect("state serializes");
-    let restored: StorageState = serde_json::from_str(&json).expect("state deserializes");
-    assert_eq!(
-        restored
-            .credentials
-            .as_ref()
-            .map(|c| c.len())
-            .unwrap_or_default(),
-        creds.len(),
-        "credentials should survive a storage-state round-trip"
-    );
-
     browser.close().await.expect("Failed to close browser");
 }
 
@@ -253,6 +239,78 @@ async fn test_set_storage_state_restores_webauthn_credentials() {
         restored.iter().any(|c| c.id == created.id),
         "the saved passkey should be restored into the new context"
     );
+
+    browser.close().await.expect("Failed to close browser");
+}
+
+#[tokio::test]
+async fn test_storage_state_round_trips_indexed_db() {
+    let (_pw, browser, context) = crate::common::setup_context().await;
+    let page = context.new_page().await.expect("Failed to create page");
+    page.goto("https://example.com", None)
+        .await
+        .expect("Failed to navigate");
+
+    // Write a value through IndexedDB and wait for the transaction to land.
+    let _: bool = page
+        .evaluate(
+            "() => new Promise(resolve => { \
+               const open = indexedDB.open('db', 1); \
+               open.onupgradeneeded = () => open.result.createObjectStore('kv'); \
+               open.onsuccess = () => { \
+                 const tx = open.result.transaction('kv', 'readwrite'); \
+                 tx.objectStore('kv').put('value-42', 'key'); \
+                 tx.oncomplete = () => resolve(true); \
+               }; \
+             })",
+            None::<&()>,
+        )
+        .await
+        .expect("seed IndexedDB");
+
+    let saved = context
+        .storage_state(StorageStateOptions::default().indexed_db(true))
+        .await
+        .expect("capture state with IndexedDB");
+    let origin = saved
+        .origins
+        .iter()
+        .find(|o| o.origin.contains("example.com"))
+        .expect("captured state should carry the visited origin");
+    assert!(
+        origin.indexed_db.is_some(),
+        "indexed_db(true) should capture the IndexedDB payload, got none"
+    );
+
+    // Restore into a fresh context and read the value back through the API.
+    let fresh = browser
+        .new_context()
+        .await
+        .expect("Failed to create second context");
+    fresh
+        .set_storage_state(saved)
+        .await
+        .expect("restore state carrying IndexedDB");
+    let page2 = fresh.new_page().await.expect("new page in fresh context");
+    page2
+        .goto("https://example.com", None)
+        .await
+        .expect("navigate in fresh context");
+    let value: String = page2
+        .evaluate(
+            "() => new Promise(resolve => { \
+               const open = indexedDB.open('db', 1); \
+               open.onsuccess = () => { \
+                 const tx = open.result.transaction('kv', 'readonly'); \
+                 const get = tx.objectStore('kv').get('key'); \
+                 get.onsuccess = () => resolve(get.result ?? ''); \
+               }; \
+             })",
+            None::<&()>,
+        )
+        .await
+        .expect("read IndexedDB in fresh context");
+    assert_eq!(value, "value-42", "IndexedDB should survive the round-trip");
 
     browser.close().await.expect("Failed to close browser");
 }

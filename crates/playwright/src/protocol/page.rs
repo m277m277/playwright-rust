@@ -614,6 +614,12 @@ impl Page {
         expression: &str,
         options: impl Into<Option<crate::protocol::WaitForFunctionOptions>>,
     ) -> Result<std::sync::Arc<crate::protocol::JSHandle>> {
+        // Resolve the page's configured default here: the frame only knows
+        // it through a back-reference that a bare Frame may not have.
+        let mut options = options.into().unwrap_or_default();
+        if options.timeout.is_none() {
+            options.timeout = Some(self.default_timeout_ms());
+        }
         self.main_frame()
             .await?
             .wait_for_function(expression, options)
@@ -1752,6 +1758,82 @@ impl Page {
     pub async fn evaluate_value(&self, expression: &str) -> Result<String> {
         let frame = self.main_frame().await?;
         frame.frame_evaluate_expression_value(expression).await
+    }
+
+    /// Evaluates `expression` with a Rust closure bound as its argument.
+    ///
+    /// The closure arrives in JavaScript as an async function: calling it
+    /// routes the arguments back to Rust, awaits the closure, and resolves
+    /// with its return value. It is not installed on `window`; the expression
+    /// receives it as its argument and decides what to do with it.
+    ///
+    /// This is the Rust shape of upstream's function-valued evaluate
+    /// arguments. JavaScript callers pass a closure directly; Rust has no
+    /// function value that can travel inside serialized data, so the
+    /// callback is a dedicated parameter instead — the capability is the
+    /// same, the composition point is the method signature.
+    ///
+    /// Each call registers a binding that lives until the page closes, which
+    /// is what lets the expression stash the function and call it later
+    /// (e.g. from an event listener). The cost is that the binding is never
+    /// reclaimed earlier: calling this in a tight loop against a long-lived
+    /// page accretes one binding per call. Register once and stash when you
+    /// need repetition.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use playwright_rs::protocol::Playwright;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let pw = Playwright::launch().await?;
+    /// # let browser = pw.chromium().launch().await?;
+    /// # let page = browser.new_page().await?;
+    /// let sum: i64 = page
+    ///     .evaluate_with_callback("async cb => await cb(20, 22)", |args| async move {
+    ///         let a = args[0].as_i64().unwrap_or(0);
+    ///         let b = args[1].as_i64().unwrap_or(0);
+    ///         serde_json::json!(a + b)
+    ///     })
+    ///     .await?;
+    /// assert_eq!(sum, 42);
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the expression throws, if the page or its context
+    /// has closed, or if the result does not deserialize into `U`.
+    ///
+    /// See: <https://playwright.dev/docs/api/class-page#page-evaluate>
+    #[tracing::instrument(level = "info", skip_all, fields(guid = %self.guid()))]
+    pub async fn evaluate_with_callback<U, F, Fut>(
+        &self,
+        expression: &str,
+        callback: F,
+    ) -> Result<U>
+    where
+        U: serde::de::DeserializeOwned,
+        F: Fn(Vec<serde_json::Value>) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = serde_json::Value> + Send + 'static,
+    {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        // The `__pw_fn_` prefix matches upstream's kFunctionBindingPrefix
+        // and is load-bearing: the server-to-page serializer only carries a
+        // function value whose binding name starts with it, so a rename off
+        // the prefix would make the argument deserialize as `undefined` in
+        // the page.
+        static CALLBACK_SEQ: AtomicU64 = AtomicU64::new(0);
+        let name = format!(
+            "__pw_fn_rs_{}",
+            CALLBACK_SEQ.fetch_add(1, Ordering::Relaxed)
+        );
+
+        self.expose_binding_internal(&name, true, callback).await?;
+
+        let frame = self.main_frame().await?;
+        let result = frame.evaluate_with_fn_arg(expression, &name).await?;
+        serde_json::from_value(result).map_err(Error::from)
     }
 
     /// Registers a route handler for network interception.
@@ -3150,7 +3232,7 @@ impl Page {
         F: Fn(Vec<serde_json::Value>) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = serde_json::Value> + Send + 'static,
     {
-        self.expose_binding_internal(name, callback).await
+        self.expose_binding_internal(name, false, callback).await
     }
 
     /// Exposes a Rust function to this page as `window[name]` in JavaScript.
@@ -3178,11 +3260,16 @@ impl Page {
         F: Fn(Vec<serde_json::Value>) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = serde_json::Value> + Send + 'static,
     {
-        self.expose_binding_internal(name, callback).await
+        self.expose_binding_internal(name, false, callback).await
     }
 
     /// Internal implementation shared by page-level expose_function and expose_binding.
-    async fn expose_binding_internal<F, Fut>(&self, name: &str, callback: F) -> Result<()>
+    async fn expose_binding_internal<F, Fut>(
+        &self,
+        name: &str,
+        no_global: bool,
+        callback: F,
+    ) -> Result<()>
     where
         F: Fn(Vec<serde_json::Value>) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = serde_json::Value> + Send + 'static,
@@ -3197,15 +3284,15 @@ impl Page {
             .unwrap()
             .insert(name.to_string(), callback);
 
-        // Tell the Playwright server to inject window[name] into this page.
-        //
-        // The protocol also accepts `noGlobal`, which suppresses that
-        // injection. It is deliberately not exposed: it exists to support
-        // passing functions as evaluate arguments, where the binding is
-        // called through the bindings controller rather than off `window`.
-        self.channel()
-            .send_no_result("exposeBinding", serde_json::json!({ "name": name }))
-            .await
+        // Tell the Playwright server to register the binding. `noGlobal`
+        // suppresses the `window[name]` injection; it is how
+        // `evaluate_with_callback` passes a function the page can only reach
+        // through the bindings controller, never off `window`.
+        let mut params = serde_json::json!({ "name": name });
+        if no_global {
+            params["noGlobal"] = serde_json::json!(true);
+        }
+        self.channel().send_no_result("exposeBinding", params).await
     }
 
     /// Handles a download event from the protocol

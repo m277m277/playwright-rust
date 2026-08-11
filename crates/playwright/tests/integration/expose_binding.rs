@@ -1,8 +1,8 @@
 // Tests for:
 // - BrowserContext::expose_function  (context-level, all pages get the binding)
-// - BrowserContext::expose_binding   (same but with needsHandle: true)
+// - BrowserContext::expose_binding   (same callback shape as expose_function)
 // - Page::expose_function            (page-level, only that page gets the binding)
-// - Page::expose_binding             (page-level with needsHandle: true)
+// - Page::expose_binding             (page-level)
 //
 // See: https://playwright.dev/docs/api/class-browsercontext#browser-context-expose-function
 // See: https://playwright.dev/docs/api/class-page#page-expose-function
@@ -117,9 +117,8 @@ async fn test_context_expose_function_string_return() {
 // BrowserContext::expose_binding
 // ---------------------------------------------------------------------------
 
-/// expose_binding works the same as expose_function but sends needsHandle: true
-/// to the server. When needsHandle is true, the JS function only accepts a single
-/// argument (a JSHandle). We verify that a single-argument call works.
+/// expose_binding currently behaves the same as expose_function: arguments
+/// arrive as plain serialized values. We verify a single-argument call works.
 #[tokio::test]
 async fn test_context_expose_binding() {
     let (_pw, browser, context) = crate::common::setup_context().await;
@@ -134,7 +133,7 @@ async fn test_context_expose_binding() {
 
     let page = context.new_page().await.expect("new_page");
 
-    // With needsHandle: true, only one JS argument is allowed
+    // A single JS argument, matching the documented binding shape
     let result = page
         .evaluate_value("double(21)")
         .await
@@ -213,9 +212,8 @@ async fn test_page_expose_function_isolated() {
 // Page::expose_binding
 // ---------------------------------------------------------------------------
 
-/// page.expose_binding works the same as page.expose_function but sends
-/// needsHandle: true to the server. With needsHandle: true, the JS function
-/// only accepts a single argument.
+/// page.expose_binding currently behaves the same as page.expose_function:
+/// arguments arrive as plain serialized values.
 #[tokio::test]
 async fn test_page_expose_binding() {
     let (_pw, browser, context) = crate::common::setup_context().await;
@@ -229,7 +227,7 @@ async fn test_page_expose_binding() {
     .await
     .expect("expose_binding should succeed");
 
-    // With needsHandle: true, only a single JS argument is allowed
+    // A single JS argument, matching the documented binding shape
     let result = page
         .evaluate_value("triple(14)")
         .await

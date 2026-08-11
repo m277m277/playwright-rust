@@ -736,11 +736,8 @@ impl BrowserContext {
         &self,
         options: impl Into<Option<StorageStateOptions>>,
     ) -> Result<StorageState> {
-        let params = match options.into() {
-            Some(opts) => serde_json::to_value(opts)
-                .map_err(|e| Error::ProtocolError(format!("Failed to serialize options: {e}")))?,
-            None => serde_json::json!({}),
-        };
+        let params = serde_json::to_value(options.into().unwrap_or_default())
+            .map_err(|e| Error::ProtocolError(format!("Failed to serialize options: {e}")))?;
         let response: StorageState = self.channel().send("storageState", params).await?;
         Ok(response)
     }
@@ -763,7 +760,13 @@ impl BrowserContext {
     ///   with [`StorageStateOptions::credentials`] if the context being
     ///   restored into should keep WebAuthn working.
     ///
-    /// No page is opened; the driver applies the state directly.
+    /// No client-visible page is opened: the driver uses an internal page,
+    /// navigated to each origin, to apply origin-scoped state.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the state fails to serialize or the driver
+    /// rejects it, or if the context has closed.
     ///
     /// # Example
     ///
@@ -796,7 +799,7 @@ impl BrowserContext {
         // client-side. The previous implementation cleared cookies, re-added
         // them, then opened a throwaway page per origin to replay
         // localStorage through `evaluate`. That could only ever restore what
-        // it knew how to replay, so WebAuthn passkeys (Playwright 1.62) and
+        // it knew how to replay, so WebAuthn passkeys and
         // IndexedDB were silently dropped, and every origin cost a page
         // navigation.
         let storage_state = serde_json::to_value(&state)
@@ -3104,6 +3107,15 @@ pub struct Origin {
     pub origin: String,
     /// Local storage items for this origin
     pub local_storage: Vec<LocalStorageItem>,
+    /// IndexedDB contents for this origin, as the driver's opaque payload.
+    ///
+    /// Populated when the state was captured with
+    /// [`StorageStateOptions::indexed_db`], and passed back verbatim on
+    /// restore. Kept as raw JSON rather than modelled: the shape is an
+    /// implementation detail of the driver's snapshot format, and the only
+    /// supported operation is carrying it back unchanged.
+    #[serde(rename = "indexedDB", default, skip_serializing_if = "Option::is_none")]
+    pub indexed_db: Option<serde_json::Value>,
 }
 
 impl Origin {
@@ -3112,6 +3124,7 @@ impl Origin {
         Self {
             origin: origin.into(),
             local_storage,
+            indexed_db: None,
         }
     }
 }
@@ -3129,8 +3142,8 @@ pub struct StorageState {
     pub cookies: Vec<Cookie>,
     /// List of origins with local storage
     pub origins: Vec<Origin>,
-    /// WebAuthn passkeys held by the context's virtual authenticator
-    /// (Playwright 1.62). Only populated when the state was captured with
+    /// WebAuthn passkeys held by the context's virtual authenticator.
+    /// Only populated when the state was captured with
     /// [`StorageStateOptions::credentials`]; omitted from the wire when empty
     /// so a state captured without them is unchanged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -3168,7 +3181,7 @@ pub struct StorageStateOptions {
     // wrong casing is not an error but a no-op.
     #[serde(rename = "indexedDB", skip_serializing_if = "Option::is_none")]
     pub indexed_db: Option<bool>,
-    /// Include the virtual authenticator's WebAuthn passkeys (Playwright 1.62).
+    /// Include the virtual authenticator's WebAuthn passkeys.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub credentials: Option<bool>,
 }
@@ -4006,6 +4019,44 @@ mod tests {
             value,
             serde_json::json!({ "indexedDB": true, "credentials": true })
         );
+    }
+
+    #[test]
+    fn storage_state_round_trips_credentials_content() {
+        // A captured state's value is in being restorable; this pins that a
+        // save/load through JSON preserves credential content, not just
+        // count.
+        // Exactly the driver's VirtualCredential schema: five required
+        // string fields.
+        let json = serde_json::json!({
+            "cookies": [],
+            "origins": [],
+            "credentials": [{
+                "id": "Y3JlZA",
+                "rpId": "example.com",
+                "userHandle": "dXNlcg",
+                "privateKey": "cGtleQ",
+                "publicKey": "cHVi"
+            }]
+        });
+        let state: StorageState = serde_json::from_value(json.clone()).unwrap();
+        let back = serde_json::to_value(&state).unwrap();
+        assert_eq!(back["credentials"], json["credentials"]);
+    }
+
+    #[test]
+    fn origin_round_trips_indexed_db_payload_verbatim() {
+        // The payload is the driver's opaque snapshot format; the contract
+        // is carrying it back unchanged, under the protocol's exact casing.
+        let json = serde_json::json!({
+            "origin": "https://example.com",
+            "localStorage": [],
+            "indexedDB": [{"name": "db", "version": 1, "stores": []}]
+        });
+        let origin: Origin = serde_json::from_value(json.clone()).unwrap();
+        let back = serde_json::to_value(&origin).unwrap();
+        assert_eq!(back["indexedDB"], json["indexedDB"]);
+        assert!(back.get("indexedDb").is_none());
     }
 
     #[test]

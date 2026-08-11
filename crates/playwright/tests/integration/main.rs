@@ -32,6 +32,7 @@ mod debugger;
 mod downloads_dialogs;
 mod element_handle;
 mod evaluate;
+mod evaluate_callback;
 mod expect_event;
 mod expose_binding;
 mod fake_file_system;

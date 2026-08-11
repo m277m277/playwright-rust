@@ -54,8 +54,9 @@ async fn test_wait_for_function_times_out_when_never_truthy() {
 async fn test_wait_for_function_polling_interval_sees_off_frame_state() {
     let (_pw, browser, page) = crate::common::setup().await;
 
-    // A hidden document never fires requestAnimationFrame, so the default
-    // polling mode would never observe this change. The interval is the point.
+    // Exercises the pollingInterval wire path end-to-end on the page-global
+    // form (the only form the driver reads it on). This headless page still
+    // fires rAF, so this pins acceptance, not that rAF polling would fail.
     page.set_content(
         "<script>window.v = 0; setInterval(() => { window.v++; }, 50);</script>",
         None,
@@ -88,12 +89,8 @@ async fn test_locator_wait_for_function_receives_the_matched_element() {
     .await
     .expect("set_content");
 
-    // The element is bound as the first argument (Playwright 1.62), so the
-    // expression never has to re-query the DOM. Note the bare arrow: an
-    // earlier client-side isFunction heuristic misread exactly this form,
-    // and the wait then resolved immediately because the un-invoked function
-    // object is itself truthy. The elapsed check pins that the wait really
-    // waited for the state flip rather than resolving vacuously.
+    // Bare arrow on purpose: a client-side isFunction guess resolves this
+    // vacuously; the elapsed check pins that the wait actually waited.
     let start = std::time::Instant::now();
     page.locator("#target")
         .wait_for_function("el => el.dataset.state === 'done'", None)
@@ -101,7 +98,7 @@ async fn test_locator_wait_for_function_receives_the_matched_element() {
         .expect("should resolve once the bound element reaches the state");
     assert!(
         start.elapsed() >= std::time::Duration::from_millis(250),
-        "resolved in {:?}, before the 300ms state flip - the expression          cannot have been evaluated against the element",
+        "resolved in {:?}, before the 300ms state flip: the expression cannot have run against the element",
         start.elapsed()
     );
 

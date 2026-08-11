@@ -328,42 +328,22 @@ impl Frame {
 
         let guid = &response.handle.guid;
 
-        // The handle's __create__ may arrive just after the response.
-        let handle = self
-            .base
-            .connection()
-            .wait_for_typed::<crate::protocol::JSHandle>(guid)
-            .await?;
+        let handle = crate::protocol::JSHandle::wait_for(&self.base.connection(), guid).await?;
 
         Ok(std::sync::Arc::new(handle))
     }
 
-    /// Waits until `expression` returns a truthy value, then resolves to its
-    /// result as a [`JSHandle`](crate::protocol::JSHandle).
-    ///
-    /// Polls on `requestAnimationFrame` by default; set
-    /// [`WaitForFunctionOptions::polling_interval`](crate::protocol::WaitForFunctionOptions)
-    /// to poll on a timer instead, which is what you want for state the page
-    /// changes off-frame.
+    /// Shared engine for the `wait_for_function` family.
     ///
     /// `selector` binds the matched element as the expression's first
-    /// argument, which is how `Locator::wait_for_function` scopes the wait
-    /// to an element. Pass `None` to wait on page-global state.
+    /// argument (locator form); `None` waits on page-global state. The
+    /// protocol omits the result handle when a selector is supplied, hence
+    /// the `Option` — only the selector-less form is expected to carry one.
     ///
-    /// No `isFunction` is sent: the driver's utility script auto-detects a
-    /// function expression when the flag is absent, and any client-side
-    /// guess (this crate used to check for a leading `(`/`function`/`async`)
-    /// misreads bare arrows like `el => ...`, which then evaluate to a
-    /// truthy function object and resolve the wait immediately.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the expression does not become truthy within the
-    /// timeout (default 30s), or if the frame detaches first. The timeout is
-    /// enforced by the driver, so it surfaces as a protocol error carrying
-    /// the driver's "Timeout ...ms exceeded" message.
-    ///
-    /// See: <https://playwright.dev/docs/api/class-frame#frame-wait-for-function>
+    /// No `isFunction` is sent: absent, the driver auto-detects a function
+    /// expression; any client-side guess misreads bare arrows like
+    /// `el => ...`, which then evaluate to a truthy function object and
+    /// resolve the wait immediately.
     #[tracing::instrument(level = "debug", skip_all, fields(guid = %self.guid()))]
     pub(crate) async fn wait_for_function_internal(
         &self,
@@ -373,13 +353,18 @@ impl Frame {
     ) -> Result<Option<std::sync::Arc<crate::protocol::JSHandle>>> {
         let options = options.into().unwrap_or_default();
 
+        // Always send a timeout: the driver treats an absent one as "no
+        // deadline at all", not as its own default. An unset option falls
+        // back to the page's configured default, like every other wait.
+        let timeout = options
+            .timeout
+            .or_else(|| self.page().map(|p| p.default_timeout_ms()))
+            .unwrap_or(crate::DEFAULT_TIMEOUT_MS);
+
         let mut params = serde_json::json!({
             "expression": expression,
             "arg": {"value": {"v": "undefined"}, "handles": []},
-            // Always sent: the driver treats an absent timeout as "no
-            // deadline at all", not as its 30s default, so leaving it off
-            // would turn a never-truthy expression into a permanent hang.
-            "timeout": options.timeout.unwrap_or(crate::DEFAULT_TIMEOUT_MS),
+            "timeout": timeout,
         });
         if let Some(interval) = options.polling_interval {
             params["pollingInterval"] = serde_json::json!(interval);
@@ -401,49 +386,12 @@ impl Frame {
         let response: WaitForFunctionResponse =
             self.channel().send("waitForFunction", params).await?;
 
-        // The protocol marks `handle` optional and omits it when `selector`
-        // was supplied, so an element-scoped wait legitimately resolves
-        // without one. Only the selector-less form is expected to carry it.
         let Some(handle_ref) = response.handle else {
             return Ok(None);
         };
 
-        // Event-driven: resolves as soon as the handle's __create__ lands,
-        // instead of polling the registry.
-        let connection = self.base.connection();
-        let obj = connection.wait_for_object(&handle_ref.guid).await?;
-
-        // The driver returns a JSHandle, or an ElementHandle when the
-        // expression resolved to a DOM element. On the wire ElementHandle is
-        // a JSHandle subtype, so every JSHandle RPC (jsonValue, dispose,
-        // property access) is valid against its guid; Rust has no subtyping,
-        // so view it through a JSHandle over the same channel.
-        let handle = if let Some(h) = obj.as_any().downcast_ref::<crate::protocol::JSHandle>() {
-            h.clone()
-        } else if obj
-            .as_any()
-            .downcast_ref::<crate::protocol::ElementHandle>()
-            .is_some()
-        {
-            let parent = obj.parent().ok_or_else(|| {
-                crate::error::Error::ProtocolError(
-                    "ElementHandle result has no parent object".to_string(),
-                )
-            })?;
-            crate::protocol::JSHandle::new(
-                parent,
-                obj.type_name().to_string(),
-                std::sync::Arc::from(obj.guid()),
-                obj.initializer().clone(),
-            )?
-        } else {
-            return Err(crate::error::Error::TypeMismatch {
-                guid: handle_ref.guid,
-                expected: "JSHandle or ElementHandle".to_string(),
-                actual: obj.type_name().to_string(),
-            });
-        };
-
+        let handle =
+            crate::protocol::JSHandle::wait_for(&self.base.connection(), &handle_ref.guid).await?;
         Ok(Some(std::sync::Arc::new(handle)))
     }
 
@@ -470,6 +418,32 @@ impl Frame {
                     "waitForFunction returned no handle for a selector-less wait".to_string(),
                 )
             })
+    }
+
+    /// Evaluates `expression` with a registered binding bound as its
+    /// argument, in the wire form of a function value.
+    ///
+    /// The page-side deserializer turns `{fn}` into a caller that routes
+    /// through the bindings controller back to the client. Owned by Frame so
+    /// the send/parse pipeline stays in one place with the other evaluate
+    /// variants.
+    pub(crate) async fn evaluate_with_fn_arg(
+        &self,
+        expression: &str,
+        binding_name: &str,
+    ) -> Result<Value> {
+        let params = serde_json::json!({
+            "expression": expression,
+            "arg": { "value": { "fn": binding_name }, "handles": [] },
+        });
+
+        #[derive(Deserialize)]
+        struct EvaluateResult {
+            value: serde_json::Value,
+        }
+
+        let result: EvaluateResult = self.channel().send("evaluateExpression", params).await?;
+        Ok(parse_result(&result.value))
     }
 
     /// Creates a [`Locator`](crate::protocol::Locator) scoped to this frame.

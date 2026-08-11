@@ -181,6 +181,9 @@ pub struct WaitForFunctionOptions {
     /// Playwright's default and the right choice for anything driven by
     /// rendering. Set it when waiting on something the page changes off-frame,
     /// such as a timer or a network callback.
+    ///
+    /// Applies to the page-global form only. `Locator::wait_for_function`
+    /// polls on the driver's own backoff schedule and ignores this.
     pub polling_interval: Option<f64>,
     /// Maximum time to wait, in milliseconds.
     pub timeout: Option<f64>,

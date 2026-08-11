@@ -76,6 +76,7 @@ macro_rules! impl_has_timeout {
 }
 
 impl_has_timeout!(
+    crate::protocol::WaitForFunctionOptions,
     crate::protocol::ClickOptions,
     crate::protocol::FillOptions,
     crate::protocol::PressOptions,
@@ -692,30 +693,36 @@ impl Locator {
     /// Waits until `expression` returns a truthy value, with the matched
     /// element passed as its first argument.
     ///
-    /// New in Playwright 1.62. The element is resolved with strict matching,
-    /// so a selector matching more than one element is an error rather than a
-    /// silent pick of the first.
+    /// The element is resolved with strict matching, so a selector matching
+    /// more than one element is an error rather than a silent pick of the
+    /// first. Returns `()` rather than a handle: the protocol omits the
+    /// result when a selector is supplied, so there is nothing to hand back.
+    ///
+    /// `WaitForFunctionOptions::polling_interval` has no effect on this
+    /// form: the driver polls element-scoped waits on its own backoff
+    /// schedule (roughly 100ms growing toward 1s) and reads the interval
+    /// only for the page-global form.
     ///
     /// # Errors
     ///
     /// Returns an error if the expression does not become truthy within the
-    /// timeout (default 30s), or if the selector matches nothing or more
-    /// than one element. The timeout is enforced by the driver, so it
-    /// surfaces as a protocol error carrying the driver's
-    /// "Timeout ...ms exceeded" message.
+    /// timeout (the page default unless set here), or if the selector
+    /// matches nothing or more than one element. The timeout is enforced by
+    /// the driver, so it surfaces as a protocol error carrying the driver's
+    /// "Timeout ...ms exceeded" message, with the selector appended.
     ///
     /// See: <https://playwright.dev/docs/api/class-locator#locator-wait-for-function>
-    /// Returns `()` rather than a handle: the protocol omits the result when a
-    /// selector is supplied, so there is nothing to hand back.
     pub async fn wait_for_function(
         &self,
         expression: &str,
         options: impl Into<Option<crate::protocol::WaitForFunctionOptions>>,
     ) -> Result<()> {
+        let options = self.with_timeout(options.into());
         self.frame
             .wait_for_function_internal(expression, Some(&self.selector), options)
             .await
             .map(|_| ())
+            .map_err(|e| self.wrap_error_with_selector(e))
     }
 
     /// Serializes this locator as a screenshot `mask` entry — `{ frame, selector }`

@@ -4,7 +4,6 @@ use crate::error::Result;
 use crate::protocol::evaluate_conversion::{parse_result, serialize_argument, serialize_null};
 use crate::server::channel::Channel;
 use crate::server::channel_owner::{ChannelOwner, ChannelOwnerImpl, ParentOrConnection};
-use crate::server::connection::ConnectionExt;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -165,12 +164,7 @@ impl Worker {
             .await?;
 
         let guid = &response.handle.guid;
-        // The handle's __create__ may arrive just after the response.
-        let handle = self
-            .base
-            .connection()
-            .wait_for_typed::<crate::protocol::JSHandle>(guid)
-            .await?;
+        let handle = crate::protocol::JSHandle::wait_for(&self.base.connection(), guid).await?;
 
         Ok(Arc::new(handle))
     }

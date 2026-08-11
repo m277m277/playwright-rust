@@ -13,7 +13,6 @@
 use crate::error::Result;
 use crate::protocol::evaluate_conversion::parse_result;
 use crate::server::channel_owner::{ChannelOwner, ChannelOwnerImpl, ParentOrConnection};
-use crate::server::connection::ConnectionExt;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -65,6 +64,37 @@ pub struct JSHandle {
 }
 
 impl JSHandle {
+    /// Resolves a response-referenced guid to a `JSHandle`, accepting any
+    /// wire subtype.
+    ///
+    /// The driver declares evaluate-handle results as `JSHandle` *or*
+    /// `ElementHandle`; on the wire ElementHandle is a JSHandle subtype, so
+    /// every JSHandle RPC is valid against its guid. Rust has no subtyping,
+    /// so when the registry holds something other than a `JSHandle`, this
+    /// returns a `JSHandle` view over the same channel instead of a
+    /// `TypeMismatch` that can never succeed.
+    pub(crate) async fn wait_for(
+        connection: &Arc<dyn crate::server::connection::ConnectionLike>,
+        guid: &str,
+    ) -> Result<JSHandle> {
+        let obj = connection.wait_for_object(guid).await?;
+        if let Some(h) = obj.as_any().downcast_ref::<JSHandle>() {
+            return Ok(h.clone());
+        }
+        let parent = obj.parent().ok_or_else(|| {
+            crate::error::Error::ProtocolError(format!(
+                "handle result {} has no parent object",
+                guid
+            ))
+        })?;
+        JSHandle::new(
+            parent,
+            obj.type_name().to_string(),
+            Arc::from(obj.guid()),
+            obj.initializer().clone(),
+        )
+    }
+
     /// Creates a new JSHandle from protocol initialization.
     ///
     /// This is called by the object factory when the server sends a `__create__` message
@@ -135,11 +165,7 @@ impl JSHandle {
             .await?;
 
         let guid = &response.handle.guid;
-        // The handle's __create__ may arrive just after the response.
-        self.base
-            .connection()
-            .wait_for_typed::<JSHandle>(guid)
-            .await
+        JSHandle::wait_for(&self.base.connection(), guid).await
     }
 
     /// Returns a map of all enumerable own properties of this object.
@@ -175,9 +201,7 @@ impl JSHandle {
             let guid = &entry.name.clone();
             let handle_guid = &entry.value.guid;
 
-            // Each property handle's __create__ may arrive just after the
-            // response.
-            let handle = connection.wait_for_typed::<JSHandle>(handle_guid).await?;
+            let handle = JSHandle::wait_for(&connection, handle_guid).await?;
 
             map.insert(guid.clone(), handle);
         }
@@ -277,11 +301,7 @@ impl JSHandle {
             .await?;
 
         let guid = &response.handle.guid;
-        // The handle's __create__ may arrive just after the response.
-        self.base
-            .connection()
-            .wait_for_typed::<JSHandle>(guid)
-            .await
+        JSHandle::wait_for(&self.base.connection(), guid).await
     }
 
     /// Releases this handle and frees the associated browser resources.

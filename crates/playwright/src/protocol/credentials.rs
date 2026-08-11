@@ -29,7 +29,7 @@ use serde_json::json;
 /// A virtual WebAuthn credential (passkey) held by the virtual authenticator.
 ///
 /// Serializable as well as deserializable so passkeys can be saved with a
-/// storage state and seeded back into a fresh context (Playwright 1.62).
+/// storage state and seeded back into a fresh context.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]

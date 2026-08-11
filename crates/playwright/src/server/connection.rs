@@ -702,9 +702,12 @@ impl Connection {
         use tokio::time::{Duration, Instant, timeout_at};
         let deadline = Instant::now() + Duration::from_secs(30);
         loop {
-            // Arm the notification BEFORE checking the registry: a
-            // registration between check and wait is then still observed
-            // (Notify keeps one permit), so no wakeup can be missed.
+            // Create the Notified future BEFORE checking the registry.
+            // Tokio guarantees a created-but-unpolled `Notified` receives
+            // `notify_waiters` wakeups, so a registration landing between
+            // the check and the first poll still wakes this task. (That
+            // guarantee is specific to creation order; `notify_waiters`
+            // stores no permit the way `notify_one` does.)
             let created = self.object_created.notified();
             if let Some(obj) = self.objects.lock().get(guid) {
                 return Ok(obj.clone());
