@@ -68,6 +68,7 @@ pub mod page;
 pub mod playwright;
 pub mod proxy;
 pub mod request;
+pub mod resource_timing;
 pub mod response;
 pub mod root;
 pub mod route;
@@ -146,7 +147,8 @@ pub use page::{
 };
 pub use playwright::Playwright;
 pub use proxy::ProxySettings;
-pub use request::{Request, ResourceTiming};
+pub use request::Request;
+pub use resource_timing::ResourceTiming;
 pub use response::{HeaderEntry, RemoteAddr, RequestSizes, ResponseObject, SecurityDetails};
 pub use root::Root;
 pub use route::{

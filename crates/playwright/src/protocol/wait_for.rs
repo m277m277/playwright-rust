@@ -202,3 +202,17 @@ impl WaitForFunctionOptions {
         self
     }
 }
+
+#[cfg(test)]
+mod wait_for_function_options_tests {
+    use super::WaitForFunctionOptions;
+
+    #[test]
+    fn setters_set_their_fields() {
+        let opts = WaitForFunctionOptions::default()
+            .polling_interval(25.0)
+            .timeout(1500.0);
+        assert_eq!(opts.polling_interval, Some(25.0));
+        assert_eq!(opts.timeout, Some(1500.0));
+    }
+}
