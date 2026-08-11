@@ -75,6 +75,30 @@ pub fn Features() -> impl IntoView {
                     <CodeBlock html=snippets::CARD_WEBAUTHN_RS/>
                 </FeatureCard>
                 <FeatureCard
+                    id="feature-wait-for-function"
+                    title="Wait for anything"
+                    blurb="Wait on arbitrary page state, or on a matched element, with a JS predicate."
+                    unreleased=true
+                >
+                    <CodeBlock html=snippets::CARD_WAIT_FOR_FUNCTION_RS/>
+                </FeatureCard>
+                <FeatureCard
+                    id="feature-evaluate-callback"
+                    title="Rust closures in the page"
+                    blurb="Pass a Rust closure into evaluate; the page calls back into your test and awaits the result."
+                    unreleased=true
+                >
+                    <CodeBlock html=snippets::CARD_EVALUATE_CALLBACK_RS/>
+                </FeatureCard>
+                <FeatureCard
+                    id="feature-session-state"
+                    title="Session save & replay"
+                    blurb="Capture cookies, storage, IndexedDB and passkeys; restore them into a fresh context."
+                    unreleased=true
+                >
+                    <CodeBlock html=snippets::CARD_SESSION_STATE_RS/>
+                </FeatureCard>
+                <FeatureCard
                     id="feature-fake-fs"
                     title="File System Access testing"
                     blurb="Fake showSaveFilePicker / showOpenFilePicker to test save/open flows with no native dialog."

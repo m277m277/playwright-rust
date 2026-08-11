@@ -385,9 +385,7 @@ async fn version_switcher_lists_versions_and_warns_on_dev() {
 /// The dev (main HEAD) build reflects its ahead-of-crates.io state: it installs
 /// from git and its hero badges read "unreleased", where a release snapshot pins
 /// the published version. The dogfood build is SITE_VERSION=dev, so these
-/// dev-only distinctives must render. (Unreleased feature cards, when any exist,
-/// also render only here — 0.15.0 shipped the previous set, so there are none
-/// flagged at the moment.)
+/// dev-only distinctives must render, including the unreleased feature cards.
 #[tokio::test]
 async fn dev_build_reflects_unreleased_state() {
     let Some(dist) = dist_or_skip("dev-features test") else {
@@ -421,8 +419,32 @@ async fn dev_build_reflects_unreleased_state() {
         .expect("count Playwright badge");
     assert_eq!(pw_badge, 1, "dev build shows the 1.62.1 Playwright badge");
 
-    // Dogfood the unreleased screencast API: record the page with cursor
-    // decoration and save a frame as the DogfoodBanner's dev-only receipt.
+    // The unreleased feature cards render only on the dev build, each with
+    // its snippet and the Unreleased badge.
+    for (card, expected_snippet) in [
+        ("#feature-wait-for-function", "wait_for_function"),
+        ("#feature-evaluate-callback", "evaluate_with_callback"),
+        ("#feature-session-state", "storage_state"),
+    ] {
+        expect(page.locator(card))
+            .to_be_visible()
+            .await
+            .unwrap_or_else(|e| panic!("{card} should render on the dev build: {e}"));
+        expect(page.locator(card))
+            .to_contain_text(expected_snippet)
+            .await
+            .unwrap_or_else(|e| panic!("{card} should show its snippet: {e}"));
+        expect(page.locator(format!("{card} [data-unreleased-badge]")))
+            .to_be_visible()
+            .await
+            .unwrap_or_else(|e| panic!("{card} should carry the Unreleased badge: {e}"));
+    }
+
+    // Dogfood the screencast API (shipped in 0.15.0): record the page with
+    // cursor decoration and save a frame as the DogfoodBanner's receipt (the
+    // snapshot build copies receipts into release snapshots too). This is the
+    // live on_frame path, flow-controlled by the driver since 1.62: it only
+    // streams because the client acks frames.
     let receipts = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../site/public/receipts");
     std::fs::create_dir_all(&receipts).expect("create receipts dir");
 

@@ -53,22 +53,22 @@ pub fn DogfoodBanner() -> impl IntoView {
                         </p>
                         <a href=ARIA download class=dl>"Download .txt"</a>
                     </div>
-                    // Dev-only: a frame the run captured via the unreleased 1.61.0
-                    // screencast API (with cursor decoration). Omitted on release
-                    // snapshots until the feature ships.
-                    {crate::version::is_dev().then(|| view! {
+                    // A frame the dogfood run captured via the screencast API
+                    // (shipped in 0.15.0). The dev run produces the receipt and
+                    // the snapshot build copies it in, so it ships everywhere,
+                    // same as the other three.
+                    {view! {
                         <div class=card>
                             <div class="flex items-center gap-2">
                                 <h3 class="font-semibold text-rust-300">"Screencast frame"</h3>
-                                <super::UnreleasedBadge />
                             </div>
                             <p class="mt-1 flex-1 text-sm text-rust-50/70">
-                                "A frame is captured with the new screencast API and "
+                                "A frame captured with the screencast API and "
                                 "cursor decoration."
                             </p>
                             <a href=SCREENCAST download class=dl>"Download .jpeg"</a>
                         </div>
-                    })}
+                    }}
                 </div>
 
                 <p class="mt-6 text-sm font-semibold">
