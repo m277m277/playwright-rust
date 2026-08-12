@@ -137,6 +137,36 @@ Concept-level pointers; the exact options live on docs.rs.
   ARIA structure as a regression check; `aria_snapshot` can emit
   `[box=..]` bounding boxes for visual/agent reasoning.
 
+- **Waiting on arbitrary state: `wait_for_function`.** When there is no
+  selector to wait on — a JS flag, a store, a counter —
+  `page.wait_for_function("() => window.app?.ready", None)` polls a
+  predicate and resolves to its value as a `JSHandle`. The locator form
+  binds the matched element as the first argument
+  (`locator.wait_for_function("el => el.dataset.state === 'done'", None)`)
+  and returns `()`. Prefer this over `poll_until`-around-`evaluate`
+  loops: the driver polls on `requestAnimationFrame` and enforces the
+  timeout. `WaitForFunctionOptions::polling_interval` switches to timer
+  polling (page-global form only).
+- **Calling back into Rust: `evaluate_with_callback`.** Hands the
+  expression a Rust closure as its argument — JS calls it, the
+  arguments come to Rust, and the closure's return value resolves the
+  JS promise. The expression may stash the function for later (event
+  listeners); the binding lives until the page closes, so register once
+  rather than in a loop. For a permanently installed `window.fn`, use
+  `expose_function`/`expose_binding` instead.
+- **Session save & replay.** `context.storage_state(None)` captures
+  cookies and per-origin storage;
+  `StorageStateOptions::default().credentials(true).indexed_db(true)`
+  additionally captures WebAuthn passkeys and IndexedDB.
+  `set_storage_state(state)` restores into any context — a **replace**,
+  not a merge: the driver clears storage for every visited origin, and
+  restoring a state without `credentials` disposes an installed virtual
+  authenticator. The fast path for "log in once, reuse everywhere".
+- **Opting out of auto-scroll.** Pointer actions scroll the target into
+  view before acting; `ClickOptions::builder().scroll(Scroll::None)`
+  makes the action fail instead — the way to assert something is
+  *already* visible, or to avoid scroll side effects.
+
 ## Debugging failures with traces
 
 Rust has no async `Drop`, so trace cleanup is **explicit**. The
@@ -172,6 +202,10 @@ example.
   in a cleanup block — don't rely on RAII for I/O.
 - **Locators are values, not lazy proxies.** `page.locator(...)`
   returns a `Locator` you can `.clone()` and re-use cheaply.
+- **Functions cannot ride inside evaluate args.** Python passes
+  callables directly; here the callback is a dedicated parameter
+  (`evaluate_with_callback`) since serialized data cannot carry a Rust
+  closure.
 
 ## Common pitfalls
 

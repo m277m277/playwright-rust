@@ -71,8 +71,18 @@ overlay.
   you pass the containing canvas/stage as the target. Held-button
   `Mouse::move_to` sequences hang on headless Linux; don't use them
   for drags.
+- **Waiting on arbitrary state:** `page.wait_for_function("() =>
+  window.app?.ready", None)` polls a JS predicate (locator form binds
+  the matched element as its argument) — prefer it over
+  evaluate-in-a-loop. **Calling back into Rust:**
+  `evaluate_with_callback` hands the expression a Rust closure JS can
+  call and await. **Session save/replay:** `storage_state(None)`
+  captures cookies/storage (options add passkeys + IndexedDB);
+  `set_storage_state` restores into any context (a replace, not a
+  merge).
 - **Newer surface worth knowing (options on docs.rs):** stable/redacted
-  screenshots (`animations(Disabled)`, `mask`); context-level events
+  screenshots (`animations(Disabled)`, `mask`, WebP); `Scroll::None` to
+  fail rather than auto-scroll; context-level events
   (`BrowserContext::on_download` / `on_page_load` / `on_frame_*`,
   `Browser::on_context`) for multi-tab fixtures; HAR capture
   (`tracing().start_har` / `stop_har`, replayable via `route_from_har`);
