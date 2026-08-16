@@ -446,12 +446,10 @@ fn verify_driver_version() -> Result<()> {
     // lag the in-tree (unreleased) driver version until the next release. Same
     // reason for `hero.rs`'s `PLAYWRIGHT_RELEASED` — only its `PLAYWRIGHT_DEV`
     // (which tracks main HEAD) is anchored below.
+    // lib.rs and examples no longer carry a pinned `npx playwright@X.Y.Z`:
+    // install guidance goes through the version-free install-browsers example,
+    // so those former anchors are gone rather than silently matching nothing.
     let targets: &[(&str, &[&str])] = &[
-        ("crates/playwright/src/lib.rs", &["playwright@"]),
-        (
-            "crates/playwright/examples/connect_over_cdp.rs",
-            &["playwright@"],
-        ),
         (
             ".github/workflows/test.yml",
             &["pw-driver-", "playwright-browsers-"],

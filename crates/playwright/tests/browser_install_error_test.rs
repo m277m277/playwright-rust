@@ -81,8 +81,11 @@ fn test_browser_not_installed_error_is_helpful() {
     // Should explain what to do
     assert!(error_message.contains("install") || error_message.contains("Install"));
 
-    // Should provide command
+    // Should lead with the version-safe crate-native path, and keep the
+    // one-off npx command with a warning against hardcoding it
+    assert!(error_message.contains("install_browsers"));
     assert!(error_message.contains("npx playwright"));
+    assert!(error_message.contains("hardcod"));
 }
 
 /// Test error message for different browsers

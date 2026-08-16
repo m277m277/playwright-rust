@@ -171,41 +171,66 @@ See the [CHANGELOG](CHANGELOG.md) for version history and features.
 
 Browsers must be installed before use. Install once, then run tests as many times as needed.
 
+The library bundles a specific Playwright driver, and each driver release
+expects matching browser builds. Install browsers through the crate itself
+so the match is guaranteed and the browser version rides `Cargo.lock`:
+copy
+[`examples/install-browsers.rs`](crates/playwright/examples/install-browsers.rs)
+into your project's `examples/` directory. (It needs `tokio` declared with
+the `macros` and `rt-multi-thread` features.) Then:
+
 ```bash
 # Install all browsers
-npx playwright@1.61.1 install
+cargo run --example install-browsers
 
-# Or install specific browsers
-npx playwright@1.61.1 install chromium firefox webkit
+# Or install specific browsers (in a workspace, add -p <your-package>)
+cargo run --example install-browsers -- chromium firefox webkit
 ```
+
+On Linux, required system libraries install automatically alongside the
+browsers (the driver may invoke sudo for them). Pass `--with-deps` to
+force that on other platforms; it is a no-op on macOS and needs elevation
+on Windows.
 
 **In CI/CD:** Add this to your GitHub Actions workflow:
 
 ```yaml
-- name: Install Playwright Browsers
-  run: npx playwright@1.61.1 install chromium firefox webkit --with-deps
+- name: Install Playwright browsers
+  run: cargo run --example install-browsers -- chromium firefox webkit
 ```
 
-**Programmatic installation:** For setup scripts, Docker images, or tools built on playwright-rs, you can install browsers from Rust code:
+When dependabot bumps `playwright-rs`, the crate, driver, and browsers now
+move together with no workflow edit. Never hardcode a Playwright version
+in a workflow `run:` step or a `package.json`: dependabot can't see the
+former, and it bumps the latter on npm's cadence, not the crate's. The
+driver ships its own Node.js runtime, so the workflow needs no setup-node
+step. For setup scripts and Docker builds, call
+[`install_browsers`](https://docs.rs/playwright-rs/latest/playwright_rs/fn.install_browsers.html)
+directly.
 
-```rust
-use playwright_rs::install_browsers;
+**Outside a Cargo project:** the `cli` feature provides an installer binary
+(`cargo install playwright-rs --features cli`, then `playwright-rs
+install`). Note that `cargo install` builds its own copy of the crate,
+which is a second version to keep in sync with your project's lockfile.
+`npx playwright@<version> install` also works when `<version>` equals the
+crate's bundled driver (`playwright_rs::PLAYWRIGHT_VERSION`, shown in the
+badge above), but it goes stale silently when the crate bumps; in a Cargo
+project, prefer the example approach.
 
-install_browsers(None).await?;                          // all browsers
-install_browsers(Some(&["chromium"])).await?;            // specific browsers
-```
-
-**Why version matters:** The library bundles Playwright driver **1.61.1**. Each release expects specific browser builds. Using the matching version ensures compatible browsers.
-
-**What happens if I don't install browsers?** You'll get a helpful error message with the correct install command when trying to launch a browser.
+**What happens if I don't install browsers?** You'll get an error message with install commands when trying to launch a browser.
 
 ## Development
 
 ### Prerequisites
 
 - Rust 1.88+
-- Node.js 18+ (for Playwright server and browser installation)
 - tokio async runtime
+
+No system Node.js is needed for the normal build: the build script
+downloads the pinned Playwright driver together with its own Node runtime.
+(With `PLAYWRIGHT_SKIP_DRIVER_DOWNLOAD` set, driver resolution falls back
+to `PLAYWRIGHT_DRIVER_PATH` or an npm-installed playwright, which do need
+one.)
 
 ### Building from Source
 
@@ -224,14 +249,17 @@ cargo build
 
 ### Installing Browsers
 
-After building, install browsers as described in [Browser Installation](#browser-installation-required) above:
+After building, install browsers with the in-repo example:
 
 ```bash
-cargo build
-npx playwright@1.61.1 install chromium firefox webkit
+cargo run --package playwright-rs --example install-browsers -- chromium firefox webkit
 ```
 
-The build script automatically downloads the Playwright driver to `drivers/` (gitignored). CI handles browser installation automatically - see `.github/workflows/test.yml`.
+The build script automatically downloads the Playwright driver into the
+build directory (`$OUT_DIR/playwright-driver`); set
+`PLAYWRIGHT_DRIVER_CACHE_DIR` to relocate it to a stable path that
+survives `cargo clean`, which is what CI does. CI handles browser
+installation automatically - see `.github/workflows/test.yml`.
 
 **Platform Support:** ✅ Windows, macOS, Linux
 

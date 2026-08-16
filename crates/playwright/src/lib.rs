@@ -258,12 +258,12 @@ mod tty_guard;
 
 /// Playwright server version bundled with this crate.
 ///
-/// This version determines which browser builds are compatible.
-/// When installing browsers, use this version to ensure compatibility:
-///
-/// ```bash
-/// npx playwright@1.62.1 install
-/// ```
+/// This version determines which browser builds are compatible. Install
+/// browsers through [`install_browsers`] / [`install_browsers_with_deps`]
+/// (or the `cli` feature's `playwright-rs install` binary), which always
+/// match this version. An `npx playwright@<version> install` works only
+/// while `<version>` equals this constant, and goes stale when the crate
+/// bumps.
 ///
 /// See: <https://playwright.dev/docs/browsers>
 pub const PLAYWRIGHT_VERSION: &str = env!("PLAYWRIGHT_DRIVER_VERSION");

@@ -31,15 +31,18 @@ pub enum Error {
 
     /// Browser is not installed
     ///
-    /// The specified browser has not been installed using Playwright's installation command.
-    /// To resolve this, install browsers using the versioned install command to ensure compatibility.
+    /// The specified browser has not been installed for the bundled driver.
+    /// To resolve this, install browsers through the crate (version-safe), or
+    /// with the one-off npx command using the exact bundled driver version.
     #[error(
         "Browser '{browser_name}' is not installed.\n\n\
         {message}\n\n\
-        To install {browser_name}, run:\n  \
-        npx playwright@{playwright_version} install {browser_name}\n\n\
-        Or install all browsers:\n  \
-        npx playwright@{playwright_version} install\n\n\
+        To install {browser_name} from your project (version-safe, rides Cargo.lock):\n  \
+        playwright_rs::install_browsers(Some(&[\"{browser_name}\"])).await\n  \
+        (see the crate's install-browsers example)\n\n\
+        Or as a one-off shell command:\n  \
+        npx playwright@{playwright_version} install {browser_name}\n  \
+        (the version must match the bundled driver; avoid hardcoding it in CI)\n\n\
         See: https://playwright.dev/docs/browsers"
     )]
     BrowserNotInstalled {

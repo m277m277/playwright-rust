@@ -76,9 +76,10 @@ table above; the workflow is otherwise identical.
    `[Unreleased]` CHANGELOG has been previewing — feature flags table,
    install/CI snippets, Testing & Debugging additions, etc. Also bump the
    install snippet's pinned `"0.X"` (line 136 area) if this is a minor or
-   major bump. Also bump the Playwright driver version if this release
-   carries a driver bump (README badge + the `npx playwright@X.Y.Z install`
-   lines).
+   major bump. If this release carries a driver bump, update the README
+   badge only: install snippets are version-free by design (they go through
+   the `install-browsers` example / `install_browsers`), so verify none
+   regressed to a pinned `npx playwright@X.Y.Z`.
 8. **Sync the landing site's release-facing constants** — applies to
    `playwright-rs` only, and these are **not** covered by
    `cargo xtask verify-driver-version` (that guard deliberately anchors

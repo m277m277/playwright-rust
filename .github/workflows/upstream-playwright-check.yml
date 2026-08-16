@@ -96,7 +96,7 @@ jobs:
           ## What changes when bumping
 
           - \`crates/playwright/build.rs\` — \`PLAYWRIGHT_VERSION\` constant
-          - \`README.md\` — install snippet (\`npx playwright@VERSION install\`) and version badge
+          - \`README.md\` — version badge (install snippets are version-free by design; verify none regressed to a pinned \`npx playwright@VERSION\`)
           - \`crates/playwright/src/lib.rs\` — rustdoc reference if it pins a specific version
           - \`.github/workflows/test.yml\` and \`.github/workflows/release.yml\` — browser cache keys and install paths (search for the old version string)
           - \`crates/playwright/tests/playwright_version_test.rs\` — \`PLAYWRIGHT_VERSION\` assertion

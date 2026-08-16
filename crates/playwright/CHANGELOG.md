@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Unchanged: `route.fulfill()` still does not transmit response bodies. The reverse-canary tests that assert this still pass against 1.62.1, so the documented affected range extends to 1.49.0-1.62.1.
 
+- **`BrowserNotInstalled` now leads with the version-safe install path.** The error still prints the one-off `npx playwright@<version> install` command (interpolated with the bundled driver version, so always correct at the moment it prints), but it recommends `install_browsers` first and warns against hardcoding the npx version in CI, where it silently goes stale on crate bumps.
+
 ### Breaking changes
 
 - **`BrowserContext::storage_state()` now takes options.** It gained `StorageStateOptions`, carrying the new `credentials` flag and the `indexedDB` flag the protocol has always accepted. Following the crate's option convention, migrate `storage_state()` to `storage_state(None)`; pass `StorageStateOptions::default().credentials(true)` to capture passkeys.
@@ -44,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **The repo is now a Claude Code plugin marketplace.** `/plugin marketplace add padamson/playwright-rust` followed by `/plugin install playwright-rs@playwright-rust` installs the `playwright-rs-usage` skill, replacing the `cp -r` of `.claude/skills/playwright-rs-usage/` (which still works). Only that one skill is exposed; the contributor-facing skills stay in-repo. Updates are not automatic: run `/plugin marketplace update playwright-rust` before `/plugin update`, since the catalog clone is what goes stale.
 - **A root `LICENSE` file.** The workspace manifest has always declared `Apache-2.0`, but with no license file at the repo root GitHub's API reported no license, so downstream legal scans and package indexes read the project as unlicensed.
+- **An `install-browsers` example, replacing the README's pinned `npx playwright@<version> install` CI recipe.** The hand-pinned version silently went stale whenever the bundled driver moved: dependabot bumps the crate in a downstream lockfile but cannot see a version inside a workflow `run:` step, and every browser launch then fails with `BrowserNotInstalled`. The example calls `install_browsers` / `install_browsers_with_deps`, so the browser version rides `Cargo.lock` and a crate bump moves crate, driver, and browsers together; copy it into your project's `examples/` and run `cargo run --example install-browsers -- chromium firefox webkit --with-deps` in CI. The README's CI recipes now recommend this (or the `cli` feature's installer binary outside a Cargo project) and no longer hardcode a Playwright version anywhere.
 
 ### Fixed
 
