@@ -430,8 +430,11 @@ fn versions_after(content: &str, prefix: &str) -> Vec<String> {
             .chars()
             .take_while(|c| c.is_ascii_digit() || *c == '.')
             .collect();
+        // A version never ends in a dot, so a trailing one is sentence
+        // punctuation the scan swallowed (`... against playwright@1.62.1.`).
+        let ver = ver.trim_end_matches('.');
         if ver.contains('.') {
-            out.push(ver);
+            out.push(ver.to_string());
         }
     }
     out
@@ -446,10 +449,16 @@ fn verify_driver_version() -> Result<()> {
     // lag the in-tree (unreleased) driver version until the next release. Same
     // reason for `hero.rs`'s `PLAYWRIGHT_RELEASED` — only its `PLAYWRIGHT_DEV`
     // (which tracks main HEAD) is anchored below.
-    // lib.rs and examples no longer carry a pinned `npx playwright@X.Y.Z`:
-    // install guidance goes through the version-free install-browsers example,
-    // so those former anchors are gone rather than silently matching nothing.
+    // Install guidance no longer pins `npx playwright@X.Y.Z` anywhere; the
+    // `playwright@` anchors that remain are claims about which driver a file
+    // was verified against, which rot the same way a stale install command did.
     let targets: &[(&str, &[&str])] = &[
+        (
+            "crates/playwright-rs-trace/tests/parse_fixture.rs",
+            &["playwright@"],
+        ),
+        ("crates/playwright-rs-trace/src/lib.rs", &["playwright@"]),
+        ("crates/playwright/src/protocol/root.rs", &["playwright@"]),
         (
             ".github/workflows/test.yml",
             &["pw-driver-", "playwright-browsers-"],
@@ -687,6 +696,11 @@ mod driver_version_tests {
         let text = "npx playwright@1.61.0 install\nkey: os-pw-driver-1.61.0\n\
                     os-playwright-browsers-1.61.0-v2";
         assert_eq!(versions_after(text, "playwright@"), vec!["1.61.0"]);
+        assert_eq!(
+            versions_after("confirmed against playwright@1.61.0.", "playwright@"),
+            vec!["1.61.0"],
+            "sentence-final punctuation is not part of the version"
+        );
         assert_eq!(versions_after(text, "pw-driver-"), vec!["1.61.0"]);
         assert_eq!(versions_after(text, "playwright-browsers-"), vec!["1.61.0"]);
     }

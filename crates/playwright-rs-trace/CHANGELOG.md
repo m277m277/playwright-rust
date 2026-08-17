@@ -9,6 +9,10 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+### Changed
+
+- **Trace fixture regenerated against the Playwright 1.62.1 driver, confirming trace format version 8 still applies.** The checked-in fixture was recorded with 1.61.1, so the parse tests were not exercising the format produced by the driver `playwright-rs` bundles on `main`. Version 8 holds across both, so `SUPPORTED_VERSION` is unchanged; the difference is that the suite now proves it instead of assuming it. A format bump would otherwise have surfaced as this crate rejecting every trace its companion crate records.
+
 ## [0.1.2] - 2026-08-02
 
 ### Fixed

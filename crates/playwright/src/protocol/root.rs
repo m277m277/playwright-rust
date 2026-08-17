@@ -26,7 +26,8 @@ use std::sync::Arc;
 /// # Protocol Flow
 ///
 /// When `initialize()` is called:
-/// 1. Sends `initialize` message with `sdkLanguage: "rust"`
+/// 1. Sends `initialize` message with an `sdkLanguage` the driver accepts
+///    (see [`Root::initialize`] for why it is not `"rust"`)
 /// 2. Server creates BrowserType objects (sends `__create__` messages)
 /// 3. Server creates Playwright object (sends `__create__` message)
 /// 4. Server responds with Playwright GUID: `{ "playwright": { "guid": "..." } }`
@@ -93,6 +94,18 @@ impl Root {
     /// By the time the response arrives, all protocol objects (Playwright,
     /// BrowserType, etc.) will have been created and registered.
     ///
+    /// # Why `sdkLanguage` is `"python"`, not `"rust"`
+    ///
+    /// The driver's protocol validator accepts only
+    /// `javascript`, `python`, `java`, and `csharp`, so `"rust"` is rejected
+    /// outright. `"python"` is the closest fit: its async/await shape matches
+    /// this crate's, and its error text (`playwright install`) reads correctly.
+    ///
+    /// One visible consequence: the driver records this value in trace files,
+    /// so the Playwright trace viewer labels traces produced by this crate as
+    /// Python and renders action snippets in Python syntax. Protocol behavior
+    /// is unaffected.
+    ///
     /// # Returns
     ///
     /// The server response containing the Playwright object GUID:
@@ -115,18 +128,8 @@ impl Root {
             .send(
                 "initialize",
                 serde_json::json!({
-                    // TODO: Use "rust" once upstream Playwright accepts it
-                    // Current issue: Playwright v1.49.0 protocol validator only accepts:
-                    // (javascript|python|java|csharp)
-                    //
-                    // Using "python" because:
-                    // - Closest async/await patterns to Rust
-                    // - sdkLanguage only affects CLI error messages and codegen
-                    // - Does NOT affect core protocol functionality
-                    // - Python error messages are appropriate ("playwright install")
-                    //
-                    // Plan: Contribute to microsoft/playwright to add 'rust' to Language enum
-                    // See: packages/playwright-core/src/utils/isomorphic/locatorGenerators.ts
+                    // See this method's rustdoc for why this is not "rust".
+                    // Validator enum last confirmed against playwright@1.62.1.
                     "sdkLanguage": "python"
                 }),
             )

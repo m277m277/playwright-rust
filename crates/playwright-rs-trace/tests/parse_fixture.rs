@@ -11,6 +11,12 @@ use std::io::Cursor;
 
 const BASIC_FIXTURE: &[u8] = include_bytes!("fixtures/basic.trace.zip");
 
+/// Driver the fixture was recorded with. `cargo xtask verify-driver-version`
+/// anchors this to `build.rs`'s `PLAYWRIGHT_VERSION`, so bumping the driver
+/// without regenerating the fixture fails a gate instead of quietly leaving
+/// the parser untested against the format it will actually meet.
+const FIXTURE_DRIVER: &str = "playwright@1.62.1";
+
 fn open_basic() -> TraceReader<Cursor<&'static [u8]>> {
     TraceReader::open(Cursor::new(BASIC_FIXTURE)).expect("open basic fixture")
 }
@@ -21,9 +27,13 @@ fn opens_basic_fixture_and_reads_context() {
     let ctx = reader.context();
     assert_eq!(ctx.version, 8, "trace v8 expected");
     assert_eq!(ctx.browser_name, "chromium");
-    assert!(
-        !ctx.playwright_version.is_empty(),
-        "playwright_version should be populated"
+    let expected_driver = FIXTURE_DRIVER
+        .strip_prefix("playwright@")
+        .expect("FIXTURE_DRIVER is written in playwright@<version> form");
+    assert_eq!(
+        ctx.playwright_version, expected_driver,
+        "fixture was recorded with a different driver; \
+         run `cargo xtask regenerate-trace-fixture`"
     );
 }
 
