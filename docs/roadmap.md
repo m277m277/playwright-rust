@@ -4,7 +4,7 @@
 
 **Architecture:** JSON-RPC communication with Playwright Node.js server (same as all official bindings)
 
-**Status:** Version 0.13.0 code complete on `main` ([Unreleased]); dogfooding before tag cut. Version 0.12.0 shipped 2026-04-19.
+**Status:** Version 0.15.1 shipped 2026-08-02. `main` ([Unreleased]) carries the Playwright 1.62.1 driver bump and its API surface (storage-state overhaul, `wait_for_function`, callback-valued evaluate); dogfooding before the next tag cut.
 
 ---
 
@@ -26,6 +26,8 @@ This roadmap outlines the path to a production-ready `playwright-rust` library. 
 - ✅ **v0.8.1** - Persistent Contexts & App Mode complete - 2026-01-04
 - ✅ **v0.8.x through v0.12.0** - Full Python API parity + agent integration complete (2026-04-19)
 - ✅ **v0.13.0** - Playwright 1.59 completeness + agent codegen + companion crates - 2026-05-23
+- ✅ **v0.14.x** - Consumer-driven API ergonomics (sync locator constructors, `impl Into<Option>`, f64 mouse coords) + selectable TLS backends - 2026-06-13
+- ✅ **v0.15.x** - File System Access test fakes + Playwright 1.61 surface on the 1.61.1 driver - 2026-08-02
 - 🚧 **v1.0.0** - Real-World Validation & Final Polish
 - 🔮 **v1.1.0** - Future enhancements
 
