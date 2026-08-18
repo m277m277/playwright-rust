@@ -211,15 +211,33 @@ pipeline rather than bolting onto this workflow.
 
 1. **Verify** the GitHub Release at
    `https://github.com/padamson/playwright-rust/releases/tag/<prefix>vX.Y.Z`
-2. **Verify** crates.io has the new version (e.g.
-   `https://crates.io/crates/playwright-rs/0.13.0`)
-3. **First-time publish bookkeeping** — if this is the first crates.io
+2. **Verify** crates.io has the new version. The JSON API often refuses
+   this with a data-access-policy error; the sparse index answers reliably:
+   `curl -s https://index.crates.io/pl/ay/playwright-rs | tail -1`
+3. **Publish the versioned site snapshot** — applies to `playwright-rs`
+   only, and **nothing triggers this automatically**:
+
+   ```bash
+   gh workflow run pages.yml --ref vX.Y.Z -f version=X.Y.Z
+   ```
+
+   `--ref vX.Y.Z` is load-bearing: the workflow builds `/v<version>/` from
+   *current source at that ref*, so dispatching from `main` would publish
+   `main`'s content under the release's URL. A tag push does **not** fire
+   `pages.yml` (its `on.push` filters to branches), so skipping this leaves
+   `versions.json` advertising the previous release as `latest` and omits
+   the new version from the dropdown. This was missed for 0.15.1 and again
+   for 0.16.0, which is why it is now a numbered step rather than a comment
+   in the workflow header.
+
+   Verify after: `curl -s https://playwright-rust.dev/versions.json`
+4. **First-time publish bookkeeping** — if this is the first crates.io
    release of a workspace crate, add
    `[policy.<crate>] audit-as-crates-io = true` to
    `supply-chain/config.toml` in a follow-up commit. Cannot be done
    pre-release because `cargo vet` rejects the policy until the crate
    exists on crates.io.
-4. **Flip the release-state docs** — one follow-up commit, `[skip ci]`:
+5. **Flip the release-state docs** — one follow-up commit, `[skip ci]`:
    - `docs/roadmap.md` — the **Status:** line and the milestone list
    - `docs/implementation-plans/v1.0-gap-analysis.md` — the version's
      section heading and the Coverage Summary paragraph
@@ -228,8 +246,8 @@ pipeline rather than bolting onto this workflow.
    publish would leave `main` advertising a release nobody can install.
    Keep them in the "cut, awaiting tag" phrasing until the publish is
    verified in steps 1-2, then flip both to shipped in one commit.
-5. **Update tracking issues** if this release closes any
-6. **Announce** if applicable (depends on release significance)
+6. **Update tracking issues** if this release closes any
+7. **Announce** if applicable (depends on release significance)
 
 ## Common pitfalls
 
