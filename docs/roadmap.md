@@ -4,7 +4,7 @@
 
 **Architecture:** JSON-RPC communication with Playwright Node.js server (same as all official bindings)
 
-**Status:** Version 0.15.1 shipped 2026-08-02. `main` carries the Playwright 1.62.1 driver bump and its API surface (storage-state overhaul, `wait_for_function`, callback-valued evaluate), cut as 0.16.0 in [`crates/playwright/CHANGELOG.md`](../crates/playwright/CHANGELOG.md) and awaiting its tag.
+**Status:** Version 0.16.0 shipped 2026-08-17, bundling the Playwright 1.62.1 driver (storage-state overhaul, `wait_for_function`, callback-valued evaluate, WebP screenshots). See [`crates/playwright/CHANGELOG.md`](../crates/playwright/CHANGELOG.md) `[Unreleased]` for anything landed on `main` since.
 
 ---
 
@@ -28,6 +28,7 @@ This roadmap outlines the path to a production-ready `playwright-rust` library. 
 - ✅ **v0.13.0** - Playwright 1.59 completeness + agent codegen + companion crates - 2026-05-23
 - ✅ **v0.14.x** - Consumer-driven API ergonomics (sync locator constructors, `impl Into<Option>`, f64 mouse coords) + selectable TLS backends - 2026-06-13
 - ✅ **v0.15.x** - File System Access test fakes + Playwright 1.61 surface on the 1.61.1 driver - 2026-08-02
+- ✅ **v0.16.0** - Playwright 1.62.1 driver; storage-state overhaul (WebAuthn passkeys + IndexedDB), `wait_for_function`, Rust closures in `evaluate` - 2026-08-17
 - 🚧 **v1.0.0** - Real-World Validation & Final Polish
 - 🔮 **v1.1.0** - Future enhancements
 
