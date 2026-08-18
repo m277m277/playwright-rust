@@ -5,7 +5,8 @@
 
 use crate::{Error, Result};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 /// Get the path to the Playwright driver executable
 ///
@@ -310,11 +311,21 @@ fn find_node_executable() -> Result<PathBuf> {
 ///
 /// - `browsers` — optional slice of browser names (e.g. `&["chromium", "firefox"]`).
 ///   Pass `None` to install all browsers (equivalent to `npx playwright install`).
-///   Pass `Some(&[])` for a no-op invocation that validates the driver is reachable.
+///   `Some(&[])` sends the same bare `install`, so it also installs the default
+///   browsers; it is not a no-op probe.
 ///
 /// On Linux, `--with-deps` is automatically appended so that required system
 /// libraries (libgtk, libnss, etc.) are installed alongside the browser binaries.
-/// Use [`install_browsers_with_deps`] to force this flag on other platforms.
+/// This runs the system package manager under `sudo`. Use
+/// [`install_browsers_with_deps`] to force the flag on other platforms.
+///
+/// # Output
+///
+/// The installer's stdout and stderr are streamed to this process's stdout and
+/// stderr as it runs, so download progress is visible and a stall is
+/// distinguishable from progress. Callers that must not emit to the terminal
+/// (a TUI, a captured test harness) should redirect the process's own streams.
+/// The output is also retained and included in the error on failure.
 ///
 /// # Errors
 ///
@@ -348,10 +359,15 @@ pub async fn install_browsers(browsers: Option<&[&str]>) -> Result<()> {
 /// Identical to [`install_browsers`] but always passes `--with-deps` to the
 /// Playwright CLI, regardless of the current operating system. This is the
 /// recommended call for CI environments where system libraries may be missing.
+/// Installing those libraries invokes the system package manager under `sudo`.
 ///
 /// # Parameters
 ///
 /// - `browsers` — optional slice of browser names. `None` installs all browsers.
+///
+/// # Output
+///
+/// Streams the installer's output live, like [`install_browsers`].
 ///
 /// # Errors
 ///
@@ -376,35 +392,103 @@ pub async fn install_browsers_with_deps(browsers: Option<&[&str]>) -> Result<()>
     install_browsers_impl(browsers, /* with_deps_forced */ true).await
 }
 
+/// The driver CLI arguments for an install, in the order they are passed.
+///
+/// Split out as a pure function so the argument contract is unit-testable
+/// without spawning a process: `--with-deps` appears only when asked for.
+fn install_args(browsers: Option<&[&str]>, with_deps: bool) -> Vec<String> {
+    let mut args = vec!["install".to_string()];
+    if let Some(browser_list) = browsers {
+        args.extend(browser_list.iter().map(|b| (*b).to_string()));
+    }
+    if with_deps {
+        args.push("--with-deps".to_string());
+    }
+    args
+}
+
+/// Stream one of the child's pipes to `out`, keeping a copy for the error path.
+///
+/// Copies bytes rather than lines: the installer draws `\r`-updated progress
+/// bars, which line buffering would hold back until the download finished.
+async fn tee<R, W>(mut reader: R, mut out: W) -> Vec<u8>
+where
+    R: tokio::io::AsyncRead + Unpin,
+    W: tokio::io::AsyncWrite + Unpin,
+{
+    let mut captured = Vec::new();
+    let mut buf = [0u8; 4096];
+    loop {
+        match reader.read(&mut buf).await {
+            Ok(0) => break,
+            Ok(n) => {
+                // A closed/redirected stdout must not fail the install itself.
+                let _ = out.write_all(&buf[..n]).await;
+                let _ = out.flush().await;
+                captured.extend_from_slice(&buf[..n]);
+            }
+            // No retry arm here on purpose: any `continue` on a reader that
+            // keeps failing is an unbounded loop, and tokio's io driver
+            // already absorbs EINTR for the pipes we hand it.
+            Err(e) => {
+                // Mark it rather than break quietly: the capture feeds the
+                // failure message, and silently truncated diagnostics are the
+                // exact problem this function exists to fix.
+                captured.extend_from_slice(
+                    format!("\n[playwright-rs: output truncated, read error: {e}]\n").as_bytes(),
+                );
+                break;
+            }
+        }
+    }
+    captured
+}
+
 /// Internal implementation shared by [`install_browsers`] and [`install_browsers_with_deps`].
 async fn install_browsers_impl(browsers: Option<&[&str]>, with_deps_forced: bool) -> Result<()> {
     let (node_exe, cli_js) = get_driver_executable()?;
 
     let mut cmd = tokio::process::Command::new(&node_exe);
-    cmd.arg(&cli_js).arg("install");
+    cmd.arg(&cli_js);
+    // Linux still gets --with-deps implicitly; upstream treats it as opt-in on
+    // every platform, and reconciling that is a breaking change held for the
+    // next one. Keeping the decision here (not inside `install_args`) is what
+    // makes it a one-line change when that lands.
+    cmd.args(install_args(
+        browsers,
+        with_deps_forced || cfg!(target_os = "linux"),
+    ));
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
-    if let Some(browser_list) = browsers {
-        for browser in browser_list {
-            cmd.arg(browser);
-        }
-    }
-
-    // Pass --with-deps on Linux automatically (needed for system libraries),
-    // or when the caller explicitly requested it via install_browsers_with_deps.
-    if with_deps_forced || cfg!(target_os = "linux") {
-        cmd.arg("--with-deps");
-    }
-
-    let output = cmd.output().await.map_err(|e| {
+    let mut child = cmd.spawn().map_err(|e| {
         Error::LaunchFailed(format!("Failed to spawn browser install process: {}", e))
     })?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
+    let (Some(stdout), Some(stderr)) = (child.stdout.take(), child.stderr.take()) else {
+        return Err(Error::LaunchFailed(
+            "browser install process is missing the stdio pipes it was configured with".to_string(),
+        ));
+    };
+
+    // Stream both pipes while the child runs. Installing browsers takes minutes
+    // and can stall on a slow mirror or a contended package manager; buffering
+    // until exit makes a stall indistinguishable from progress.
+    let (out_bytes, err_bytes, status) = tokio::join!(
+        tee(stdout, tokio::io::stdout()),
+        tee(stderr, tokio::io::stderr()),
+        child.wait(),
+    );
+
+    let status = status.map_err(|e| {
+        Error::LaunchFailed(format!("Browser install process was not reaped: {}", e))
+    })?;
+
+    if !status.success() {
+        let stdout = String::from_utf8_lossy(&out_bytes);
+        let stderr = String::from_utf8_lossy(&err_bytes);
         return Err(Error::LaunchFailed(format!(
             "Browser installation failed (exit code {:?}).\nstdout: {}\nstderr: {}",
-            output.status.code(),
+            status.code(),
             stdout.trim(),
             stderr.trim(),
         )));
@@ -416,6 +500,73 @@ async fn install_browsers_impl(browsers: Option<&[&str]>, with_deps_forced: bool
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn install_args_request_system_deps_only_when_asked() {
+        assert_eq!(
+            install_args(Some(&["chromium"]), false),
+            vec!["install", "chromium"],
+            "--with-deps is opt-in upstream; it must never be added unasked"
+        );
+        assert_eq!(
+            install_args(Some(&["chromium"]), true),
+            vec!["install", "chromium", "--with-deps"]
+        );
+    }
+
+    #[test]
+    fn install_args_pass_browsers_through_in_order() {
+        assert_eq!(
+            install_args(Some(&["chromium", "firefox", "webkit"]), false),
+            vec!["install", "chromium", "firefox", "webkit"]
+        );
+    }
+
+    #[tokio::test]
+    async fn tee_marks_a_read_error_instead_of_truncating_silently() {
+        struct FailAfterFirstChunk(bool);
+        impl tokio::io::AsyncRead for FailAfterFirstChunk {
+            fn poll_read(
+                mut self: std::pin::Pin<&mut Self>,
+                _: &mut std::task::Context<'_>,
+                buf: &mut tokio::io::ReadBuf<'_>,
+            ) -> std::task::Poll<std::io::Result<()>> {
+                if self.0 {
+                    return std::task::Poll::Ready(Err(std::io::Error::other("pipe died")));
+                }
+                self.0 = true;
+                buf.put_slice(b"downloading...");
+                std::task::Poll::Ready(Ok(()))
+            }
+        }
+
+        let captured = tee(FailAfterFirstChunk(false), tokio::io::sink()).await;
+        let text = String::from_utf8_lossy(&captured);
+        assert!(text.starts_with("downloading..."), "keeps what it did read");
+        assert!(
+            text.contains("output truncated") && text.contains("pipe died"),
+            "a lost pipe must be visible in the capture, not silent: {text}"
+        );
+    }
+
+    #[tokio::test]
+    async fn tee_streams_and_captures_the_same_bytes() {
+        let input: &[u8] = b"downloading 12%\rdownloading 100%\ndone\n";
+        let mut streamed = Vec::new();
+        let captured = tee(input, &mut streamed).await;
+        assert_eq!(captured, input, "capture feeds the failure message");
+        assert_eq!(streamed, input, "streaming is what makes progress visible");
+    }
+
+    #[test]
+    fn install_args_without_a_browser_list_install_the_defaults() {
+        // Both spellings produce a bare `install`, which the driver reads as
+        // "install the default browsers". Notably `Some(&[])` is *not* a no-op,
+        // though an integration test long described it as one.
+        assert_eq!(install_args(None, false), vec!["install"]);
+        assert_eq!(install_args(Some(&[]), false), vec!["install"]);
+        assert_eq!(install_args(None, true), vec!["install", "--with-deps"]);
+    }
 
     #[test]
     fn test_find_node_executable() {

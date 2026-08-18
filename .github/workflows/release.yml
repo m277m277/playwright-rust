@@ -93,7 +93,15 @@ jobs:
       - name: Build
         run: cargo build --verbose
 
+      - name: Quiesce host package manager (Linux)
+        if: runner.os == 'Linux'
+        timeout-minutes: 5
+        run: ./scripts/quiesce-apt.sh
+
       - name: Install Playwright browsers
+        # Bounded because a contended apt blocks indefinitely rather than
+        # failing; this stalled the 0.16.0 release twice with no output.
+        timeout-minutes: 15
         run: cargo run --release --bin playwright-rs --features cli -- install chromium firefox webkit${{ runner.os == 'Linux' && ' --with-deps' || '' }}
 
       - name: Run tests

@@ -116,7 +116,14 @@ jobs:
       - name: Build site for dogfood gate
         run: cd crates/site && SITE_VERSION=dev trunk build --release
 
+      - name: Quiesce host package manager (Linux)
+        if: runner.os == 'Linux'
+        timeout-minutes: 5
+        run: ./scripts/quiesce-apt.sh
+
       - name: Install Chromium
+        # Bounded: a contended apt blocks rather than failing (see quiesce-apt.sh).
+        timeout-minutes: 15
         run: cargo run --release -p playwright-rs --bin playwright-rs --features cli -- install chromium --with-deps
 
       - name: Dogfood test (deploy gate)

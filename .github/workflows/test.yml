@@ -106,14 +106,25 @@ jobs:
           exit 1
         fi
 
+    # Ahead of the first apt consumer, not just the browser install: the
+    # runner's boot-time package timers contend with both.
+    - name: Quiesce host package manager (Linux)
+      if: runner.os == 'Linux'
+      timeout-minutes: 5
+      run: ./scripts/quiesce-apt.sh
+
     - name: Install expect (issue #59 reproducer harness)
       if: runner.os == 'Linux'
+      timeout-minutes: 10
       run: sudo apt-get update && sudo apt-get install -y expect
 
     - name: Build
       run: cargo build --verbose
 
     - name: Install Playwright browsers
+      # Bounded because a contended apt blocks indefinitely rather than failing:
+      # this step once sat 20+ minutes with no output. Fail fast and re-run.
+      timeout-minutes: 15
       run: cargo run --release --bin playwright-rs --features cli -- install chromium firefox webkit${{ runner.os == 'Linux' && ' --with-deps' || '' }}
 
     - name: Run tests (Linux/macOS)

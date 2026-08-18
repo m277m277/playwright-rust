@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`install_browsers` / `install_browsers_with_deps` now stream the installer's output** instead of swallowing it until the process exits. The old implementation captured stdout and stderr and replayed them only on failure, so the install the README recommends for CI printed nothing for the several minutes browsers download, and a stall was indistinguishable from progress. That is not hypothetical: a contended `apt` blocked the 0.16.0 release twice, each time appearing as a silent 20-minute hang. Output is copied through byte-wise rather than line-wise, so Playwright's `\r`-updated progress bars render live, and a copy is still kept so the failure message keeps the detail it always had.
+
+  Enabling this required tokio's `io-std` feature, which the crate had trimmed.
+
+### Fixed
+
+- **`test_install_browsers_driver_found` no longer fails when the host package manager is busy.** On Linux `install_browsers` appends `--with-deps`, so a test whose stated purpose is to check plumbing "without modifying system state" shells out to `apt-get` under sudo and races the runner's own package activity. Losing that lock now counts as a pass, because reaching `apt` at all proves the driver was found and the command ran, which is the test's entire claim.
+
 ## [0.16.0] - 2026-08-17
 
 ### Changed

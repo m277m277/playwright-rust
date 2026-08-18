@@ -9,15 +9,22 @@ use playwright_rs::{install_browsers, install_browsers_with_deps};
 /// that the driver can be found and we can construct the command. We don't
 /// actually install browsers to keep CI fast and side-effect-free.
 ///
-/// We use an empty browser list with a known-safe invocation to verify the
-/// function plumbing works without modifying system state.
+/// Two things this test is NOT, despite what it long claimed:
+///
+/// It is not side-effect-free. An empty browser list produces a bare
+/// `install`, which the driver reads as "install the default browsers", not as
+/// a no-op. It is cheap in CI only because the workflow installed them
+/// already, so the driver finds every browser present and exits.
+///
+/// It is not apt-free on Linux, where `install_browsers` appends
+/// `--with-deps` and so shells out to `apt-get` under sudo. That races the
+/// runner's own package activity and stalled two release runs. Losing the apt
+/// lock is therefore an accepted outcome: reaching apt proves the driver was
+/// found and the command ran, which is this test's whole claim.
 #[tokio::test]
 async fn test_install_browsers_driver_found() {
     crate::common::init_tracing();
 
-    // install_browsers(Some(&[])) should succeed — no browsers requested
-    // means the command is a no-op: `node cli.js install` with no browser args.
-    // This exercises the full code path without installing anything.
     let result = install_browsers(Some(&[])).await;
 
     match result {
@@ -27,10 +34,31 @@ async fn test_install_browsers_driver_found() {
         Err(playwright_rs::Error::ServerNotFound) => {
             tracing::warn!("Driver not found — expected in some CI environments");
         }
+        Err(playwright_rs::Error::LaunchFailed(msg)) if is_package_manager_contention(&msg) => {
+            tracing::warn!("package manager was busy; driver and command plumbing verified: {msg}");
+        }
         Err(e) => {
             panic!("Unexpected error from install_browsers: {:?}", e);
         }
     }
+}
+
+/// Whether a failed install is the host package manager being locked by another
+/// process, rather than anything this crate controls.
+///
+/// Deliberately only apt/dpkg lock signatures. The driver's own
+/// "Failed to install browsers" banner is printed for every install failure
+/// (bad flag, 403, full disk), so matching it would turn this test green for
+/// exactly the regressions it exists to catch.
+fn is_package_manager_contention(message: &str) -> bool {
+    const LOCK_SIGNATURES: [&str; 3] = [
+        "Could not get lock",
+        "Unable to lock directory",
+        "Unable to acquire the dpkg frontend lock",
+    ];
+    LOCK_SIGNATURES
+        .iter()
+        .any(|signature| message.contains(signature))
 }
 
 /// Verify that install_browsers_with_deps() compiles and the function signature is correct.

@@ -27,6 +27,7 @@ repository = "https://github.com/padamson/playwright-rust"
 # Async runtime
 tokio = { version = "1.52", features = [
     "fs",
+    "io-std",
     "io-util",
     "macros",
     "net",
