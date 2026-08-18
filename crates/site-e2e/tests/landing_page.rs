@@ -261,14 +261,39 @@ async fn landing_page_works_as_advertised() {
     // colored <span>s. The color check is what proves the build-time syntect
     // HTML rendered as markup: a broken pipeline (escaped text, empty const, no
     // highlighting) would show the same text but zero colored spans.
-    for (id, token) in [
+    // The list must cover every card the page renders, which the count check
+    // below enforces. Twice now a release has added cards here with no
+    // coverage at all (webstorage/webauthn/fake-fs in 0.15.0, then
+    // wait-for-function/evaluate-callback/session-state in 0.16.0), each time
+    // by adding to the page and not to this hand-maintained list. A card that
+    // renders only on some builds would need this reworked, not just extended.
+    let cards = [
         ("#feature-locators", "page.locator"),
         ("#feature-assertions", "to_have_text"),
         ("#feature-cross-browser", "launch"),
         ("#feature-routing", "route"),
         ("#feature-tracing", "tracing_subscriber"),
         ("#feature-responsive", "set_viewport_size"),
-    ] {
+        ("#feature-webstorage", "local_storage"),
+        ("#feature-webauthn", "credentials"),
+        ("#feature-wait-for-function", "wait_for_function"),
+        ("#feature-evaluate-callback", "evaluate_with_callback"),
+        ("#feature-session-state", "storage_state"),
+        ("#feature-fake-fs", "fake_file_system"),
+    ];
+    let rendered = page
+        .locator("[id^='feature-']")
+        .count()
+        .await
+        .expect("count rendered feature cards");
+    assert_eq!(
+        rendered,
+        cards.len(),
+        "{rendered} feature cards render but {} are checked; add the new card \
+         (id + a token unique to its snippet) to the list above",
+        cards.len()
+    );
+    for (id, token) in cards {
         expect(page.locator(id))
             .to_be_visible()
             .await
@@ -385,7 +410,7 @@ async fn version_switcher_lists_versions_and_warns_on_dev() {
 /// The dev (main HEAD) build reflects its ahead-of-crates.io state: it installs
 /// from git and its hero badges read "unreleased", where a release snapshot pins
 /// the published version. The dogfood build is SITE_VERSION=dev, so these
-/// dev-only distinctives must render, including the unreleased feature cards.
+/// dev-only distinctives must render.
 #[tokio::test]
 async fn dev_build_reflects_unreleased_state() {
     let Some(dist) = dist_or_skip("dev-features test") else {
@@ -419,26 +444,13 @@ async fn dev_build_reflects_unreleased_state() {
         .expect("count Playwright badge");
     assert_eq!(pw_badge, 1, "dev build shows the 1.62.1 Playwright badge");
 
-    // The unreleased feature cards render only on the dev build, each with
-    // its snippet and the Unreleased badge.
-    for (card, expected_snippet) in [
-        ("#feature-wait-for-function", "wait_for_function"),
-        ("#feature-evaluate-callback", "evaluate_with_callback"),
-        ("#feature-session-state", "storage_state"),
-    ] {
-        expect(page.locator(card))
-            .to_be_visible()
-            .await
-            .unwrap_or_else(|e| panic!("{card} should render on the dev build: {e}"));
-        expect(page.locator(card))
-            .to_contain_text(expected_snippet)
-            .await
-            .unwrap_or_else(|e| panic!("{card} should show its snippet: {e}"));
-        expect(page.locator(format!("{card} [data-unreleased-badge]")))
-            .to_be_visible()
-            .await
-            .unwrap_or_else(|e| panic!("{card} should carry the Unreleased badge: {e}"));
-    }
+    // No cards carry `unreleased=true` right now: wait-for-function,
+    // evaluate-callback and session-state all shipped in 0.16.0, so their
+    // dev-only assertions retired with the flag. With no flagged card left,
+    // the dev-only branch in FeatureCard is unexercised in both directions
+    // (the snapshot's zero-badge assertion passes vacuously too), and stays
+    // that way until someone adds the next unreleased card. That gap is the
+    // reason to replace the boolean with a per-card `since` version.
 
     // Dogfood the screencast API (shipped in 0.15.0): record the page with
     // cursor decoration and save a frame as the DogfoodBanner's receipt (the

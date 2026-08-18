@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-08-17
+
 ### Changed
 
 - **Bundled Playwright driver is now 1.62.1** (was 1.61.1). Playwright dropped Debian 11 support in this release.
@@ -826,7 +828,8 @@ Public-API type-consistency sweep — within the crate, the same conceptual quan
   - Playwright returns null for data URLs and `about:blank` (valid behavior, not an error)
   - Migration: `page.goto("https://example.com").await?.expect("response")` or use `if let Some(response) = page.goto(...).await? { ... }`
 
-[Unreleased]: https://github.com/padamson/playwright-rust/compare/v0.15.1...HEAD
+[Unreleased]: https://github.com/padamson/playwright-rust/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/padamson/playwright-rust/compare/v0.15.1...v0.16.0
 [0.15.1]: https://github.com/padamson/playwright-rust/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/padamson/playwright-rust/compare/v0.14.1...v0.15.0
 [0.14.1]: https://github.com/padamson/playwright-rust/compare/v0.14.0...v0.14.1

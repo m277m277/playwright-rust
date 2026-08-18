@@ -4,7 +4,7 @@
 
 **Architecture:** JSON-RPC communication with Playwright Node.js server (same as all official bindings)
 
-**Status:** Version 0.15.1 shipped 2026-08-02. `main` ([Unreleased]) carries the Playwright 1.62.1 driver bump and its API surface (storage-state overhaul, `wait_for_function`, callback-valued evaluate); dogfooding before the next tag cut.
+**Status:** Version 0.15.1 shipped 2026-08-02. `main` carries the Playwright 1.62.1 driver bump and its API surface (storage-state overhaul, `wait_for_function`, callback-valued evaluate), cut as 0.16.0 in [`crates/playwright/CHANGELOG.md`](../crates/playwright/CHANGELOG.md) and awaiting its tag.
 
 ---
 

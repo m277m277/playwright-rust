@@ -56,10 +56,12 @@ pub fn Features() -> impl IntoView {
                     <CodeBlock html=snippets::CARD_RESPONSIVE_RS/>
                 </FeatureCard>
 
-                // Shipped in 0.15.0 (Playwright 1.61 parity). To preview a
-                // not-yet-released feature, add a card with `unreleased=true` —
-                // it renders only on the dev build with an "Unreleased" badge,
-                // and the flag is dropped once the feature ships.
+                // Web storage / WebAuthn / File System Access shipped in 0.15.0
+                // (Playwright 1.61 parity); wait-for-function, Rust closures in
+                // the page, and session save & replay shipped in 0.16.0 (1.62.1).
+                // To preview a not-yet-released feature, add a card with
+                // `unreleased=true` — it renders only on the dev build with an
+                // "Unreleased" badge, and the flag is dropped once it ships.
                 <FeatureCard
                     id="feature-webstorage"
                     title="Web storage"
@@ -78,7 +80,6 @@ pub fn Features() -> impl IntoView {
                     id="feature-wait-for-function"
                     title="Wait for anything"
                     blurb="Wait on arbitrary page state, or on a matched element, with a JS predicate."
-                    unreleased=true
                 >
                     <CodeBlock html=snippets::CARD_WAIT_FOR_FUNCTION_RS/>
                 </FeatureCard>
@@ -86,7 +87,6 @@ pub fn Features() -> impl IntoView {
                     id="feature-evaluate-callback"
                     title="Rust closures in the page"
                     blurb="Pass a Rust closure into evaluate; the page calls back into your test and awaits the result."
-                    unreleased=true
                 >
                     <CodeBlock html=snippets::CARD_EVALUATE_CALLBACK_RS/>
                 </FeatureCard>
@@ -94,7 +94,6 @@ pub fn Features() -> impl IntoView {
                     id="feature-session-state"
                     title="Session save & replay"
                     blurb="Capture cookies, storage, IndexedDB and passkeys; restore them into a fresh context."
-                    unreleased=true
                 >
                     <CodeBlock html=snippets::CARD_SESSION_STATE_RS/>
                 </FeatureCard>

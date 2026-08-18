@@ -9,6 +9,8 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-08-17
+
 ### Changed
 
 - **Trace fixture regenerated against the Playwright 1.62.1 driver, confirming trace format version 8 still applies.** The checked-in fixture was recorded with 1.61.1, so the parse tests were not exercising the format produced by the driver `playwright-rs` bundles on `main`. Version 8 holds across both, so `SUPPORTED_VERSION` is unchanged; the difference is that the suite now proves it instead of assuming it. A format bump would otherwise have surfaced as this crate rejecting every trace its companion crate records.
@@ -78,7 +80,8 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   the deterministic test fixture under `tests/fixtures/`. New
   `.cargo/config.toml` aliases `cargo xtask`.
 
-[Unreleased]: https://github.com/padamson/playwright-rust/compare/trace-v0.1.2...HEAD
+[Unreleased]: https://github.com/padamson/playwright-rust/compare/trace-v0.1.3...HEAD
+[0.1.3]: https://github.com/padamson/playwright-rust/compare/trace-v0.1.2...trace-v0.1.3
 [0.1.2]: https://github.com/padamson/playwright-rust/compare/trace-v0.1.1...trace-v0.1.2
 [0.1.1]: https://github.com/padamson/playwright-rust/compare/trace-v0.1.0...trace-v0.1.1
 [0.1.0]: https://github.com/padamson/playwright-rust/releases/tag/trace-v0.1.0
