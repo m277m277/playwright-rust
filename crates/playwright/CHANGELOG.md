@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-09-26
+
 ### Added
 
 - **Chainable setters where an option struct had none, or was missing some.** `AddLocatorHandlerOptions` gains `times` and `no_wait_after`; `HighlightOptions` gains `style`; `StartJSCoverageOptions` gains `reset_on_navigation` and `report_anonymous_scripts`; `StartCSSCoverageOptions` gains `reset_on_navigation`; `WebSocketRouteCloseOptions` gains `code` and `reason`; `RouteFromHarOptions` gains the `update_content` and `update_mode` it lacked. These structs are `#[non_exhaustive]`, so outside the crate those fields could only be set by building `default()` and mutating field by field. `AccessibilitySnapshotOptions` deliberately gets none: its two fields are ignored, which its docs now say.
@@ -906,7 +908,8 @@ Public-API type-consistency sweep — within the crate, the same conceptual quan
   - Playwright returns null for data URLs and `about:blank` (valid behavior, not an error)
   - Migration: `page.goto("https://example.com").await?.expect("response")` or use `if let Some(response) = page.goto(...).await? { ... }`
 
-[Unreleased]: https://github.com/padamson/playwright-rust/compare/v0.18.1...HEAD
+[Unreleased]: https://github.com/padamson/playwright-rust/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/padamson/playwright-rust/compare/v0.18.1...v0.19.0
 [0.18.1]: https://github.com/padamson/playwright-rust/compare/v0.18.0...v0.18.1
 [0.18.0]: https://github.com/padamson/playwright-rust/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/padamson/playwright-rust/compare/v0.16.0...v0.17.0

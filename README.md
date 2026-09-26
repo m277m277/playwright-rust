@@ -133,7 +133,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-playwright-rs = "0.18"  # Auto-updates to latest 0.18.x
+playwright-rs = "0.19"  # Auto-updates to latest 0.19.x
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -146,7 +146,7 @@ backend for driver downloads (and rustls WebSocket connections). Use
 four, so list the others back:
 
 ```toml
-playwright-rs = { version = "0.18", default-features = false, features = [
+playwright-rs = { version = "0.19", default-features = false, features = [
     "aws-lc",
     "native-tls",
     "macros",
