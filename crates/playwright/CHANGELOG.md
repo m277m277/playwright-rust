@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **BREAKING: `BrowserContext::deserialize_binding_args_pub`.** A wire-format helper that was public only so `Page` could call it; it corresponds to no Playwright API and its output shape is the driver's, not the crate's. The shared function is crate-private now.
+
 ### Fixed
 
 - **`unroute_all` honors its `behavior` argument on `Page` and `BrowserContext`.** `UnrouteBehavior::Wait` now returns only after the handler invocations already running have finished, and `UnrouteBehavior::IgnoreErrors` lets those invocations fail without a log line, matching upstream. Both were accepted and ignored: the call cleared the handler list and returned at once, so a test tearing down after `unroute_all(Some(Wait))` could race a handler still fulfilling a route.

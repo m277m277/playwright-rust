@@ -466,7 +466,7 @@ impl ChannelOwner for Page {
 
                         // Deserialize args from Playwright protocol format
                         let raw_args = binding_call.args();
-                        let args = crate::protocol::browser_context::BrowserContext::deserialize_binding_args_pub(raw_args);
+                        let args = crate::protocol::browser_context::BrowserContext::deserialize_binding_args(raw_args);
 
                         // Call callback and serialize result
                         let result_value = callback(args).await;

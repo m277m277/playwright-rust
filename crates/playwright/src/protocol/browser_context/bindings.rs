@@ -126,17 +126,10 @@ impl BrowserContext {
 
     /// Deserializes binding call arguments from Playwright's protocol format.
     ///
-    /// The `args` field in the BindingCall initializer is a JSON array where each
-    /// element is in `serialize_argument` format: `{"value": <tagged>, "handles": []}`.
-    /// This helper extracts the inner "value" from each entry and parses it.
-    ///
-    /// This is `pub` so that `Page::on_event("bindingCall")` can reuse it without
-    /// duplicating the deserialization logic.
-    pub fn deserialize_binding_args_pub(raw_args: &Value) -> Vec<Value> {
-        Self::deserialize_binding_args(raw_args)
-    }
-
-    pub(super) fn deserialize_binding_args(raw_args: &Value) -> Vec<Value> {
+    /// The `args` field in the BindingCall initializer is a JSON array of
+    /// type-tagged values; each is parsed into plain JSON. `Page`'s
+    /// `bindingCall` dispatch shares it.
+    pub(crate) fn deserialize_binding_args(raw_args: &Value) -> Vec<Value> {
         let Some(arr) = raw_args.as_array() else {
             return vec![];
         };
