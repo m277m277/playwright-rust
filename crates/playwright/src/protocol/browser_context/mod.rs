@@ -5,7 +5,7 @@
 // cache, and local storage.
 
 use crate::error::Result;
-use crate::protocol::{Browser, Download, Frame, Page, Request, ResponseObject, Route};
+use crate::protocol::{Browser, Page, Request, ResponseObject, Route};
 use crate::server::channel_owner::{ChannelOwner, ChannelOwnerImpl};
 use std::collections::HashMap;
 use std::future::Future;
@@ -29,17 +29,8 @@ type ServiceWorkerHandlerFuture = Pin<Box<dyn Future<Output = Result<()>> + Send
 type ServiceWorkerHandler =
     Arc<dyn Fn(crate::protocol::Worker) -> ServiceWorkerHandlerFuture + Send + Sync>;
 
-/// Context-level event handlers for the 1.60 lifecycle events. These are not
-/// wire events on the context channel; they are forwarded from each page's
-/// own events (see `wire_*` helpers), matching how the upstream clients
-/// synthesize them.
+/// Type alias for boxed context-level handler future
 type CtxHandlerFuture = Pin<Box<dyn Future<Output = Result<()>> + Send>>;
-/// Context `download` handler (receives the page's `Download`).
-type DownloadHandler = Arc<dyn Fn(Download) -> CtxHandlerFuture + Send + Sync>;
-/// Context frame handler (`frameAttached`/`frameDetached`/`frameNavigated`).
-type CtxFrameHandler = Arc<dyn Fn(Frame) -> CtxHandlerFuture + Send + Sync>;
-/// Context page-lifecycle handler (`pageLoad`/`pageClose`), receives the `Page`.
-type PageEventHandler = Arc<dyn Fn(Page) -> CtxHandlerFuture + Send + Sync>;
 
 /// Binding callback: receives deserialized JS args, returns a JSON value
 type BindingCallback = Arc<dyn Fn(Vec<serde_json::Value>) -> BindingCallbackFuture + Send + Sync>;
@@ -166,13 +157,8 @@ pub struct BrowserContext {
     weberror: Arc<EventRegistry<crate::protocol::WebError>>,
     /// Context-level service worker event handlers (fired when a service worker is registered)
     serviceworker_handlers: Arc<Mutex<Vec<ServiceWorkerHandler>>>,
-    /// Context-level lifecycle handlers, forwarded from each page's events.
-    download_handlers: Arc<Mutex<Vec<DownloadHandler>>>,
-    frame_attached_handlers: Arc<Mutex<Vec<CtxFrameHandler>>>,
-    frame_detached_handlers: Arc<Mutex<Vec<CtxFrameHandler>>>,
-    frame_navigated_handlers: Arc<Mutex<Vec<CtxFrameHandler>>>,
-    page_load_handlers: Arc<Mutex<Vec<PageEventHandler>>>,
-    page_close_handlers: Arc<Mutex<Vec<PageEventHandler>>>,
+    /// Handlers for the events forwarded from each page.
+    forwarders: events::Forwarders,
     /// One-shot senders waiting for the next "serviceworker" event (expect_event("serviceworker"))
     serviceworker_waiters: Arc<Mutex<Vec<oneshot::Sender<crate::protocol::Worker>>>>,
     /// Active service workers tracked via "serviceWorker" events

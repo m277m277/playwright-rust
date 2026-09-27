@@ -31,6 +31,7 @@ examine_globs = [
     "crates/playwright/src/protocol/route_service.rs",
     "crates/playwright/src/protocol/resource_timing.rs",
     "crates/playwright/src/protocol/page/mod.rs",
+    "crates/playwright/src/protocol/browser_context/events.rs",
 ]
 
 # The unit tests plus every test binary that runs without a browser. The
@@ -75,6 +76,12 @@ exclude_re = [
     # display-only.
     "set_timeout_and_notify",
     "impl std::fmt::Debug for Page",
+
+    # browser_context/events.rs: the forwarding, bridging and waiter-drain
+    # helpers are pure and unit tested; every BrowserContext method there
+    # talks to the server or a live page, as does Forwarders::wire.
+    "BrowserContext::",
+    "Forwarders::wire",
 
     # route_service.rs: the request/response conversions are pure and unit
     # tested; the fulfiller, its inner step, and the engine lookup drive a

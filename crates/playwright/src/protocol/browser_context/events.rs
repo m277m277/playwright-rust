@@ -1,14 +1,13 @@
-use super::{
-    BrowserContext, CtxFrameHandler, CtxHandlerFuture, DownloadHandler, PageEventHandler,
-    ServiceWorkerHandlerFuture,
-};
+use super::{BrowserContext, CtxHandlerFuture, ServiceWorkerHandlerFuture};
 use crate::error::Result;
+use crate::protocol::EventValue;
 use crate::protocol::event_registry::{EventRegistry, Handler};
 use crate::protocol::event_waiter::EventWaiter;
 use crate::protocol::{Download, Frame, Page, Request, ResponseObject};
 use crate::server::channel_owner::ChannelOwner;
 use std::future::Future;
 use std::sync::{Arc, Mutex};
+use tokio::sync::oneshot;
 
 /// Event subscriptions (`on_*`), page-event forwarders, and one-shot waiters (`expect_*`).
 impl BrowserContext {
@@ -55,14 +54,7 @@ impl BrowserContext {
         F: Fn(Download) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<()>> + Send + 'static,
     {
-        let handler = Arc::new(move |d: Download| -> CtxHandlerFuture { Box::pin(handler(d)) });
-        let was_empty = self.download_handlers.lock().unwrap().is_empty();
-        self.download_handlers.lock().unwrap().push(handler);
-        if was_empty {
-            for page in self.pages() {
-                Self::wire_download(&page, self.download_handlers.clone()).await;
-            }
-        }
+        add_forwarded(&self.forwarders.download, handler);
         Ok(())
     }
 
@@ -76,14 +68,7 @@ impl BrowserContext {
         F: Fn(Frame) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<()>> + Send + 'static,
     {
-        let handler = Arc::new(move |f: Frame| -> CtxHandlerFuture { Box::pin(handler(f)) });
-        let was_empty = self.frame_attached_handlers.lock().unwrap().is_empty();
-        self.frame_attached_handlers.lock().unwrap().push(handler);
-        if was_empty {
-            for page in self.pages() {
-                Self::wire_frame_attached(&page, self.frame_attached_handlers.clone()).await;
-            }
-        }
+        add_forwarded(&self.forwarders.frame_attached, handler);
         Ok(())
     }
 
@@ -97,14 +82,7 @@ impl BrowserContext {
         F: Fn(Frame) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<()>> + Send + 'static,
     {
-        let handler = Arc::new(move |f: Frame| -> CtxHandlerFuture { Box::pin(handler(f)) });
-        let was_empty = self.frame_detached_handlers.lock().unwrap().is_empty();
-        self.frame_detached_handlers.lock().unwrap().push(handler);
-        if was_empty {
-            for page in self.pages() {
-                Self::wire_frame_detached(&page, self.frame_detached_handlers.clone()).await;
-            }
-        }
+        add_forwarded(&self.forwarders.frame_detached, handler);
         Ok(())
     }
 
@@ -118,14 +96,7 @@ impl BrowserContext {
         F: Fn(Frame) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<()>> + Send + 'static,
     {
-        let handler = Arc::new(move |f: Frame| -> CtxHandlerFuture { Box::pin(handler(f)) });
-        let was_empty = self.frame_navigated_handlers.lock().unwrap().is_empty();
-        self.frame_navigated_handlers.lock().unwrap().push(handler);
-        if was_empty {
-            for page in self.pages() {
-                Self::wire_frame_navigated(&page, self.frame_navigated_handlers.clone()).await;
-            }
-        }
+        add_forwarded(&self.forwarders.frame_navigated, handler);
         Ok(())
     }
 
@@ -139,14 +110,7 @@ impl BrowserContext {
         F: Fn(Page) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<()>> + Send + 'static,
     {
-        let handler = Arc::new(move |p: Page| -> CtxHandlerFuture { Box::pin(handler(p)) });
-        let was_empty = self.page_load_handlers.lock().unwrap().is_empty();
-        self.page_load_handlers.lock().unwrap().push(handler);
-        if was_empty {
-            for page in self.pages() {
-                Self::wire_page_load(&page, self.page_load_handlers.clone()).await;
-            }
-        }
+        add_forwarded(&self.forwarders.page_load, handler);
         Ok(())
     }
 
@@ -160,123 +124,8 @@ impl BrowserContext {
         F: Fn(Page) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<()>> + Send + 'static,
     {
-        let handler = Arc::new(move |p: Page| -> CtxHandlerFuture { Box::pin(handler(p)) });
-        let was_empty = self.page_close_handlers.lock().unwrap().is_empty();
-        self.page_close_handlers.lock().unwrap().push(handler);
-        if was_empty {
-            for page in self.pages() {
-                Self::wire_page_close(&page, self.page_close_handlers.clone()).await;
-            }
-        }
+        add_forwarded(&self.forwarders.page_close, handler);
         Ok(())
-    }
-
-    // --- Forwarders: wire a single page's events to the context handler vecs. ---
-    // Each (page, event) is wired exactly once: on the first context handler
-    // (current pages) or at page creation (future pages, see the "page" event
-    // dispatch). The vec is cloned out under the lock before awaiting handlers.
-
-    pub(super) async fn wire_download(page: &Page, handlers: Arc<Mutex<Vec<DownloadHandler>>>) {
-        let _ = page
-            .on_download(move |d: Download| {
-                let handlers = handlers.clone();
-                async move {
-                    let hs = handlers.lock().unwrap().clone();
-                    for h in hs {
-                        let _ = h(d.clone()).await;
-                    }
-                    Ok(())
-                }
-            })
-            .await;
-    }
-
-    pub(super) async fn wire_frame_attached(
-        page: &Page,
-        handlers: Arc<Mutex<Vec<CtxFrameHandler>>>,
-    ) {
-        let _ = page
-            .on_frameattached(move |f: Frame| {
-                let handlers = handlers.clone();
-                async move {
-                    let hs = handlers.lock().unwrap().clone();
-                    for h in hs {
-                        let _ = h(f.clone()).await;
-                    }
-                    Ok(())
-                }
-            })
-            .await;
-    }
-
-    pub(super) async fn wire_frame_detached(
-        page: &Page,
-        handlers: Arc<Mutex<Vec<CtxFrameHandler>>>,
-    ) {
-        let _ = page
-            .on_framedetached(move |f: Frame| {
-                let handlers = handlers.clone();
-                async move {
-                    let hs = handlers.lock().unwrap().clone();
-                    for h in hs {
-                        let _ = h(f.clone()).await;
-                    }
-                    Ok(())
-                }
-            })
-            .await;
-    }
-
-    pub(super) async fn wire_frame_navigated(
-        page: &Page,
-        handlers: Arc<Mutex<Vec<CtxFrameHandler>>>,
-    ) {
-        let _ = page
-            .on_framenavigated(move |f: Frame| {
-                let handlers = handlers.clone();
-                async move {
-                    let hs = handlers.lock().unwrap().clone();
-                    for h in hs {
-                        let _ = h(f.clone()).await;
-                    }
-                    Ok(())
-                }
-            })
-            .await;
-    }
-
-    pub(super) async fn wire_page_load(page: &Page, handlers: Arc<Mutex<Vec<PageEventHandler>>>) {
-        let p = page.clone();
-        let _ = page
-            .on_load(move || {
-                let handlers = handlers.clone();
-                let p = p.clone();
-                async move {
-                    let hs = handlers.lock().unwrap().clone();
-                    for h in hs {
-                        let _ = h(p.clone()).await;
-                    }
-                    Ok(())
-                }
-            })
-            .await;
-    }
-
-    pub(super) async fn wire_page_close(page: &Page, handlers: Arc<Mutex<Vec<PageEventHandler>>>) {
-        let p = page.clone();
-        let _ = page
-            .on_close(move || {
-                let handlers = handlers.clone();
-                let p = p.clone();
-                async move {
-                    let hs = handlers.lock().unwrap().clone();
-                    for h in hs {
-                        let _ = h(p.clone()).await;
-                    }
-                    Ok(())
-                }
-            })
-            .await;
     }
 
     /// Adds a listener for the `close` event.
@@ -656,145 +505,254 @@ impl BrowserContext {
         event: &str,
         timeout: Option<f64>,
     ) -> crate::error::Result<EventWaiter<crate::protocol::EventValue>> {
-        use crate::protocol::EventValue;
-        use tokio::sync::oneshot;
-
         let timeout_ms = timeout.or(Some(30_000.0));
 
+        let waiter = |rx| EventWaiter::new(rx, timeout_ms);
         match event {
-            "page" => {
-                let (mut tx, rx) = oneshot::channel::<EventValue>();
-                let inner_rx = self.page_events.wait();
-
-                // select: drop the registry receiver when the caller times
-                // out, or a stale FIFO waiter swallows the next event.
-                tokio::spawn(async move {
-                    tokio::select! {
-                        v = inner_rx => {
-                            if let Ok(v) = v { let _ = tx.send(EventValue::Page(v)); }
-                        }
-                        () = tx.closed() => {}
-                    }
-                });
-
-                Ok(EventWaiter::new(rx, timeout_ms))
-            }
-
-            "close" => {
-                let (mut tx, rx) = oneshot::channel::<EventValue>();
-                let inner_rx = self.close_events.wait();
-
-                // select: drop the registry receiver when the caller times
-                // out, or a stale FIFO waiter swallows the next event.
-                tokio::spawn(async move {
-                    tokio::select! {
-                        v = inner_rx => {
-                            if v.is_ok() { let _ = tx.send(EventValue::Close); }
-                        }
-                        () = tx.closed() => {}
-                    }
-                });
-
-                Ok(EventWaiter::new(rx, timeout_ms))
-            }
-
+            "page" => Ok(waiter(bridge(self.page_events.wait(), EventValue::Page))),
+            "close" => Ok(waiter(bridge(self.close_events.wait(), |()| {
+                EventValue::Close
+            }))),
             "console" => {
-                let (mut tx, rx) = oneshot::channel::<EventValue>();
-
                 self.subscribe_if_idle(&self.console).await;
-                let inner_rx = self.console.wait();
-
-                // select: drop the registry receiver when the caller times
-                // out, or a stale FIFO waiter swallows the next event.
-                tokio::spawn(async move {
-                    tokio::select! {
-                        v = inner_rx => {
-                            if let Ok(v) = v { let _ = tx.send(EventValue::ConsoleMessage(v)); }
-                        }
-                        () = tx.closed() => {}
-                    }
-                });
-
-                Ok(EventWaiter::new(rx, timeout_ms))
+                Ok(waiter(bridge(
+                    self.console.wait(),
+                    EventValue::ConsoleMessage,
+                )))
             }
-
             "request" => {
-                let (mut tx, rx) = oneshot::channel::<EventValue>();
-
                 self.subscribe_if_idle(&self.request).await;
-                let inner_rx = self.request.wait();
-
-                // select: drop the registry receiver when the caller times
-                // out, or a stale FIFO waiter swallows the next event.
-                tokio::spawn(async move {
-                    tokio::select! {
-                        v = inner_rx => {
-                            if let Ok(v) = v { let _ = tx.send(EventValue::Request(v)); }
-                        }
-                        () = tx.closed() => {}
-                    }
-                });
-
-                Ok(EventWaiter::new(rx, timeout_ms))
+                Ok(waiter(bridge(self.request.wait(), EventValue::Request)))
             }
-
             "response" => {
-                let (mut tx, rx) = oneshot::channel::<EventValue>();
-
                 self.subscribe_if_idle(&self.response).await;
-                let inner_rx = self.response.wait();
-
-                // select: drop the registry receiver when the caller times
-                // out, or a stale FIFO waiter swallows the next event.
-                tokio::spawn(async move {
-                    tokio::select! {
-                        v = inner_rx => {
-                            if let Ok(v) = v { let _ = tx.send(EventValue::Response(v)); }
-                        }
-                        () = tx.closed() => {}
-                    }
-                });
-
-                Ok(EventWaiter::new(rx, timeout_ms))
+                Ok(waiter(bridge(self.response.wait(), EventValue::Response)))
             }
-
-            "weberror" => {
-                let (mut tx, rx) = oneshot::channel::<EventValue>();
-                let inner_rx = self.weberror.wait();
-
-                // select: drop the registry receiver when the caller times
-                // out, or a stale FIFO waiter swallows the next event.
-                tokio::spawn(async move {
-                    tokio::select! {
-                        v = inner_rx => {
-                            if let Ok(v) = v { let _ = tx.send(EventValue::WebError(v)); }
-                        }
-                        () = tx.closed() => {}
-                    }
-                });
-
-                Ok(EventWaiter::new(rx, timeout_ms))
-            }
-
+            "weberror" => Ok(waiter(bridge(self.weberror.wait(), EventValue::WebError))),
             "serviceworker" => {
-                let (tx, rx) = oneshot::channel::<EventValue>();
-                let (inner_tx, inner_rx) = oneshot::channel::<crate::protocol::Worker>();
+                let (inner_tx, inner_rx) = oneshot::channel();
                 self.serviceworker_waiters.lock().unwrap().push(inner_tx);
-
-                tokio::spawn(async move {
-                    if let Ok(v) = inner_rx.await {
-                        let _ = tx.send(EventValue::Worker(v));
-                    }
-                });
-
-                Ok(EventWaiter::new(rx, timeout_ms))
+                Ok(waiter(bridge(inner_rx, EventValue::Worker)))
             }
-
             other => Err(crate::error::Error::InvalidArgument(format!(
                 "Unknown event name '{}'. Supported: page, close, console, request, response, \
                  weberror, serviceworker",
                 other
             ))),
         }
+    }
+}
+
+/// A context-level handler for an event forwarded from each page.
+type ForwardedHandler<T> = Arc<dyn Fn(T) -> CtxHandlerFuture + Send + Sync>;
+/// The handlers registered for one forwarded event.
+type Forwarded<T> = Arc<Mutex<Vec<ForwardedHandler<T>>>>;
+
+/// Context-level handlers for the events forwarded from each page.
+///
+/// These are not wire events on the context channel. Each page's own event
+/// is forwarded to the handlers here, matching how the upstream clients
+/// synthesize them. Every page is wired once, when the context learns of
+/// it, so registering a handler never touches a page and there is no
+/// check-then-wire window for two registrations or a page arriving mid-way
+/// to fall into.
+#[derive(Clone, Default)]
+pub(super) struct Forwarders {
+    pub(super) download: Forwarded<Download>,
+    pub(super) frame_attached: Forwarded<Frame>,
+    pub(super) frame_detached: Forwarded<Frame>,
+    pub(super) frame_navigated: Forwarded<Frame>,
+    pub(super) page_load: Forwarded<Page>,
+    pub(super) page_close: Forwarded<Page>,
+}
+
+impl Forwarders {
+    /// Forwards each of `page`'s lifecycle events to these handlers.
+    pub(super) async fn wire(&self, page: &Page) {
+        _ = page.on_download(forward_to(&self.download)).await;
+        _ = page
+            .on_frameattached(forward_to(&self.frame_attached))
+            .await;
+        _ = page
+            .on_framedetached(forward_to(&self.frame_detached))
+            .await;
+        _ = page
+            .on_framenavigated(forward_to(&self.frame_navigated))
+            .await;
+        let (load, p) = (forward_to(&self.page_load), page.clone());
+        _ = page.on_load(move || load(p.clone())).await;
+        let (close, p) = (forward_to(&self.page_close), page.clone());
+        _ = page.on_close(move || close(p.clone())).await;
+    }
+}
+
+/// Registers `handler` for a forwarded event.
+fn add_forwarded<T, F, Fut>(handlers: &Forwarded<T>, handler: F)
+where
+    F: Fn(T) -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = Result<()>> + Send + 'static,
+{
+    handlers
+        .lock()
+        .unwrap()
+        .push(Arc::new(move |value| Box::pin(handler(value))));
+}
+
+/// A page-level handler that runs every handler in `handlers` with the
+/// event's value.
+fn forward_to<T: Clone + Send + 'static>(
+    handlers: &Forwarded<T>,
+) -> impl Fn(T) -> CtxHandlerFuture + Send + Sync + 'static {
+    let handlers = handlers.clone();
+    move |value| {
+        let handlers = handlers.clone();
+        Box::pin(async move {
+            run_all(&handlers, value).await;
+            Ok(())
+        })
+    }
+}
+
+/// Runs the handlers registered at call time, in registration order. An
+/// error is logged so one failing handler does not stop the rest.
+async fn run_all<T: Clone>(handlers: &Forwarded<T>, value: T) {
+    let handlers = handlers.lock().unwrap().clone();
+    for handler in handlers {
+        if let Err(e) = handler(value.clone()).await {
+            tracing::warn!("context handler error: {e}");
+        }
+    }
+}
+
+/// Bridges a registry waiter into an `EventValue` waiter. The registry
+/// receiver is dropped as soon as the caller's receiver closes, so a waiter
+/// that timed out cannot swallow the next event owed to a live one.
+fn bridge<T: Send + 'static>(
+    inner_rx: oneshot::Receiver<T>,
+    wrap: impl FnOnce(T) -> EventValue + Send + 'static,
+) -> oneshot::Receiver<EventValue> {
+    let (mut tx, rx) = oneshot::channel();
+    tokio::spawn(async move {
+        tokio::select! {
+            v = inner_rx => {
+                if let Ok(v) = v {
+                    _ = tx.send(wrap(v));
+                }
+            }
+            () = tx.closed() => {}
+        }
+    });
+    rx
+}
+
+/// Hands `value` to the oldest waiter whose caller is still listening,
+/// discarding the ones that have gone. Returns whether anyone received it.
+pub(super) fn deliver_to_oldest_live<T>(
+    waiters: &mut Vec<oneshot::Sender<T>>,
+    mut value: T,
+) -> bool {
+    while !waiters.is_empty() {
+        match waiters.remove(0).send(value) {
+            Ok(()) => return true,
+            Err(unsent) => value = unsent,
+        }
+    }
+    false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
+
+    #[test]
+    fn oldest_live_waiter_takes_the_value_and_the_rest_stay() {
+        let (tx1, mut rx1) = oneshot::channel();
+        let (tx2, mut rx2) = oneshot::channel();
+        let mut waiters = vec![tx1, tx2];
+        assert!(deliver_to_oldest_live(&mut waiters, 1));
+        assert_eq!(rx1.try_recv(), Ok(1));
+        assert!(rx2.try_recv().is_err());
+        assert_eq!(waiters.len(), 1);
+    }
+
+    #[test]
+    fn a_waiter_whose_caller_left_is_skipped_and_dropped() {
+        let (dead, _) = oneshot::channel::<u8>();
+        let (live, mut rx) = oneshot::channel();
+        let mut waiters = vec![dead, live];
+        assert!(deliver_to_oldest_live(&mut waiters, 7));
+        assert_eq!(rx.try_recv(), Ok(7));
+        assert!(waiters.is_empty());
+    }
+
+    #[test]
+    fn no_live_waiter_reports_undelivered_and_clears_the_dead() {
+        let (dead, _) = oneshot::channel::<u8>();
+        let mut waiters = vec![dead];
+        assert!(!deliver_to_oldest_live(&mut waiters, 7));
+        assert!(waiters.is_empty());
+        assert!(!deliver_to_oldest_live(&mut waiters, 8));
+    }
+
+    #[tokio::test]
+    async fn bridge_wraps_the_value_for_the_caller() {
+        let (tx, inner_rx) = oneshot::channel();
+        let rx = bridge(inner_rx, |()| EventValue::Close);
+        tx.send(()).unwrap();
+        assert!(matches!(rx.await, Ok(EventValue::Close)));
+    }
+
+    #[tokio::test]
+    async fn bridge_releases_the_registry_waiter_when_the_caller_leaves() {
+        let (mut tx, inner_rx) = oneshot::channel::<()>();
+        let rx = bridge(inner_rx, |()| EventValue::Close);
+        drop(rx);
+        tokio::time::timeout(Duration::from_secs(1), tx.closed())
+            .await
+            .expect("the registry receiver must be dropped once the caller is gone");
+    }
+
+    #[tokio::test]
+    async fn run_all_runs_every_handler_in_order_past_a_failure() {
+        let handlers: Forwarded<u8> = Forwarded::default();
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let calls = Arc::new(AtomicUsize::new(0));
+        for i in 0..3u8 {
+            let (seen, calls) = (seen.clone(), calls.clone());
+            add_forwarded(&handlers, move |v: u8| {
+                let (seen, calls) = (seen.clone(), calls.clone());
+                async move {
+                    seen.lock().unwrap().push((i, v));
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    if i == 1 {
+                        Err(crate::error::Error::ProtocolError("boom".into()))
+                    } else {
+                        Ok(())
+                    }
+                }
+            });
+        }
+        run_all(&handlers, 9).await;
+        assert_eq!(*seen.lock().unwrap(), vec![(0, 9), (1, 9), (2, 9)]);
+        assert_eq!(calls.load(Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test]
+    async fn forward_to_reaches_handlers_added_after_wiring() {
+        let handlers: Forwarded<u8> = Forwarded::default();
+        let page_side = forward_to(&handlers);
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let s = seen.clone();
+        add_forwarded(&handlers, move |v: u8| {
+            let s = s.clone();
+            async move {
+                s.lock().unwrap().push(v);
+                Ok(())
+            }
+        });
+        page_side(4).await.unwrap();
+        assert_eq!(*seen.lock().unwrap(), vec![4]);
     }
 }

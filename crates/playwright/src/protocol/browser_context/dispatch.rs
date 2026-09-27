@@ -195,12 +195,7 @@ impl ChannelOwner for BrowserContext {
                     let page_guid_owned = page_guid.to_string();
                     let pages = self.pages.clone();
                     let page_events = self.page_events.clone();
-                    let download_handlers = self.download_handlers.clone();
-                    let frame_attached_handlers = self.frame_attached_handlers.clone();
-                    let frame_detached_handlers = self.frame_detached_handlers.clone();
-                    let frame_navigated_handlers = self.frame_navigated_handlers.clone();
-                    let page_load_handlers = self.page_load_handlers.clone();
-                    let page_close_handlers = self.page_close_handlers.clone();
+                    let forwarders = self.forwarders.clone();
 
                     tokio::spawn(async move {
                         // Get and downcast the Page object
@@ -213,27 +208,8 @@ impl ChannelOwner for BrowserContext {
                         // Track the page
                         pages.lock().unwrap().push(page.clone());
 
-                        // Forward this new page's lifecycle events to any
-                        // context-level handlers already registered.
-                        if !download_handlers.lock().unwrap().is_empty() {
-                            Self::wire_download(&page, download_handlers.clone()).await;
-                        }
-                        if !frame_attached_handlers.lock().unwrap().is_empty() {
-                            Self::wire_frame_attached(&page, frame_attached_handlers.clone()).await;
-                        }
-                        if !frame_detached_handlers.lock().unwrap().is_empty() {
-                            Self::wire_frame_detached(&page, frame_detached_handlers.clone()).await;
-                        }
-                        if !frame_navigated_handlers.lock().unwrap().is_empty() {
-                            Self::wire_frame_navigated(&page, frame_navigated_handlers.clone())
-                                .await;
-                        }
-                        if !page_load_handlers.lock().unwrap().is_empty() {
-                            Self::wire_page_load(&page, page_load_handlers.clone()).await;
-                        }
-                        if !page_close_handlers.lock().unwrap().is_empty() {
-                            Self::wire_page_close(&page, page_close_handlers.clone()).await;
-                        }
+                        // Forward this page's lifecycle events to the context's handlers.
+                        forwarders.wire(&page).await;
 
                         // If this page has an opener, dispatch popup event to opener's handlers.
                         // The opener guid is in the page's initializer: {"opener": {"guid": "..."}}
@@ -627,10 +603,11 @@ impl ChannelOwner for BrowserContext {
                                 }
                             });
                         }
-                        // Notify expect_event("serviceworker") waiters
-                        if let Some(tx) = serviceworker_waiters.lock().unwrap().pop() {
-                            let _ = tx.send(worker);
-                        }
+                        // Notify the oldest expect_event("serviceworker") waiter still listening.
+                        super::events::deliver_to_oldest_live(
+                            &mut serviceworker_waiters.lock().unwrap(),
+                            worker,
+                        );
                     });
                 }
             }
