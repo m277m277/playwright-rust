@@ -128,6 +128,38 @@ impl From<bool> for AcceptDownloads {
 /// Allows customizing viewport, user agent, locale, timezone, geolocation,
 /// permissions, and other browser context settings.
 ///
+/// A proxy and a saved session, built inline; `storage_state_path` loads the
+/// same state from a file written by `BrowserContext::storage_state`:
+///
+/// ```rust
+/// use playwright_rs::protocol::{
+///     BrowserContextOptions, Cookie, LocalStorageItem, Origin, ProxySettings, StorageState,
+/// };
+///
+/// let session = StorageState::default()
+///     .cookies(vec![
+///         Cookie::new("session_id", "abc123")
+///             .domain(".example.com")
+///             .http_only(true)
+///             .secure(true)
+///             .same_site("Lax"),
+///     ])
+///     .origins(vec![Origin::new(
+///         "https://example.com",
+///         vec![LocalStorageItem::new("user_prefs", "{\"theme\":\"dark\"}")],
+///     )]);
+///
+/// let options = BrowserContextOptions::builder()
+///     .proxy(
+///         ProxySettings::new("http://proxy.example.com:8080")
+///             .bypass(".example.com")
+///             .username("user")
+///             .password("pass"),
+///     )
+///     .storage_state(session)
+///     .build();
+/// ```
+///
 /// See: <https://playwright.dev/docs/api/class-browser#browser-new-context>
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -421,21 +453,6 @@ impl BrowserContextOptionsBuilder {
     /// This allows routing all network traffic through a proxy server,
     /// useful for rotating proxies without creating new browsers.
     ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use playwright_rs::protocol::{BrowserContextOptions, ProxySettings};
-    ///
-    /// let options = BrowserContextOptions::builder()
-    ///     .proxy(
-    ///         ProxySettings::new("http://proxy.example.com:8080")
-    ///             .bypass(".example.com")
-    ///             .username("user")
-    ///             .password("pass"),
-    ///     )
-    ///     .build();
-    /// ```
-    ///
     /// See: <https://playwright.dev/docs/api/class-browser#browser-new-context>
     pub fn proxy(mut self, proxy: ProxySettings) -> Self {
         self.proxy = Some(proxy);
@@ -517,29 +534,6 @@ impl BrowserContextOptionsBuilder {
     ///
     /// Mutually exclusive with `storage_state_path()`.
     ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use playwright_rs::protocol::{BrowserContextOptions, Cookie, StorageState, Origin, LocalStorageItem};
-    ///
-    /// let storage_state = StorageState::default()
-    ///     .cookies(vec![
-    ///         Cookie::new("session_id", "abc123")
-    ///             .domain(".example.com")
-    ///             .http_only(true)
-    ///             .secure(true)
-    ///             .same_site("Lax"),
-    ///     ])
-    ///     .origins(vec![Origin::new(
-    ///         "https://example.com",
-    ///         vec![LocalStorageItem::new("user_prefs", "{\"theme\":\"dark\"}")],
-    ///     )]);
-    ///
-    /// let options = BrowserContextOptions::builder()
-    ///     .storage_state(storage_state)
-    ///     .build();
-    /// ```
-    ///
     /// See: <https://playwright.dev/docs/api/class-browser#browser-new-context-option-storage-state>
     pub fn storage_state(mut self, storage_state: StorageState) -> Self {
         self.storage_state = Some(storage_state);
@@ -554,16 +548,6 @@ impl BrowserContextOptionsBuilder {
     /// previous session.
     ///
     /// Mutually exclusive with `storage_state()`.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use playwright_rs::protocol::BrowserContextOptions;
-    ///
-    /// let options = BrowserContextOptions::builder()
-    ///     .storage_state_path("auth.json".to_string())
-    ///     .build();
-    /// ```
     ///
     /// The file should have this format:
     /// ```json

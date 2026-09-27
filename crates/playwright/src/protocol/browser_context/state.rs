@@ -5,6 +5,29 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Context state: cookies, storage state, headers, permissions, geolocation, credentials, offline.
+///
+/// Restoring a session cookie through the storage state:
+///
+/// ```no_run
+/// # use playwright_rs::Playwright;
+/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// # let pw = Playwright::launch().await?;
+/// # let browser = pw.chromium().launch().await?;
+/// # let context = browser.new_context().await?;
+/// use playwright_rs::protocol::{Cookie, StorageState};
+///
+/// let state = StorageState::default().cookies(vec![
+///     Cookie::new("session", "token123")
+///         .domain("example.com")
+///         .path("/")
+///         .http_only(true)
+///         .secure(true)
+///         .same_site("Lax"),
+/// ]);
+/// context.set_storage_state(state).await?;
+/// # Ok(())
+/// # }
+/// ```
 impl BrowserContext {
     /// Returns storage state for this browser context.
     ///
@@ -47,30 +70,6 @@ impl BrowserContext {
     ///
     /// Returns an error if the state fails to serialize or the driver
     /// rejects it, or if the context has closed.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// # use playwright_rs::Playwright;
-    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let pw = Playwright::launch().await?;
-    /// # let browser = pw.chromium().launch().await?;
-    /// # let context = browser.new_context().await?;
-    /// use playwright_rs::protocol::{Cookie, StorageState};
-    ///
-    /// // Restore session cookie
-    /// let state = StorageState::default().cookies(vec![
-    ///     Cookie::new("session", "token123")
-    ///         .domain("example.com")
-    ///         .path("/")
-    ///         .http_only(true)
-    ///         .secure(true)
-    ///         .same_site("Lax"),
-    /// ]);
-    /// context.set_storage_state(state).await?;
-    /// # Ok(())
-    /// # }
-    /// ```
     ///
     /// See: <https://playwright.dev/docs/api/class-browsercontext#browser-context-set-storage-state>
     #[tracing::instrument(level = "debug", skip_all, fields(guid = %self.guid()))]

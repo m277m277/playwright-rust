@@ -10,6 +10,26 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::oneshot;
 
 /// Event subscriptions (`on_*`), page-event forwarders, and one-shot waiters (`expect_*`).
+///
+/// A waiter is created before the action that fires its event, then awaited
+/// after it:
+///
+/// ```no_run
+/// # use playwright_rs::Playwright;
+/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// # let pw = Playwright::launch().await?;
+/// # let browser = pw.chromium().launch().await?;
+/// # let context = browser.new_context().await?;
+/// let opened = context.expect_page(None).await?;
+/// let _page = context.new_page().await?;
+/// let new_page = opened.wait().await?;
+///
+/// let closed = context.expect_close(None).await?;
+/// context.close().await?;
+/// closed.wait().await?;
+/// # Ok(())
+/// # }
+/// ```
 impl BrowserContext {
     /// Adds a listener for the `page` event.
     ///
@@ -403,22 +423,6 @@ impl BrowserContext {
     ///
     /// Returns [`crate::error::Error::Timeout`] if no page is created within the timeout.
     ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// # use playwright_rs::Playwright;
-    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let pw = Playwright::launch().await?;
-    /// # let browser = pw.chromium().launch().await?;
-    /// # let context = browser.new_context().await?;
-    /// // Set up the waiter BEFORE the triggering action
-    /// let waiter = context.expect_page(None).await?;
-    /// let _page = context.new_page().await?;
-    /// let new_page = waiter.wait().await?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
     /// See: <https://playwright.dev/docs/api/class-browsercontext#browser-context-wait-for-event>
     #[tracing::instrument(level = "debug", skip_all, fields(guid = %self.guid()))]
     pub async fn expect_page(&self, timeout: Option<f64>) -> Result<EventWaiter<Page>> {
@@ -439,22 +443,6 @@ impl BrowserContext {
     /// # Errors
     ///
     /// Returns [`crate::error::Error::Timeout`] if the context is not closed within the timeout.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// # use playwright_rs::Playwright;
-    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let pw = Playwright::launch().await?;
-    /// # let browser = pw.chromium().launch().await?;
-    /// # let context = browser.new_context().await?;
-    /// // Set up the waiter BEFORE closing
-    /// let waiter = context.expect_close(None).await?;
-    /// context.close().await?;
-    /// waiter.wait().await?;
-    /// # Ok(())
-    /// # }
-    /// ```
     ///
     /// See: <https://playwright.dev/docs/api/class-browsercontext#browser-context-wait-for-event>
     #[tracing::instrument(level = "debug", skip_all, fields(guid = %self.guid()))]
