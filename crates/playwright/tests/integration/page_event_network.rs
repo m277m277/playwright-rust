@@ -73,7 +73,7 @@ async fn test_page_network_events() {
 
     // Since events are dispatched via `tokio::spawn`, we cannot guarantee the order of events.
     // So we sort them before asserting.
-    // See more in file `crates/playwright/src/protocol/browser_context.rs`:
+    // See more in file `crates/playwright/src/protocol/browser_context/dispatch.rs`:
     // * BrowserContext::dispatch_request_event
     // * BrowserContext::dispatch_response_event
     events.sort();
@@ -122,7 +122,7 @@ async fn test_page_network_events() {
 
     // Since events are dispatched via `tokio::spawn`, we cannot guarantee the order of events.
     // So we sort them before asserting.
-    // See more in file `crates/playwright/src/protocol/browser_context.rs`:
+    // See more in file `crates/playwright/src/protocol/browser_context/dispatch.rs`:
     // * BrowserContext::dispatch_request_event
     // * BrowserContext::dispatch_response_event
     iframe_events.sort();
