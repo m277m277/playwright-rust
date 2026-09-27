@@ -25,9 +25,10 @@ Version 1.0.0 is cut when all of these hold:
 2. **A quiet release cycle.** Every downstream project is on the latest
    release with green CI, and one full cycle (bump, consumers adopt,
    findings answered) has passed with no change to the public API.
-3. **Stability.** The flaky-test tracking issue is empty for a full cycle,
-   and the two stress tests kept under `#[ignore]` for environmental
-   variance are either stabilized or replaced.
+3. **Stability.** The flaky-test tracking issue carries no unresolved entry
+   for a full cycle. Every ignored test says in its reason which lane does
+   run it, and CI names every test that passed only on a retry, so an empty
+   tracker means there were no flakes rather than that nobody was looking.
 4. **Documentation held by gates.** The README, the shipped skill, the
    landing-page snippets, and every rustdoc example are verified by the
    existing xtask and doctest checks, and a short migration note covers
