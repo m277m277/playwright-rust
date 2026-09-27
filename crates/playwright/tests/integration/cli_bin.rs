@@ -1,7 +1,7 @@
 use std::process::Command;
 
 #[test]
-#[ignore = "downloads ~50MB Playwright driver from CDN"]
+#[ignore = "downloads a driver from the CDN; runs in the weekly CLI installer job"]
 fn install_driver_only_populates_user_cache() {
     let bin = env!("CARGO_BIN_EXE_playwright-rs");
     let temp = tempfile::tempdir().expect("create tempdir");
@@ -33,7 +33,7 @@ fn install_driver_only_populates_user_cache() {
 }
 
 #[test]
-#[ignore = "downloads ~50MB Playwright driver from CDN"]
+#[ignore = "downloads a driver from the CDN; runs in the weekly CLI installer job"]
 fn install_driver_only_second_invocation_is_idempotent() {
     let bin = env!("CARGO_BIN_EXE_playwright-rs");
     let temp = tempfile::tempdir().expect("create tempdir");

@@ -159,23 +159,49 @@ jobs:
     # tests CI had never executed. Deliberately not on the stress steps
     # below: `cli`'s ignored tests each pull ~50MB from the CDN, which is why
     # they are ignored, and every push does not need that twice per OS.
+    # Each run is teed so the step after them can name the tests that only
+    # passed on a retry; `profile.ci` retries once, so those exit 0 and are
+    # invisible in a green job otherwise. `set -o pipefail` is what keeps a
+    # real failure failing: without it the pipe returns tee's status and a
+    # failing suite reports success.
     - name: Run tests (Linux/macOS)
       if: runner.os != 'Windows'
-      run: cargo nextest run --workspace --all-features --profile ci
+      shell: bash
+      run: |
+        set -o pipefail
+        cargo nextest run --workspace --all-features --profile ci 2>&1 | tee nextest-main.log
 
     - name: Run stress tests (Linux/macOS)
       if: runner.os != 'Windows'
-      run: cargo nextest run --workspace --profile ci --run-ignored ignored-only
+      shell: bash
+      run: |
+        set -o pipefail
+        cargo nextest run --workspace --profile ci --run-ignored ignored-only 2>&1 | tee nextest-stress.log
 
     - name: Run tests (Windows)
       if: runner.os == 'Windows'
       timeout-minutes: 30
-      run: cargo nextest run --workspace --all-features --profile ci --test-threads=1
+      shell: bash
+      run: |
+        set -o pipefail
+        cargo nextest run --workspace --all-features --profile ci --test-threads=1 2>&1 | tee nextest-main.log
 
     - name: Run stress tests (Windows)
       if: runner.os == 'Windows'
       timeout-minutes: 30
-      run: cargo nextest run --workspace --profile ci --run-ignored ignored-only --test-threads=1
+      shell: bash
+      run: |
+        set -o pipefail
+        cargo nextest run --workspace --profile ci --run-ignored ignored-only --test-threads=1 2>&1 | tee nextest-stress.log
+
+    # Runs even when a test failed, so a red job still names whatever else
+    # was flaky, and is skipped when the job died before any test ran.
+    - name: Report flaky tests
+      if: always() && hashFiles('nextest-main.log') != ''
+      shell: bash
+      env:
+        FLAKY_REPORT_LABEL: ${{ matrix.os }}
+      run: scripts/report-flaky-tests.sh nextest-main.log nextest-stress.log
 
     - name: Compile doc-tests (no_run; browser doctests are compile-only)
       run: cargo test --doc --workspace --all-features
@@ -196,6 +222,15 @@ jobs:
       env:
         RUSTDOCFLAGS: "-D rustdoc::broken-intra-doc-links"
       run: cargo doc --no-deps --workspace
+
+    # Mirrors the pre-commit hook of the same name. Hooks are installed per
+    # clone by hand here, so without this a hookless clone could land a
+    # reporter that names no test and CI would stay green about it — which
+    # is the exact failure the reporter exists to prevent.
+    - name: Verify the flaky-test reporter parses nextest output
+      if: runner.os == 'Linux'
+      shell: bash
+      run: scripts/test-report-flaky-tests.sh
 
     - name: Verify agent-integration doc snippets
       run: cargo xtask verify-agent-docs

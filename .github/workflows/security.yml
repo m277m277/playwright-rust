@@ -288,3 +288,53 @@ jobs:
       with:
         name: mutation-report-diff
         path: mutants.out/
+
+  cli-install:
+    name: CLI installer (weekly)
+    runs-on: ubuntu-latest
+    # The `cli_bin` tests are `#[ignore]`d because each one downloads a
+    # driver from the CDN, and they sit behind the non-default `cli`
+    # feature. The push gate enables the feature but does not run ignored
+    # tests; the stress step runs ignored tests but not the feature. So
+    # neither ran them, ever — including through 0.19.0, which moved the
+    # driver into the user cache these tests are about. Weekly is enough
+    # for an installer path that changes about once a release, and keeps a
+    # fresh ~100 MB download off every push.
+    if: >
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch'
+
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
+      with:
+        toolchain: stable
+
+    - name: Cache Cargo
+      uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      with:
+        shared-key: cli-install
+
+    - name: Install cargo-nextest
+      uses: taiki-e/install-action@9114bf4d891761788c546334fd37538eae1bf8b3 # v2.87.16
+      with:
+        tool: cargo-nextest
+
+    # No driver cache and no PLAYWRIGHT_SKIP_DRIVER_DOWNLOAD: downloading
+    # into a bare HOME is the thing under test.
+    - name: Run the CLI installer tests
+      shell: bash
+      run: |
+        set -o pipefail
+        cargo nextest run -p playwright-rs --features cli --profile ci \
+          --run-ignored ignored-only -E 'binary(integration) and test(cli_bin)' \
+          2>&1 | tee nextest-main.log
+
+    - name: Report flaky tests
+      if: always() && hashFiles('nextest-main.log') != ''
+      shell: bash
+      env:
+        FLAKY_REPORT_LABEL: the weekly CLI installer job
+      run: scripts/report-flaky-tests.sh nextest-main.log

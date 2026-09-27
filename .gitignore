@@ -36,6 +36,11 @@ Thumbs.db
 
 # Documentation
 
+# nextest logs the CI test steps tee so the flaky-test reporter can read
+# them back; running those commands locally leaves the same files behind.
+/nextest-main.log
+/nextest-stress.log
+
 # cargo-mutants
 mutants.out/
 mutants.out.old/

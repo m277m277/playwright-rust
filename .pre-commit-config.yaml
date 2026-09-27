@@ -192,6 +192,14 @@ repos:
         pass_filenames: false
         files: ^(crates/playwright/tests/[^/]+\.rs|\.cargo/mutants\.toml|scripts/check-mutants-test-targets\.sh)$
 
+      - id: flaky-report-parses-nextest-output
+        name: flaky-test reporter still parses nextest output
+        description: the reporter is the only thing that surfaces a flaky test, so it fails silently when it breaks
+        entry: scripts/test-report-flaky-tests.sh
+        language: system
+        pass_filenames: false
+        files: ^scripts/(report|test-report)-flaky-tests\.sh$
+
       - id: external-lockfiles-current
         name: out-of-workspace lockfiles current
         description: site, site-e2e and fuzz sit outside the workspace, so their lockfiles go stale when workspace deps move

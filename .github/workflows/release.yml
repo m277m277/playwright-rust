@@ -101,8 +101,22 @@ jobs:
 
       - name: Run tests
         # Same feature set as the push gate, so the run that precedes a
-        # publish is not narrower than the one that guards main.
-        run: cargo nextest run --workspace --all-features --profile ci --target ${{ matrix.target }}
+        # publish is not narrower than the one that guards main. Teed for
+        # the flaky report below; `set -o pipefail` keeps a failing suite
+        # failing, which matters more here than anywhere else.
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo nextest run --workspace --all-features --profile ci --target ${{ matrix.target }} 2>&1 | tee nextest-main.log
+
+      # A flake in the run that gates a publish is worth knowing about
+      # before the tag goes out, not after.
+      - name: Report flaky tests
+        if: always() && hashFiles('nextest-main.log') != ''
+        shell: bash
+        env:
+          FLAKY_REPORT_LABEL: ${{ matrix.target }}
+        run: scripts/report-flaky-tests.sh nextest-main.log
 
   create-release:
     name: Create GitHub Release

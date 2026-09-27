@@ -17,8 +17,11 @@ leak-timeout = "1s"
 # not a flake to paper over.
 
 [profile.ci]
-# A retried pass is reported FLAKY: rerun the job, note the run, and
-# harden the test when it repeats.
+# One retry, so a single environmental hiccup does not fail a whole run.
+# The cost is that a flaky test then exits 0 and the job goes green, so
+# `scripts/report-flaky-tests.sh` reads the run's log and puts the names
+# in the job summary. Record each one in the flaky-test tracking issue
+# and harden it when it recurs.
 retries = 1
 slow-timeout = { period = "60s", terminate-after = 2 }
 fail-fast = false
@@ -32,6 +35,14 @@ leak-timeout = "1s"
 [[profile.default.overrides]]
 filter = "test(/cross_browser/) | test(/firefox/) | test(/webkit/)"
 slow-timeout = { period = "60s", terminate-after = 3 }
+
+# Each CLI installer test downloads a whole driver into an empty HOME,
+# which is the thing being tested, so it is not comparable to a test that
+# talks to an already-installed one. The ci profile would kill it at 120s
+# and the report would read as an installer hang rather than a slow CDN.
+[[profile.default.overrides]]
+filter = "test(cli_bin)"
+slow-timeout = { period = "120s", terminate-after = 5 }
 
 # Stress tests run dozens of launch/close cycles.
 [[profile.default.overrides]]
