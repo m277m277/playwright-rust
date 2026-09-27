@@ -152,6 +152,8 @@ struct WsRouteHandlerEntry {
 struct RouteHandlerEntry {
     pattern: String,
     handler: Arc<dyn Fn(Route) -> RouteHandlerFuture + Send + Sync>,
+    /// Invocations of `handler` still running, for `unroute_all`.
+    in_flight: Arc<crate::protocol::in_flight::InFlight>,
 }
 
 /// WebSocket event handler

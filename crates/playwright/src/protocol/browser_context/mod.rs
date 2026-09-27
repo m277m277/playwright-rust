@@ -43,6 +43,8 @@ type WsRouteHandlerFuture = Pin<Box<dyn Future<Output = Result<()>> + Send>>;
 struct RouteHandlerEntry {
     pattern: String,
     handler: Arc<dyn Fn(Route) -> RouteHandlerFuture + Send + Sync>,
+    /// Invocations of `handler` still running, for `unroute_all`.
+    in_flight: Arc<crate::protocol::in_flight::InFlight>,
 }
 
 /// Storage for a single WebSocket route handler entry

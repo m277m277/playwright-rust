@@ -32,6 +32,7 @@ examine_globs = [
     "crates/playwright/src/protocol/resource_timing.rs",
     "crates/playwright/src/protocol/page/mod.rs",
     "crates/playwright/src/protocol/browser_context/events.rs",
+    "crates/playwright/src/protocol/in_flight.rs",
 ]
 
 # The unit tests plus every test binary that runs without a browser. The

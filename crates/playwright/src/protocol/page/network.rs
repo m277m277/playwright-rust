@@ -3,6 +3,8 @@ use super::{
 };
 use crate::error::{Error, Result};
 use crate::protocol::Route;
+use crate::protocol::in_flight::settle_removed;
+use crate::protocol::route::UnrouteBehavior;
 use crate::server::channel_owner::ChannelOwner;
 use std::future::Future;
 use std::sync::Arc;
@@ -52,6 +54,7 @@ impl Page {
         self.route_handlers.lock().unwrap().push(RouteHandlerEntry {
             pattern: pattern.to_string(),
             handler,
+            in_flight: Arc::default(),
         });
 
         // 3. Enable network interception via protocol
@@ -147,15 +150,16 @@ impl Page {
     ///
     /// # Arguments
     ///
-    /// * `behavior` - Optional behavior for in-flight handlers
+    /// * `behavior` - What to do about handler invocations still running:
+    ///   [`UnrouteBehavior::Wait`] returns only after they finish,
+    ///   [`UnrouteBehavior::IgnoreErrors`] lets them fail without a log line,
+    ///   and the default (`None`) neither waits nor silences them.
     ///
     /// See: <https://playwright.dev/docs/api/class-page#page-unroute-all>
     #[tracing::instrument(level = "debug", skip_all, fields(guid = %self.guid()))]
-    pub async fn unroute_all(
-        &self,
-        _behavior: Option<crate::protocol::route::UnrouteBehavior>,
-    ) -> Result<()> {
-        self.route_handlers.lock().unwrap().clear();
+    pub async fn unroute_all(&self, behavior: Option<UnrouteBehavior>) -> Result<()> {
+        let removed = std::mem::take(&mut *self.route_handlers.lock().unwrap());
+        settle_removed(removed.iter().map(|entry| &entry.in_flight), behavior).await;
         self.enable_network_interception().await
     }
 
@@ -363,13 +367,20 @@ impl Page {
         for entry in handlers.iter().rev() {
             if crate::protocol::route::matches_pattern(&entry.pattern, &url) {
                 let handler = entry.handler.clone();
-                if let Err(e) = handler(route.clone()).await {
-                    tracing::warn!("Route handler error: {}", e);
+                let running = entry.in_flight.enter();
+                let outcome = handler(route.clone()).await;
+                drop(running);
+                if let Err(e) = outcome {
+                    let quiet = entry.in_flight.ignores_errors();
+                    if !quiet {
+                        tracing::warn!("Route handler error: {}", e);
+                    }
                     // A handler that failed before reaching a route command
                     // leaves the request pending; abort it so the browser
                     // sees a failed request instead of waiting out its timeout.
                     if !route.was_handled()
                         && let Err(abort_error) = route.abort(Some("failed")).await
+                        && !quiet
                     {
                         tracing::warn!("aborting the unhandled route failed too: {}", abort_error);
                     }
