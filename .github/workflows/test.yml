@@ -37,6 +37,39 @@ jobs:
         fi
         scripts/check-skill-version-bumped.sh --base "$BASE"
 
+  architecture-model:
+    name: Architecture model
+    runs-on: ubuntu-latest
+    # docs/architecture/model.c4 is generated from the crates by asbuilt, so
+    # the only way it goes stale is for nobody to re-run the survey. `check`
+    # needs cargo and the source tree, nothing else, so it gets its own job
+    # and fails in minutes rather than after the browser matrix. `validate`
+    # runs LikeC4's parser over the model and the curated views; asbuilt pins
+    # the likec4 version it runs through npx.
+    env:
+      PLAYWRIGHT_SKIP_DRIVER_DOWNLOAD: "1"
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
+      with:
+        toolchain: stable
+
+    - name: Cache Cargo
+      uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+
+    - name: Install asbuilt
+      uses: ./.github/actions/install-asbuilt
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Verify the architecture model matches the code
+      run: asbuilt check
+
+    - name: Validate the architecture model and its curated views
+      run: asbuilt validate
+
   msrv:
     name: MSRV Check
     runs-on: ubuntu-latest

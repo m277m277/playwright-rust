@@ -7,6 +7,8 @@ start at the [README](../README.md) and [docs.rs](https://docs.rs/playwright-rs)
 
 - Rust 1.88+
 - [cargo-nextest](https://nexte.st/): `cargo install cargo-nextest`
+- [asbuilt](https://github.com/padamson/asbuilt), which the pre-commit hook
+  runs: `cargo install --git https://github.com/padamson/asbuilt asbuilt --locked`
 
 No system Node.js is needed for the normal build: the build script downloads
 the pinned Playwright driver together with its own Node runtime. (With
@@ -51,6 +53,34 @@ cargo run --package playwright-rs --example install-browsers -- chromium firefox
 Pass `--with-deps` on Linux CI to also install the system libraries the
 browsers need. CI handles browser installation automatically; see
 [`.github/workflows/test.yml`](../.github/workflows/test.yml).
+
+## The architecture model
+
+`docs/architecture/model.c4` is the [asbuilt](https://github.com/padamson/asbuilt)
+survey of this repo, committed so that `asbuilt check` (the pre-commit hook and
+the `Architecture model` CI job) can fail when the code moves and the model
+does not. Beside it, `views.c4` is hand-written: the three views a newcomer
+wants first (`context`, `server`, `protocol`), and `asbuilt.toml` names the
+driver and the browsers as externals. What the tool records, its blind spots
+and its commands are asbuilt's own docs, not repeated here.
+
+A red check means the model is behind the code. Refresh the binary (CI tracks
+asbuilt's main, so this is what keeps yours aligned with it), re-survey, and
+commit the result:
+
+```bash
+cargo install --git https://github.com/padamson/asbuilt asbuilt --locked
+asbuilt survey
+```
+
+The CI job blocks merges only once it is listed in the repository ruleset's
+required checks, which is a setting rather than a workflow file.
+
+The rendered tree is published with every version of the landing site at
+`https://playwright-rust.dev/<version>/architecture/` (`dev/` for main).
+`pages.yml` runs `asbuilt docs` into `crates/site/public/architecture/` before
+building, and a `site-e2e` gate checks the deployed tree against the committed
+model.
 
 ## Running tests
 

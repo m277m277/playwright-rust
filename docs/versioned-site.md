@@ -12,6 +12,8 @@ are not on the latest stable.
 /v0.14.0/         immutable release snapshot
 /v0.15.0/         …
 /dev/             main HEAD (unreleased preview)
+/<dest>/architecture/   the crate's architecture, written by `asbuilt docs`
+                        from docs/architecture/ at the same commit
 /CNAME, /.nojekyll
 ```
 
@@ -29,15 +31,20 @@ release version (e.g. `0.14.0`) for a snapshot. Each snapshot is built with
 
 ## Deploy ([.github/workflows/pages.yml](../.github/workflows/pages.yml))
 
-One job: lint the site crates, run the playwright-rs **dogfood gate** (build a
-root-served `SITE_VERSION=dev` build and drive it with the binding — the deploy
-only proceeds if it passes), then build the target snapshot, drop it into the
-`gh-pages` worktree under `/<dest>/`, regenerate `versions.json` + the root
-redirect ([deploy/update-manifest.sh](../crates/site/deploy/update-manifest.sh)),
-and commit.
+One job: lint the site crates, write the architecture tree (`asbuilt docs`
+into `crates/site/public/architecture/`, which Trunk copies into every build),
+run the playwright-rs **dogfood gate** (build a root-served `SITE_VERSION=dev`
+build and drive it with the binding; the deploy only proceeds if it passes),
+then build the target snapshot, gate that too (the snapshot smoke test and the
+architecture test, which checks every crate in the committed model is linked
+and its views decode under the real base path), drop it into the `gh-pages`
+worktree under `/<dest>/`, regenerate `versions.json` + the root redirect
+([deploy/update-manifest.sh](../crates/site/deploy/update-manifest.sh)), and
+commit.
 
 Triggers:
-- **push to `main`** (site paths) → rebuilds `/dev/`.
+- **push to `main`** (site paths, `docs/architecture/`, `asbuilt.toml`) →
+  rebuilds `/dev/`.
 - **`workflow_dispatch` with `version=X.Y.Z`** → publishes `/vX.Y.Z/` from
   current source.
 

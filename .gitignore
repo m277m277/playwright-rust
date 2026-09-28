@@ -18,6 +18,18 @@
 # the dir (with .gitkeep) so Trunk's copy-dir works on a fresh checkout.
 /crates/site/public/receipts/*
 !/crates/site/public/receipts/.gitkeep
+# The architecture tree `asbuilt docs` writes for the landing site, same
+# arrangement: generated on every deploy, dir kept for Trunk's copy-dir.
+/crates/site/public/architecture/*
+!/crates/site/public/architecture/.gitkeep
+
+# What `asbuilt render`, `export json` and `docs` write beside the committed
+# architecture model. SVGs vary with the Graphviz version, so committing them
+# would make every render a diff; model.c4 and views.c4 are the source of
+# truth and the diagrams are regenerated on demand.
+/docs/architecture/views/
+/docs/architecture/site/
+/docs/architecture/model.json
 
 # IDE
 .vscode/

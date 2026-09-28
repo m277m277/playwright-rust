@@ -24,6 +24,12 @@
     <!-- Walkthrough receipts (written by the dogfood test). Copied on every
          build, so they survive `trunk serve` rebuilds and hot reload. -->
     <link data-trunk rel="copy-dir" href="public/receipts" />
+    <link data-trunk rel="copy-dir" href="public/architecture" />
+    <!-- The asbuilt wordmark's faces, vendored under brand/asbuilt/ (OFL,
+         license alongside) and copied to dist/fonts/, so the landing page
+         makes no third-party request and the bar under BUILT, drawn from
+         these fonts' metrics, never lands on a fallback. -->
+    <link data-trunk rel="copy-dir" href="brand/asbuilt/fonts" />
   </head>
   <body></body>
 </html>

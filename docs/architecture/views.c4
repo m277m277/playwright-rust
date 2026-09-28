@@ -1,0 +1,44 @@
+// Curated views over the generated model. Hand-written on purpose: the
+// three questions a newcomer asks, answered with the ids asbuilt emits.
+// `asbuilt validate` parses this next to model.c4, so an id that goes
+// stale is a red gate rather than a silently empty diagram.
+
+views {
+
+  view context {
+    title 'playwright-rust: system context'
+    include
+      playwright_rs,
+      playwright_rs_macros,
+      playwright_rs_trace,
+      playwright_rs_site,
+      playwright_rs_site_e2e,
+      playwright_rs_fuzz,
+      xtask,
+      node_driver,
+      browsers
+    autoLayout LeftRight
+  }
+
+  view server of playwright_rs.server {
+    title 'server: from Playwright::launch to a browser'
+    include
+      *,
+      playwright_rs.protocol.playwright,
+      playwright_rs.protocol,
+      node_driver,
+      browsers
+    autoLayout LeftRight
+  }
+
+  view protocol of playwright_rs.protocol {
+    title 'protocol: the object model'
+    include
+      *,
+      playwright_rs.api,
+      playwright_rs.assertions,
+      playwright_rs.server.channel
+    autoLayout TopBottom
+  }
+
+}

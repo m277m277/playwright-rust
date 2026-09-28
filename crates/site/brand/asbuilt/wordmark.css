@@ -1,0 +1,56 @@
+/* The asbuilt wordmark: AS in Bungee Shade, set in the accent, BUILT solid
+   in Bungee, with a bar under BUILT in the same accent. The bar's numbers
+   come from the fonts (1000 upm): the inline box descends 300 below the
+   baseline, the Shade extrusion reaches 119 below it, the T's base ends
+   211 short of its advance, and the S shade's lower-right edge runs at 45
+   degrees. So the bar's bottom is level with the shade, its right end is
+   the foot of the T, its left end a chamfer parallel to the shade's edge
+   set back by a gap, and a hairline of ground separates it from the
+   letters' feet. Colors come from the host's --color-rust-300 token.
+
+   Font URLs are relative to the built stylesheet; the host copies fonts/
+   beside it. */
+
+@font-face {
+  font-family: "Bungee";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("fonts/bungee-latin.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Bungee Shade";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("fonts/bungee-shade-latin.woff2") format("woff2");
+}
+
+@layer components {
+  .wordmark {
+    --shade: 0.119em;
+    --desc: 0.3em;
+    --gap: 0.08em;
+    --seam: 0.025em;
+    font-family: "Bungee", system-ui, sans-serif;
+    font-weight: 400;
+    letter-spacing: 0;
+  }
+  .wordmark-as {
+    font-family: "Bungee Shade", "Bungee", system-ui, sans-serif;
+    color: var(--color-rust-300);
+  }
+  .wordmark-built {
+    position: relative;
+  }
+  .wordmark-built::after {
+    content: "";
+    position: absolute;
+    left: calc(-0.26em + var(--gap));
+    right: 0.211em;
+    bottom: calc(var(--desc) - var(--shade));
+    height: calc(var(--shade) - var(--seam));
+    background: var(--color-rust-300);
+    clip-path: polygon(calc(var(--shade) - var(--seam)) 0, 100% 0, 100% 100%, 0 100%);
+  }
+}

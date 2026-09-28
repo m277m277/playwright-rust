@@ -1,10 +1,7 @@
 use leptos::prelude::*;
 
 use super::icons::{self, Icon};
-
-const CRATES_IO: &str = "https://crates.io/crates/playwright-rs";
-const DOCS_RS: &str = "https://docs.rs/playwright-rs";
-const GITHUB: &str = "https://github.com/padamson/playwright-rust";
+use super::links::{ARCHITECTURE, CRATES_IO, DOCS_RS, GITHUB};
 
 // Playwright driver bundled by the latest crates.io release vs. by main HEAD.
 // Bump these at release time, alongside the install version (snippets/install.toml).
@@ -92,6 +89,21 @@ pub fn Hero() -> impl IntoView {
                 >
                     <img src="crates-io.png" alt="" class="h-5 w-auto"/>
                     "crates.io"
+                </a>
+                // The asbuilt mark and wordmark: a visitor who has not met the
+                // tool still gets "Architecture" from the accessible name.
+                <a
+                    id="cta-architecture"
+                    href=ARCHITECTURE
+                    aria-label="Architecture"
+                    title="Architecture: the crate as built, surveyed by asbuilt"
+                    class="inline-flex items-center gap-2 rounded-lg border border-rust-700/50 px-5 py-2.5 font-semibold text-rust-50 transition hover:border-rust-500"
+                >
+                    <Icon path=icons::ASBUILT/>
+                    <span class="wordmark" aria-hidden="true">
+                        <span class="wordmark-as">"AS"</span>
+                        <span class="wordmark-built">"BUILT"</span>
+                    </span>
                 </a>
             </div>
         </header>

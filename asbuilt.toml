@@ -1,0 +1,49 @@
+# asbuilt surveys this repo into docs/architecture/model.c4. `asbuilt
+# check` runs in the pre-commit hook and in CI, so the model cannot
+# drift from the code without a red gate saying so.
+
+[output]
+path = "docs/architecture/model.c4"
+
+[docs]
+title = "playwright-rust"
+source_url = "https://github.com/padamson/playwright-rust/blob/main/"
+
+[rust]
+# Three crates live in the repo but outside the workspace, each with its
+# own lockfile: the wasm32 landing page, its native dogfood test, and the
+# fuzz targets. They are still part of the architecture.
+extra_manifests = [
+    "crates/site/Cargo.toml",
+    "crates/site-e2e/Cargo.toml",
+    "crates/playwright/fuzz/Cargo.toml",
+]
+
+[[externals]]
+id = "node_driver"
+kind = "process"
+title = "Playwright driver"
+technology = "Node.js process"
+description = "The official Playwright server, assembled by build.rs from the pinned playwright-core npm package."
+
+[[externals.relations]]
+from = "playwright_rs.server.playwright_server"
+title = "spawns"
+technology = "stdio"
+
+[[externals.relations]]
+from = "playwright_rs.server.transport"
+title = "exchanges JSON-RPC frames with"
+technology = "stdio pipe or WebSocket"
+
+[[externals]]
+id = "browsers"
+kind = "process"
+title = "Browsers"
+technology = "Chromium, Firefox, WebKit"
+description = "The browser processes the driver launches and controls; never spoken to directly from Rust."
+
+[[externals.relations]]
+from = "node_driver"
+title = "drives"
+technology = "CDP, Juggler, WebKit protocol"

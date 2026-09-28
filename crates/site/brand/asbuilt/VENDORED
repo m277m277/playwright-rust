@@ -1,0 +1,15 @@
+asbuilt brand, vendored.
+
+Source: the asbuilt project (https://github.com/padamson/asbuilt), which
+owns the mark, the wordmark and their spec. This copy was produced on
+2026-09-28 from the generator that designed the mark, ahead of asbuilt
+publishing it; once asbuilt ships a brand package, replace this directory
+with that package's contents and record its version here.
+
+Contents:
+  mark.path      the mark as SVG path data for a 24x24 viewBox, currentColor
+  wordmark.css   the AS/BUILT lockup: faces, colors, and the bar under BUILT
+  fonts/         Bungee and Bungee Shade, latin subset, woff2, with the OFL
+
+Nothing in here is edited by hand in this repo. A change to the brand
+lands in asbuilt first and arrives here by replacing the directory.

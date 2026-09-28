@@ -1,8 +1,7 @@
 use leptos::prelude::*;
 
-const CRATES_IO: &str = "https://crates.io/crates/playwright-rs";
-const DOCS_RS: &str = "https://docs.rs/playwright-rs";
-const GITHUB: &str = "https://github.com/padamson/playwright-rust";
+use super::links::{ARCHITECTURE, CRATES_IO, DOCS_RS, GITHUB};
+
 const PLAYWRIGHT_DEV: &str = "https://playwright.dev";
 
 #[component]
@@ -14,6 +13,9 @@ pub fn Footer() -> impl IntoView {
                     <a href=GITHUB class="hover:text-rust-300">"GitHub"</a>
                     <a href=DOCS_RS class="hover:text-rust-300">"Docs"</a>
                     <a href=CRATES_IO class="hover:text-rust-300">"crates.io"</a>
+                    <a id="footer-architecture" href=ARCHITECTURE class="hover:text-rust-300">
+                        "Architecture"
+                    </a>
                 </nav>
                 <p id="disclaimer" class="max-w-3xl">
                     "playwright-rs is an unofficial, community-maintained project. It is not "

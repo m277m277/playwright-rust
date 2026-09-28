@@ -16,7 +16,8 @@
 //!
 //! Skips gracefully when `crates/site/dist` is absent.
 
-use std::net::SocketAddr;
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -31,32 +32,10 @@ use playwright_rs::protocol::{
 use playwright_rs::{expect, expect_page};
 use tower_http::services::ServeDir;
 
+use common::{broken_responses, launch_page, serve, serve_snapshot, snapshot_env};
+
 fn dist_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../site/dist")
-}
-
-/// Serve `dist` on an ephemeral port. `overlay` routes are merged ahead of the
-/// static fallback, so a test can stub an endpoint the built site fetches (the
-/// switcher's `/versions.json`, say) without hand-rolling a second server.
-async fn serve_with(
-    dist: &PathBuf,
-    overlay: Option<Router>,
-) -> (SocketAddr, tokio::task::JoinHandle<()>) {
-    let app = overlay
-        .unwrap_or_else(Router::new)
-        .fallback_service(ServeDir::new(dist));
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind site server");
-    let addr = listener.local_addr().expect("local addr");
-    let handle = tokio::spawn(async move {
-        axum::serve(listener, app).await.expect("serve site");
-    });
-    (addr, handle)
-}
-
-async fn serve(dist: &PathBuf) -> (SocketAddr, tokio::task::JoinHandle<()>) {
-    serve_with(dist, None).await
 }
 
 /// What the in-process backend answers for `/versions.json`: the JSON, or
@@ -83,15 +62,6 @@ fn versions_manifest(backend: &Backend) -> Router {
             }
         }),
     )
-}
-
-/// A fresh Chromium page. The `Playwright` and `Browser` handles come back
-/// too: dropping either tears down the browser.
-async fn launch_page() -> (Playwright, playwright_rs::protocol::Browser, Page) {
-    let pw = Playwright::launch().await.expect("launch playwright");
-    let browser = pw.chromium().launch().await.expect("launch chromium");
-    let page = browser.new_page().await.expect("new page");
-    (pw, browser, page)
 }
 
 /// The built site, or `None` when it is absent — these tests skip rather than
@@ -210,7 +180,9 @@ async fn landing_page_works_as_advertised() {
     // root. Root-absolute "/receipts/..." 404'd on the versioned deploy. The
     // gate serves at root (where both resolve), so guard the invariant directly.
     let abs_assets = page
-        .locator("img[src^='/receipts'], a[href^='/receipts'], img[src^='/crates-io']")
+        .locator(
+            "img[src^='/receipts'], a[href^='/receipts'], img[src^='/crates-io'], a[href^='/architecture']",
+        )
         .count()
         .await
         .expect("count root-absolute asset paths");
@@ -231,6 +203,14 @@ async fn landing_page_works_as_advertised() {
         .to_have_attribute("href", "https://docs.rs/playwright-rs")
         .await
         .expect("the Docs button links to docs.rs");
+    // The architecture tree ships inside the snapshot, so both links to it
+    // are relative; the snapshot gate proves the target resolves.
+    for link in ["#cta-architecture", "#footer-architecture"] {
+        expect(page.locator(link))
+            .to_have_attribute("href", "architecture/")
+            .await
+            .unwrap_or_else(|e| panic!("{link} links to the bundled architecture tree: {e:?}"));
+    }
     // Accessibility guard: assert the page's key landmarks via the page-level
     // ARIA snapshot (Playwright 1.60). Partial/template matching keeps it robust
     // to unrelated copy changes while catching structural a11y regressions (the
@@ -566,15 +546,9 @@ async fn dev_build_reflects_unreleased_state() {
 /// Skips when unset, so a plain `cargo test` stays useful locally.
 #[tokio::test]
 async fn deployed_snapshot_is_sound() {
-    let (Ok(dist), Ok(base), Ok(version)) = (
-        std::env::var("SNAPSHOT_DIST"),
-        std::env::var("SNAPSHOT_BASE"),
-        std::env::var("SNAPSHOT_VERSION"),
-    ) else {
-        eprintln!("skipping snapshot test: SNAPSHOT_DIST/BASE/VERSION not set.");
+    let Some((dist, base, version)) = snapshot_env("snapshot test") else {
         return;
     };
-    let dist = PathBuf::from(dist);
     assert!(
         dist.join("index.html").exists(),
         "SNAPSHOT_DIST has no index.html: {}",
@@ -585,30 +559,15 @@ async fn deployed_snapshot_is_sound() {
     // while the version manifest sits at the *root*, shared by every snapshot.
     // Serving only the sub-path would 404 the switcher's `/versions.json` fetch
     // and misreport it as broken — the first run of this test did exactly that.
-    let mount = base.trim_end_matches('/').to_string();
     let manifest = format!(r#"{{"latest":"{version}","versions":["{version}"]}}"#);
-    let overlay =
-        versions_manifest(&backend_answering(&manifest)).nest_service(&mount, ServeDir::new(&dist));
-    let (addr, server) = serve_with(&dist, Some(overlay)).await;
+    let overlay = versions_manifest(&backend_answering(&manifest));
+    let (addr, server) = serve_snapshot(&dist, &base, Some(overlay)).await;
 
     let (_pw, browser, page) = launch_page().await;
 
     // Registered before navigating: any 4xx/5xx here is an asset the snapshot
     // build pointed at the wrong place. This is the sub-path guard.
-    let broken: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-    let sink = broken.clone();
-    page.on_response(move |resp| {
-        let sink = sink.clone();
-        let (status, url) = (resp.status(), resp.url().to_string());
-        async move {
-            if status >= 400 {
-                sink.lock().unwrap().push(format!("{status} {url}"));
-            }
-            Ok(())
-        }
-    })
-    .await
-    .expect("register response listener");
+    let broken = broken_responses(&page).await;
 
     page.goto(&format!("http://{addr}{base}"), None)
         .await

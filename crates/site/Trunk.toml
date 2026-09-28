@@ -10,9 +10,9 @@ public_url = "/"
 tailwindcss = "4.3.0"
 
 [watch]
-# `copy-dir public/receipts` re-copies the receipts into dist on every build.
-# Without ignoring the generated receipts (and the dist output), the file
-# watcher sees that and retriggers the build, looping forever under
-# `trunk serve`. Receipts are generated artifacts, not source, so never watch
+# `copy-dir` re-copies public/receipts and public/architecture into dist on
+# every build. Without ignoring the generated files (and the dist output), the
+# file watcher sees that and retriggers the build, looping forever under
+# `trunk serve`. Both are generated artifacts, not source, so never watch
 # them; the copy-dir still runs at build time.
-ignore = ["public/receipts", "dist"]
+ignore = ["public/receipts", "public/architecture", "dist"]

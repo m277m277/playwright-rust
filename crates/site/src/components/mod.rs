@@ -8,6 +8,7 @@ mod footer;
 mod hero;
 pub mod icons;
 mod install;
+mod links;
 mod unreleased_badge;
 mod version_switcher;
 mod walkthrough;

@@ -52,6 +52,22 @@ Serves at http://127.0.0.1:8080. `public_url = "/"` (in `Trunk.toml`) means
 assets resolve at the server root, so it renders the same way the custom domain
 does.
 
+## The architecture section
+
+The deployed site carries the crate's architecture at `architecture/` under
+each snapshot: the HTML tree `asbuilt docs` writes from the committed model
+in `docs/architecture/`. The deploy writes it into `public/architecture/`
+before building, so Trunk's `copy-dir` carries it into `dist/` and
+`dist-snapshot/` alike, and a snapshot gate in `site-e2e` checks every crate
+is linked and its views decode under the real base path.
+
+`preview.sh` writes it the same way, so the preview is the deploy: it needs
+`asbuilt` (a prerequisite already, for the pre-commit hook) plus Node for
+LikeC4 and Graphviz for `dot`, and stops with asbuilt's own message if the
+model is stale or a tool is missing. Plain `trunk serve` skips it and leaves
+the link dangling, which is fine for editing components. To install asbuilt,
+see [docs/development.md](../../docs/development.md#the-architecture-model).
+
 ## Build
 
 ```bash
@@ -92,7 +108,10 @@ Trunk.toml              build config; pins Tailwind v4; public_url = "/"
 input.css               Tailwind v4 entry + the rust/ink theme tokens
 build.rs                highlights snippets/ with syntect at build time
 snippets/               code samples, one file per language (.rs/.py/.java/.cs/.toml)
-public/                 CNAME + crates-io.png, copied verbatim into dist/
+public/                 CNAME + crates-io.png, copied verbatim into dist/;
+                        also receipts/ and architecture/, both generated
+brand/asbuilt/          the asbuilt mark, wordmark CSS and fonts, vendored
+                        (see its VENDORED note); never edited here
 src/main.rs             mounts app::App
 src/app.rs              composes the page sections
 src/components/         Hero, Install, Comparison, CodeTabs, CodeBlock,

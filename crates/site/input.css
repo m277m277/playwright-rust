@@ -16,3 +16,8 @@
   --color-ink-900: #1a1410;
   --color-ink-800: #241c16;
 }
+
+/* The asbuilt wordmark in the hero: vendored under brand/asbuilt/ with its
+   mark and fonts (see the VENDORED note there). Its @font-face URLs are
+   relative to the built stylesheet; index.html copies the fonts beside it. */
+@import "./brand/asbuilt/wordmark.css";

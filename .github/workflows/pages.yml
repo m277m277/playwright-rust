@@ -30,6 +30,8 @@ on:
     paths:
       - "crates/site/**"
       - "crates/site-e2e/**"
+      - "docs/architecture/**"
+      - "asbuilt.toml"
       - ".github/workflows/pages.yml"
   pull_request:
     branches: [main]
@@ -123,16 +125,36 @@ jobs:
       - name: Test site crate
         run: cargo test --manifest-path crates/site/Cargo.toml
 
+      - name: Quiesce host package manager (Linux)
+        if: runner.os == 'Linux'
+        timeout-minutes: 5
+        run: ./scripts/quiesce-apt.sh
+
+      # The architecture section: `asbuilt docs` renders the committed model's
+      # views with LikeC4 (Node, pinned inside asbuilt) and Graphviz, and
+      # writes the HTML tree into public/architecture/, which Trunk's copy-dir
+      # carries into both builds below. `docs` refuses a model that fell
+      # behind the code but prints no diff; `check` on the failure path does.
+      - name: Install Graphviz
+        # Bounded: a contended apt blocks rather than failing (see quiesce-apt.sh).
+        timeout-minutes: 15
+        run: sudo apt-get update && sudo apt-get install -y graphviz
+
+      - name: Install asbuilt
+        uses: ./.github/actions/install-asbuilt
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Write the architecture section
+        run: |
+          node --version && dot -V
+          asbuilt docs -o crates/site/public/architecture || { asbuilt check; exit 1; }
+
       # Dogfood gate: a canonical root-served dev build the binding can drive.
       # SITE_VERSION=dev so the switcher's dev-banner assertion holds; public-url
       # stays "/" so the e2e server (serving dist at root) resolves assets.
       - name: Build site for dogfood gate
         run: cd crates/site && SITE_VERSION=dev trunk build --release
-
-      - name: Quiesce host package manager (Linux)
-        if: runner.os == 'Linux'
-        timeout-minutes: 5
-        run: ./scripts/quiesce-apt.sh
 
       - name: Install Chromium
         # Bounded: a contended apt blocks rather than failing (see quiesce-apt.sh).
@@ -156,13 +178,15 @@ jobs:
       # root-served SITE_VERSION=dev build, so it cannot see sub-path asset
       # breakage (shipped once, 46f12fa) or release-only rendering (shipped
       # again in 0.15.0: a stale driver badge and install pin). This serves
-      # dist-snapshot under its real base path and asserts both.
-      - name: Snapshot smoke test (deploy gate)
+      # dist-snapshot under its real base path and asserts both, plus the
+      # architecture section: every crate in the committed model linked, its
+      # views decoding under the base path.
+      - name: Snapshot tests (deploy gate)
         env:
           SNAPSHOT_DIST: ${{ github.workspace }}/crates/site/dist-snapshot
           SNAPSHOT_BASE: /${{ steps.target.outputs.dest }}/
           SNAPSHOT_VERSION: ${{ steps.target.outputs.site_version }}
-        run: cargo test --manifest-path crates/site-e2e/Cargo.toml deployed_snapshot_is_sound
+        run: cargo test --manifest-path crates/site-e2e/Cargo.toml -- deployed_snapshot_is_sound snapshot_architecture
 
       - name: Check out gh-pages
         if: github.event_name != 'pull_request'

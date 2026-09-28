@@ -1,0 +1,66 @@
+name: Install asbuilt
+description: >
+  Put asbuilt on the PATH. It is on the git-main channel until it releases
+  0.1.0: main is resolved to a SHA here so the version under test is a logged
+  value, the binary is cached by that SHA so a run compiles it only when main
+  moved, and every workflow that needs it shares this one definition. When
+  the channel moves to crates.io, this file is the only place that changes.
+
+inputs:
+  token:
+    description: A GitHub token for the API call that resolves main.
+    required: true
+  rev:
+    description: >
+      A commit to install instead of resolving main. Empty (the default)
+      tracks main; set it to pin.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve asbuilt main SHA
+      id: sha
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+      run: |
+        set -euo pipefail
+        if [ -n "${{ inputs.rev }}" ]; then
+          sha="${{ inputs.rev }}"
+          echo "asbuilt pinned to $sha"
+        else
+          sha=$(gh api repos/padamson/asbuilt/commits/main --jq .sha)
+          [ -n "$sha" ] || { echo "could not resolve asbuilt main"; exit 1; }
+          echo "asbuilt main is $sha"
+        fi
+        echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+    # rust-cache restores registries and target dirs, not ~/.cargo/bin, so
+    # without this every run compiles asbuilt and its dependency tree from
+    # source.
+    - name: Cache the asbuilt binary
+      id: cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      with:
+        path: ~/.cargo/bin/asbuilt
+        key: ${{ runner.os }}-asbuilt-${{ steps.sha.outputs.sha }}-v1
+
+    - name: Install asbuilt
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: cargo install --git https://github.com/padamson/asbuilt asbuilt --rev ${{ steps.sha.outputs.sha }} --locked
+
+    # `validate`, `render` and `docs` run `npx likec4@<pinned>`; asbuilt pins
+    # the version, so its SHA keys the npm cache too, and the package is
+    # downloaded once per asbuilt revision rather than once per run.
+    - name: Cache the pinned LikeC4 package
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      with:
+        path: ~/.npm
+        key: ${{ runner.os }}-npm-likec4-${{ steps.sha.outputs.sha }}-v1
+
+    - name: asbuilt version
+      shell: bash
+      run: asbuilt --version

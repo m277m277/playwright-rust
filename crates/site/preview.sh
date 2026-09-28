@@ -13,6 +13,14 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+# The architecture section, exactly as the deploy writes it: asbuilt (a
+# prerequisite, see docs/development.md) plus Node and Graphviz for the
+# render. A stale model or a missing tool stops the preview here with
+# asbuilt's own message, the same as it would stop the deploy. `asbuilt docs`
+# does not clear its output, so the tree is emptied first (the .gitkeep
+# stays) or a renamed crate's old page would ride into the preview.
+find public/architecture -mindepth 1 ! -name .gitkeep -delete
+asbuilt docs ../.. -o crates/site/public/architecture
 trunk build
 cargo test --manifest-path ../site-e2e/Cargo.toml
 exec trunk serve --open
