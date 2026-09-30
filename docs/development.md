@@ -8,7 +8,10 @@ start at the [README](../README.md) and [docs.rs](https://docs.rs/playwright-rs)
 - Rust 1.88+
 - [cargo-nextest](https://nexte.st/): `cargo install cargo-nextest`
 - [asbuilt](https://github.com/padamson/asbuilt), which the pre-commit hook
-  runs: `cargo install --git https://github.com/padamson/asbuilt asbuilt --locked`
+  runs, at the release CI pins (the `version` default in
+  `.github/actions/install-asbuilt/action.yml`):
+  `cargo install asbuilt --version <pinned> --locked`. The hook prints the
+  exact command if yours is missing or differs.
 
 No system Node.js is needed for the normal build: the build script downloads
 the pinned Playwright driver together with its own Node runtime. (With
@@ -64,14 +67,17 @@ wants first (`context`, `server`, `protocol`), and `asbuilt.toml` names the
 driver and the browsers as externals. What the tool records, its blind spots
 and its commands are asbuilt's own docs, not repeated here.
 
-A red check means the model is behind the code. Refresh the binary (CI tracks
-asbuilt's main, so this is what keeps yours aligned with it), re-survey, and
-commit the result:
+A red check means the model is behind the code: re-survey and commit the
+result.
 
 ```bash
-cargo install --git https://github.com/padamson/asbuilt asbuilt --locked
 asbuilt survey
 ```
+
+The model is only meaningful against one asbuilt release, so CI installs the
+one pinned in the composite action and the hook refuses any other. Moving to
+a newer release is one commit: bump that pin, install it, re-survey, and
+commit the pin and the model together.
 
 The CI job blocks merges only once it is listed in the repository ruleset's
 required checks, which is a setting rather than a workflow file.

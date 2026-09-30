@@ -59,7 +59,8 @@ each snapshot: the HTML tree `asbuilt docs` writes from the committed model
 in `docs/architecture/`. The deploy writes it into `public/architecture/`
 before building, so Trunk's `copy-dir` carries it into `dist/` and
 `dist-snapshot/` alike, and a snapshot gate in `site-e2e` checks every crate
-is linked and its views decode under the real base path.
+is linked and drawn, the link home stays in the snapshot, and the site's
+palette applies in both schemes under the real base path.
 
 `preview.sh` writes it the same way, so the preview is the deploy: it needs
 `asbuilt` (a prerequisite already, for the pre-commit hook) plus Node for
@@ -110,7 +111,7 @@ build.rs                highlights snippets/ with syntect at build time
 snippets/               code samples, one file per language (.rs/.py/.java/.cs/.toml)
 public/                 CNAME + crates-io.png, copied verbatim into dist/;
                         also receipts/ and architecture/, both generated
-brand/asbuilt/          the asbuilt mark, wordmark CSS and fonts, vendored
+brand/asbuilt/          asbuilt's released brand/ (mark, wordmark, fonts), vendored
                         (see its VENDORED note); never edited here
 src/main.rs             mounts app::App
 src/app.rs              composes the page sections

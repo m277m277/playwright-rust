@@ -37,13 +37,15 @@ run the playwright-rs **dogfood gate** (build a root-served `SITE_VERSION=dev`
 build and drive it with the binding; the deploy only proceeds if it passes),
 then build the target snapshot, gate that too (the snapshot smoke test and the
 architecture test, which checks every crate in the committed model is linked
-and its views decode under the real base path), drop it into the `gh-pages`
+and drawn, the link home stays in the snapshot, and the site's palette applies
+in both schemes under the real base path), drop it into the `gh-pages`
 worktree under `/<dest>/`, regenerate `versions.json` + the root redirect
 ([deploy/update-manifest.sh](../crates/site/deploy/update-manifest.sh)), and
 commit.
 
 Triggers:
-- **push to `main`** (site paths, `docs/architecture/`, `asbuilt.toml`) →
+- **push to `main`** (site paths, `docs/architecture/`, `asbuilt.toml`, the
+  asbuilt install action) →
   rebuilds `/dev/`.
 - **`workflow_dispatch` with `version=X.Y.Z`** → publishes `/vX.Y.Z/` from
   current source.

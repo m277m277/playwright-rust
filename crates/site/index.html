@@ -25,6 +25,9 @@
          build, so they survive `trunk serve` rebuilds and hot reload. -->
     <link data-trunk rel="copy-dir" href="public/receipts" />
     <link data-trunk rel="copy-dir" href="public/architecture" />
+    <!-- The architecture pages' palette, linked from the tree as
+         ../architecture.css (`[docs] stylesheet` in asbuilt.toml). -->
+    <link data-trunk rel="copy-file" href="architecture.css" />
     <!-- The asbuilt wordmark's faces, vendored under brand/asbuilt/ (OFL,
          license alongside) and copied to dist/fonts/, so the landing page
          makes no third-party request and the bar under BUILT, drawn from

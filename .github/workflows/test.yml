@@ -61,8 +61,6 @@ jobs:
 
     - name: Install asbuilt
       uses: ./.github/actions/install-asbuilt
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Verify the architecture model matches the code
       run: asbuilt check

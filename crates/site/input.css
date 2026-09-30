@@ -17,7 +17,13 @@
   --color-ink-800: #241c16;
 }
 
-/* The asbuilt wordmark in the hero: vendored under brand/asbuilt/ with its
-   mark and fonts (see the VENDORED note there). Its @font-face URLs are
-   relative to the built stylesheet; index.html copies the fonts beside it. */
+/* The asbuilt wordmark in the hero: asbuilt's released brand/, vendored
+   whole under brand/asbuilt/ (see the VENDORED note there). Its @font-face
+   URLs are relative to the built stylesheet; index.html copies the fonts
+   beside it. The accent is the site's rust-300, stated rather than left to
+   the wordmark's matching default. */
 @import "./brand/asbuilt/wordmark.css";
+
+:root {
+  --brand-accent: var(--color-rust-300);
+}

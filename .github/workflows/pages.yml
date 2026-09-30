@@ -32,6 +32,7 @@ on:
       - "crates/site-e2e/**"
       - "docs/architecture/**"
       - "asbuilt.toml"
+      - ".github/actions/install-asbuilt/**"
       - ".github/workflows/pages.yml"
   pull_request:
     branches: [main]
@@ -142,8 +143,6 @@ jobs:
 
       - name: Install asbuilt
         uses: ./.github/actions/install-asbuilt
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Write the architecture section
         run: |
@@ -179,8 +178,8 @@ jobs:
       # breakage (shipped once, 46f12fa) or release-only rendering (shipped
       # again in 0.15.0: a stale driver badge and install pin). This serves
       # dist-snapshot under its real base path and asserts both, plus the
-      # architecture section: every crate in the committed model linked, its
-      # views decoding under the base path.
+      # architecture section: every crate in the committed model linked and
+      # drawn, its link home, and the site's palette in both schemes.
       - name: Snapshot tests (deploy gate)
         env:
           SNAPSHOT_DIST: ${{ github.workspace }}/crates/site/dist-snapshot
