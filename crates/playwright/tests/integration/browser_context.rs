@@ -1006,3 +1006,107 @@ async fn set_http_credentials_applies_to_later_requests() -> Result<(), Box<dyn 
     server.shutdown();
     Ok(())
 }
+
+/// Reads `#out` after `html` loads in a context built from `options`.
+async fn script_output(
+    browser: &playwright_rs::protocol::Browser,
+    options: BrowserContextOptions,
+    html: &str,
+) -> Result<Option<String>, Box<dyn std::error::Error>> {
+    let context = browser.new_context_with_options(options).await?;
+    let page = context.new_page().await?;
+    page.set_content(html, None).await?;
+    let text = page.locator("#out").text_content().await?;
+    context.close().await?;
+    Ok(text)
+}
+
+#[tokio::test]
+async fn javascript_enabled_false_stops_page_script() -> Result<(), Box<dyn std::error::Error>> {
+    let (_pw, browser, _) = crate::common::setup().await;
+    let html = "<p id='out'>static</p>\
+                <script>document.getElementById('out').textContent = 'script ran'</script>";
+
+    let default = script_output(&browser, BrowserContextOptions::builder().build(), html).await?;
+    assert_eq!(default.as_deref(), Some("script ran"));
+    let disabled = BrowserContextOptions::builder()
+        .javascript_enabled(false)
+        .build();
+    assert_eq!(
+        script_output(&browser, disabled, html).await?.as_deref(),
+        Some("static")
+    );
+
+    browser.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn bypass_csp_runs_a_script_the_page_policy_blocks() -> Result<(), Box<dyn std::error::Error>>
+{
+    let (_pw, browser, _) = crate::common::setup().await;
+    let html = "<meta http-equiv='Content-Security-Policy' content=\"script-src 'none'\">\
+                <p id='out'>static</p>\
+                <script>document.getElementById('out').textContent = 'script ran'</script>";
+
+    let default = script_output(&browser, BrowserContextOptions::builder().build(), html).await?;
+    assert_eq!(default.as_deref(), Some("static"));
+    let bypassing = BrowserContextOptions::builder().bypass_csp(true).build();
+    assert_eq!(
+        script_output(&browser, bypassing, html).await?.as_deref(),
+        Some("script ran")
+    );
+
+    browser.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn base_url_resolves_a_relative_goto() -> Result<(), Box<dyn std::error::Error>> {
+    let server = crate::test_server::TestServer::start().await;
+    let (_pw, browser, _) = crate::common::setup().await;
+
+    let options = BrowserContextOptions::builder()
+        .base_url(server.url())
+        .build();
+    let context = browser.new_context_with_options(options).await?;
+    let page = context.new_page().await?;
+    let response = page.goto("/echo-headers", None).await?.expect("a response");
+    assert_eq!(response.status(), 200);
+    assert_eq!(page.url(), format!("{}/echo-headers", server.url()));
+
+    context.close().await?;
+    browser.close().await?;
+    server.shutdown();
+    Ok(())
+}
+
+#[tokio::test]
+async fn extra_http_headers_reach_the_server() -> Result<(), Box<dyn std::error::Error>> {
+    let server = crate::test_server::TestServer::start().await;
+    let (_pw, browser, _) = crate::common::setup().await;
+
+    let options = BrowserContextOptions::builder()
+        .extra_http_headers(std::collections::HashMap::from([(
+            "X-From-Context".to_string(),
+            "yes".to_string(),
+        )]))
+        .build();
+    let context = browser.new_context_with_options(options).await?;
+    let page = context.new_page().await?;
+    page.goto(&format!("{}/echo-headers", server.url()), None)
+        .await?;
+    let echoed: serde_json::Value = serde_json::from_str(
+        &page
+            .locator("#headers")
+            .text_content()
+            .await?
+            .unwrap_or_default(),
+    )?;
+    assert_eq!(echoed["x-from-context"], serde_json::json!("yes"));
+
+    context.close().await?;
+    browser.close().await?;
+    server.shutdown();
+    Ok(())
+}

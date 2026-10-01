@@ -443,3 +443,8 @@ pub use playwright_rs_trace as trace;
 // pass. The rest is dead code here, which the file allows.
 #[path = "build_support/driver_urls.rs"]
 mod driver_urls;
+
+// Tests read the vendored protocol spec to check the names the crate sends
+// against the names the driver declares; see the module docs.
+#[cfg(test)]
+mod protocol_spec;

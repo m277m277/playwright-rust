@@ -123,6 +123,28 @@ impl From<bool> for AcceptDownloads {
     }
 }
 
+/// `extraHTTPHeaders` goes to the driver as its `NameValue[]` list, not as
+/// the map the builder takes. The pairs are streamed from the map rather
+/// than copied into an intermediate value.
+fn serialize_header_pairs<S: serde::Serializer>(
+    headers: &Option<HashMap<String, String>>,
+    serializer: S,
+) -> std::result::Result<S::Ok, S::Error> {
+    #[derive(Serialize)]
+    struct NameValue<'a> {
+        name: &'a str,
+        value: &'a str,
+    }
+    match headers {
+        Some(headers) => serializer.collect_seq(
+            headers
+                .iter()
+                .map(|(name, value)| NameValue { name, value }),
+        ),
+        None => serializer.serialize_none(),
+    }
+}
+
 /// Options for creating a new browser context.
 ///
 /// Allows customizing viewport, user agent, locale, timezone, geolocation,
@@ -219,7 +241,7 @@ pub struct BrowserContextOptions {
     pub is_mobile: Option<bool>,
 
     /// Whether JavaScript is enabled in the context
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "javaScriptEnabled", skip_serializing_if = "Option::is_none")]
     pub javascript_enabled: Option<bool>,
 
     /// Emulates network being offline
@@ -231,11 +253,11 @@ pub struct BrowserContextOptions {
     pub accept_downloads: Option<AcceptDownloads>,
 
     /// Whether to bypass Content-Security-Policy
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "bypassCSP", skip_serializing_if = "Option::is_none")]
     pub bypass_csp: Option<bool>,
 
     /// Whether to ignore HTTPS errors
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "ignoreHTTPSErrors", skip_serializing_if = "Option::is_none")]
     pub ignore_https_errors: Option<bool>,
 
     /// Device scale factor (default: 1)
@@ -243,11 +265,15 @@ pub struct BrowserContextOptions {
     pub device_scale_factor: Option<f64>,
 
     /// Extra HTTP headers to send with every request
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "extraHTTPHeaders",
+        serialize_with = "serialize_header_pairs",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub extra_http_headers: Option<HashMap<String, String>>,
 
     /// Base URL for relative navigation
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "baseURL", skip_serializing_if = "Option::is_none")]
     pub base_url: Option<String>,
 
     /// Storage state to populate the context (cookies, localStorage, sessionStorage).
@@ -771,6 +797,131 @@ mod tests {
 
         let value = serde_json::to_value(&options).unwrap();
         assert!(value.get("ignoreDefaultArgs").is_none());
+    }
+
+    #[test]
+    fn every_key_sent_is_a_parameter_the_driver_declares() {
+        use crate::protocol_spec::{BROWSER, BROWSER_TYPE, command_parameters, keys};
+
+        // A literal with no `..Default::default()`, so a new field fails to
+        // compile here until it is added and checked.
+        let options = BrowserContextOptions {
+            viewport: Some(Viewport {
+                width: 1,
+                height: 1,
+            }),
+            no_viewport: Some(false),
+            user_agent: Some(String::new()),
+            locale: Some(String::new()),
+            timezone_id: Some(String::new()),
+            geolocation: Some(crate::protocol::Geolocation {
+                latitude: 0.0,
+                longitude: 0.0,
+                accuracy: None,
+            }),
+            http_credentials: Some(vec![crate::protocol::HttpCredentials::new("u", "p")]),
+            permissions: Some(vec![]),
+            proxy: Some(crate::protocol::ProxySettings::new("http://proxy")),
+            color_scheme: Some(String::new()),
+            has_touch: Some(false),
+            is_mobile: Some(false),
+            javascript_enabled: Some(false),
+            offline: Some(false),
+            accept_downloads: Some(AcceptDownloads::Accept),
+            bypass_csp: Some(false),
+            ignore_https_errors: Some(false),
+            device_scale_factor: Some(1.0),
+            extra_http_headers: Some(HashMap::new()),
+            base_url: Some(String::new()),
+            storage_state: Some(crate::protocol::StorageState::default()),
+            storage_state_path: Some(String::new()),
+            args: Some(vec![]),
+            channel: Some(String::new()),
+            chromium_sandbox: Some(false),
+            devtools: Some(false),
+            downloads_path: Some(String::new()),
+            executable_path: Some(String::new()),
+            firefox_user_prefs: Some(HashMap::new()),
+            headless: Some(true),
+            ignore_default_args: Some(IgnoreDefaultArgs::Array(vec![])),
+            slow_mo: Some(0.0),
+            timeout: Some(0.0),
+            traces_dir: Some(String::new()),
+            strict_selectors: Some(false),
+            reduced_motion: Some(String::new()),
+            forced_colors: Some(String::new()),
+            service_workers: Some(String::new()),
+            record_har: Some(RecordHar::new("h.har")),
+            record_video: Some(RecordVideo::new("videos")),
+        };
+
+        let sent = keys(&serde_json::to_value(&options).unwrap());
+        let mut declared = command_parameters(BROWSER, "newContext");
+        declared.extend(command_parameters(BROWSER_TYPE, "launchPersistentContext"));
+        let undeclared: Vec<&str> = sent
+            .iter()
+            .filter(|key| !declared.contains(*key))
+            .map(String::as_str)
+            .collect();
+        // Two of these never reach the driver as parameters: storageStatePath
+        // is read and sent inline as storageState, and timeout moves into the
+        // message metadata, where the server takes a call's deadline from.
+        // devtools and recordHar are not driver parameters at all, so the
+        // driver ignores them.
+        assert_eq!(
+            undeclared,
+            ["devtools", "recordHar", "storageStatePath", "timeout"]
+        );
+    }
+
+    #[test]
+    fn acronym_options_use_the_driver_spelling() {
+        let options = BrowserContextOptions::builder()
+            .javascript_enabled(false)
+            .bypass_csp(true)
+            .ignore_https_errors(true)
+            .base_url("http://localhost".to_string())
+            .build();
+
+        let value = serde_json::to_value(&options).unwrap();
+        assert_eq!(value["javaScriptEnabled"], serde_json::json!(false));
+        assert_eq!(value["bypassCSP"], serde_json::json!(true));
+        assert_eq!(value["ignoreHTTPSErrors"], serde_json::json!(true));
+        assert_eq!(value["baseURL"], serde_json::json!("http://localhost"));
+        for wrong in [
+            "javascriptEnabled",
+            "bypassCsp",
+            "ignoreHttpsErrors",
+            "baseUrl",
+        ] {
+            assert!(value.get(wrong).is_none(), "sent the unknown key {wrong}");
+        }
+    }
+
+    #[test]
+    fn extra_http_headers_serialize_as_name_value_pairs() {
+        let headers = HashMap::from([
+            ("X-One".to_string(), "1".to_string()),
+            ("X-Two".to_string(), "2".to_string()),
+        ]);
+        let options = BrowserContextOptions::builder()
+            .extra_http_headers(headers)
+            .build();
+
+        let value = serde_json::to_value(&options).unwrap();
+        assert!(value.get("extraHttpHeaders").is_none());
+        let mut pairs = value["extraHTTPHeaders"]
+            .as_array()
+            .expect("extraHTTPHeaders is a list")
+            .clone();
+        pairs.sort_by_key(|pair| pair["name"].as_str().unwrap_or_default().to_string());
+        assert_eq!(
+            pairs,
+            vec![
+                serde_json::json!({"name": "X-One", "value": "1"}),
+                serde_json::json!({"name": "X-Two", "value": "2"}),
+            ]
+        );
     }
 
     #[test]

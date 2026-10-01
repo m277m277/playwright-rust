@@ -54,15 +54,15 @@ pub struct LaunchOptions {
     pub firefox_user_prefs: Option<HashMap<String, Value>>,
 
     /// Close browser on SIGHUP (default: true)
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "handleSIGHUP", skip_serializing_if = "Option::is_none")]
     pub handle_sighup: Option<bool>,
 
     /// Close browser on SIGINT/Ctrl-C (default: true)
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "handleSIGINT", skip_serializing_if = "Option::is_none")]
     pub handle_sigint: Option<bool>,
 
     /// Close browser on SIGTERM (default: true)
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "handleSIGTERM", skip_serializing_if = "Option::is_none")]
     pub handle_sigterm: Option<bool>,
 
     /// Run in headless mode (default: true unless devtools=true)
@@ -218,7 +218,9 @@ impl LaunchOptions {
     /// Normalize options for protocol transmission
     ///
     /// This performs transformations required by the Playwright protocol:
-    /// 1. Set default timeout if not specified (required in 1.56.1+)
+    /// 1. Set a default timeout if none is given. `Connection::send_message`
+    ///    moves it into the message metadata, and without one the server
+    ///    gives the launch no deadline.
     /// 2. Convert env HashMap to array of {name, value} objects
     /// 3. Convert bool ignoreDefaultArgs to ignoreAllDefaultArgs
     ///
@@ -227,8 +229,7 @@ impl LaunchOptions {
         let mut value =
             serde_json::to_value(&self).expect("serialization of LaunchOptions cannot fail");
 
-        // Set default timeout if not specified
-        // Note: In Playwright 1.56.1+, timeout became a required parameter
+        // A launch with no timeout has no deadline on the server.
         if value.get("timeout").is_none() {
             value["timeout"] = json!(crate::DEFAULT_TIMEOUT_MS);
         }
@@ -270,6 +271,58 @@ mod tests {
         let opts = LaunchOptions::default();
         assert!(opts.headless.is_none());
         assert!(opts.args.is_none());
+    }
+
+    #[test]
+    fn every_key_sent_is_a_parameter_the_driver_declares() {
+        use crate::protocol_spec::{BROWSER_TYPE, command_parameters, keys};
+
+        // A literal with no `..Default::default()`, so a new field fails to
+        // compile here until it is added and checked.
+        let options = LaunchOptions {
+            args: Some(vec![]),
+            artifacts_dir: Some(String::new()),
+            channel: Some(String::new()),
+            chromium_sandbox: Some(false),
+            devtools: Some(false),
+            downloads_path: Some(String::new()),
+            env: Some(HashMap::new()),
+            executable_path: Some(String::new()),
+            firefox_user_prefs: Some(HashMap::new()),
+            handle_sighup: Some(false),
+            handle_sigint: Some(false),
+            handle_sigterm: Some(false),
+            headless: Some(true),
+            ignore_default_args: Some(IgnoreDefaultArgs::Array(vec![])),
+            proxy: Some(ProxySettings::new("http://proxy")),
+            slow_mo: Some(0.0),
+            timeout: Some(0.0),
+            traces_dir: Some(String::new()),
+        };
+
+        let sent = keys(&options.normalize());
+        let declared = command_parameters(BROWSER_TYPE, "launch");
+        let undeclared: Vec<&str> = sent
+            .iter()
+            .filter(|key| !declared.contains(*key))
+            .map(String::as_str)
+            .collect();
+        // timeout moves into the message metadata, where the server takes a
+        // call's deadline from. devtools is not a driver parameter at all, so
+        // the driver ignores it.
+        assert_eq!(undeclared, ["devtools", "timeout"]);
+    }
+
+    #[test]
+    fn signal_options_use_the_driver_spelling() {
+        let value = LaunchOptions::default()
+            .handle_sighup(false)
+            .handle_sigint(true)
+            .handle_sigterm(false)
+            .normalize();
+        assert_eq!(value["handleSIGHUP"], json!(false));
+        assert_eq!(value["handleSIGINT"], json!(true));
+        assert_eq!(value["handleSIGTERM"], json!(false));
     }
 
     #[test]
