@@ -53,12 +53,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     browser.close().await?;
     println!();
 
-    // Example 3: DevTools auto-open
+    // Example 3: DevTools auto-open (Chromium only, via a browser flag)
     println!("Example 3: DevTools");
     println!("Launching with DevTools panel open...");
     let browser = playwright
         .chromium()
-        .launch_with_options(LaunchOptions::new().devtools(true).headless(false))
+        .launch_with_options(
+            LaunchOptions::new()
+                .headless(false)
+                .args(vec!["--auto-open-devtools-for-tabs".to_string()]),
+        )
         .await?;
 
     let page = browser.new_page().await?;

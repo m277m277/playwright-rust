@@ -33,8 +33,18 @@ pub struct LaunchOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub chromium_sandbox: Option<bool>,
 
-    /// Auto-open DevTools (deprecated, default: false)
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Auto-open DevTools.
+    ///
+    /// Playwright 1.58 removed this option. The driver drops undeclared
+    /// parameters without erroring, so setting it has no effect and no longer
+    /// reaches the wire. Nor does it imply a headed browser any more. For
+    /// Chromium, pass `--auto-open-devtools-for-tabs` in `args` and set
+    /// `headless(false)`.
+    #[deprecated(
+        since = "0.20.0",
+        note = "removed from the protocol in Playwright 1.58; setting it has no effect. For Chromium, pass `--auto-open-devtools-for-tabs` in `args` instead"
+    )]
+    #[serde(skip_serializing)]
     pub devtools: Option<bool>,
 
     /// Directory to save downloads
@@ -65,7 +75,7 @@ pub struct LaunchOptions {
     #[serde(rename = "handleSIGTERM", skip_serializing_if = "Option::is_none")]
     pub handle_sigterm: Option<bool>,
 
-    /// Run in headless mode (default: true unless devtools=true)
+    /// Run in headless mode (default: true)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub headless: Option<bool>,
 
@@ -131,9 +141,16 @@ impl LaunchOptions {
         self
     }
 
-    /// Auto-open DevTools
+    /// Auto-open DevTools. Playwright 1.58 removed the option, so this has no effect.
+    #[deprecated(
+        since = "0.20.0",
+        note = "removed from the protocol in Playwright 1.58; setting it has no effect. For Chromium, pass `--auto-open-devtools-for-tabs` in `args` instead"
+    )]
     pub fn devtools(mut self, enabled: bool) -> Self {
-        self.devtools = Some(enabled);
+        #[allow(deprecated)]
+        {
+            self.devtools = Some(enabled);
+        }
         self
     }
 
@@ -284,6 +301,7 @@ mod tests {
             artifacts_dir: Some(String::new()),
             channel: Some(String::new()),
             chromium_sandbox: Some(false),
+            #[allow(deprecated)]
             devtools: Some(false),
             downloads_path: Some(String::new()),
             env: Some(HashMap::new()),
@@ -308,9 +326,17 @@ mod tests {
             .map(String::as_str)
             .collect();
         // timeout moves into the message metadata, where the server takes a
-        // call's deadline from. devtools is not a driver parameter at all, so
-        // the driver ignores it.
-        assert_eq!(undeclared, ["devtools", "timeout"]);
+        // call's deadline from.
+        assert_eq!(undeclared, ["timeout"]);
+    }
+
+    #[test]
+    fn devtools_still_deserializes_but_is_never_sent() {
+        let options: LaunchOptions = serde_json::from_value(json!({"devtools": true})).unwrap();
+        #[allow(deprecated)]
+        let devtools = options.devtools;
+        assert_eq!(devtools, Some(true));
+        assert!(options.normalize().get("devtools").is_none());
     }
 
     #[test]

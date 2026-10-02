@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Deprecated
+
+- **`devtools` on `LaunchOptions` and `BrowserContextOptions`.** Playwright removed the option in 1.58 and the driver drops it without an error, so `.devtools(true)` has opened no DevTools panel since 0.8.7, which bundled driver 1.58.2. The field and its builder now carry `#[deprecated]` and are no longer sent. It does not make the browser headed either. For Chromium, pass `--auto-open-devtools-for-tabs` in `args` and set `headless(false)`, as the other language bindings do; on `BrowserContextOptions` that works only for `launch_persistent_context`, so for `new_context` set them on the `LaunchOptions` the browser was launched with. Both will be removed in a later breaking release.
+
 ### Removed
 
 - **BREAKING: `BrowserContext::deserialize_binding_args_pub`.** A wire-format helper that was public only so `Page` could call it; it corresponds to no Playwright API and its output shape is the driver's, not the crate's. The shared function is crate-private now.

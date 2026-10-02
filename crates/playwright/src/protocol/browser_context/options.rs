@@ -300,8 +300,23 @@ pub struct BrowserContextOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub chromium_sandbox: Option<bool>,
 
-    /// Auto-open DevTools (deprecated, default: false)
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Auto-open DevTools.
+    ///
+    /// Playwright 1.58 removed this option. The driver drops undeclared
+    /// parameters without erroring, so setting it has no effect and no longer
+    /// reaches the wire. Nor does it imply a headed browser any more. For
+    /// Chromium, pass `--auto-open-devtools-for-tabs` in `args` and set
+    /// `headless(false)`. Both apply only to
+    /// `BrowserType::launch_persistent_context`; for a context from
+    /// `Browser::new_context`, set them on the [`LaunchOptions`] the browser
+    /// was launched with.
+    ///
+    /// [`LaunchOptions`]: crate::api::LaunchOptions
+    #[deprecated(
+        since = "0.20.0",
+        note = "removed from the protocol in Playwright 1.58; setting it has no effect. For Chromium, pass `--auto-open-devtools-for-tabs` in `args` (persistent contexts) or `LaunchOptions::args` instead"
+    )]
+    #[serde(skip_serializing)]
     pub devtools: Option<bool>,
 
     /// Directory to save downloads
@@ -316,7 +331,7 @@ pub struct BrowserContextOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub firefox_user_prefs: Option<HashMap<String, serde_json::Value>>,
 
-    /// Run in headless mode (default: true unless devtools=true)
+    /// Run in headless mode (default: true)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub headless: Option<bool>,
 
@@ -625,7 +640,11 @@ impl BrowserContextOptionsBuilder {
         self
     }
 
-    /// Auto-open DevTools (for launch_persistent_context)
+    /// Auto-open DevTools. Playwright 1.58 removed the option, so this has no effect.
+    #[deprecated(
+        since = "0.20.0",
+        note = "removed from the protocol in Playwright 1.58; setting it has no effect. For Chromium, pass `--auto-open-devtools-for-tabs` in `args` (persistent contexts) or `LaunchOptions::args` instead"
+    )]
     pub fn devtools(mut self, enabled: bool) -> Self {
         self.devtools = Some(enabled);
         self
@@ -769,6 +788,7 @@ impl BrowserContextOptionsBuilder {
             args: self.args,
             channel: self.channel,
             chromium_sandbox: self.chromium_sandbox,
+            #[allow(deprecated)]
             devtools: self.devtools,
             downloads_path: self.downloads_path,
             executable_path: self.executable_path,
@@ -859,6 +879,7 @@ mod tests {
             args: Some(vec![]),
             channel: Some(String::new()),
             chromium_sandbox: Some(false),
+            #[allow(deprecated)]
             devtools: Some(false),
             downloads_path: Some(String::new()),
             executable_path: Some(String::new()),
@@ -887,8 +908,7 @@ mod tests {
         // Two of these never reach the driver as parameters: storageStatePath
         // is read and sent inline as storageState, and timeout moves into the
         // message metadata, where the server takes a call's deadline from.
-        // devtools is not a driver parameter at all, so the driver ignores it.
-        assert_eq!(undeclared, ["devtools", "storageStatePath", "timeout"]);
+        assert_eq!(undeclared, ["storageStatePath", "timeout"]);
     }
 
     #[test]
