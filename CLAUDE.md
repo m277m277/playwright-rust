@@ -196,6 +196,15 @@ Just-in-time philosophy — write the right thing in the right file:
   `std::sync` lock acquisition (poisoning means another thread already
   panicked; propagating that panic is the policy) and invariants
   guaranteed by construction (comment why at the call site)
+- When the driver drops a parameter, deprecate rather than remove:
+  `#[deprecated(since = "<next release>", note = "...")]` on the field and
+  its setter, naming the replacement; stop sending it
+  (`#[serde(skip_serializing)]`, which keeps a deserializing struct
+  loading old config); take it out of the spec gate's exception list.
+  The crate's own uses of a deprecated *field* still warn, so wrap each in
+  `#[allow(deprecated)]`. Then add the item to the removal list in the
+  v1.0.0 section of the gap analysis, which is the only place removal is
+  scheduled
 
 ## Testing
 
