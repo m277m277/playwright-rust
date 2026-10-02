@@ -3,6 +3,7 @@
 // Represents a browser instance created by BrowserType.launch()
 
 use crate::error::Result;
+use crate::protocol::har_options::OptionHar;
 use crate::protocol::{BrowserContext, BrowserType, Page};
 use crate::server::channel::Channel;
 use crate::server::channel_owner::{ChannelOwner, ChannelOwnerImpl, ParentOrConnection};
@@ -374,6 +375,11 @@ impl Browser {
             options.storage_state_path = None; // Clear path since we've converted to inline
         }
 
+        // `recordHar` is not a driver parameter. As in the other language
+        // bindings, the HAR starts once the context exists and is written
+        // when it closes.
+        let option_har = options.record_har.take().map(OptionHar::new).transpose()?;
+
         // Convert options to JSON
         let options_json = serde_json::to_value(options).map_err(|e| {
             crate::error::Error::ProtocolError(format!(
@@ -395,6 +401,9 @@ impl Browser {
         let selectors = self.connection().selectors();
         if let Err(e) = selectors.add_context(context.channel().clone()).await {
             tracing::warn!("Failed to register BrowserContext with Selectors: {}", e);
+        }
+        if let Some(har) = option_har {
+            context.start_option_har(har).await?;
         }
 
         Ok(context)

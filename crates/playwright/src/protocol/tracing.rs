@@ -232,8 +232,9 @@ impl TracingStopOptions {
     }
 }
 
-/// In-flight HAR recording state, captured by `start_har` for `stop_har`.
-struct HarRecording {
+/// In-flight HAR recording state: what `harExport` and the write need once
+/// the recording stops.
+pub(crate) struct HarRecording {
     har_id: Option<String>,
     path: String,
     resources_dir: Option<String>,
@@ -392,11 +393,21 @@ impl Tracing {
         path: impl Into<String>,
         options: impl Into<Option<StartHarOptions>>,
     ) -> Result<()> {
-        let options = options.into();
-        let path = path.into();
-        let opts = options.unwrap_or_default();
-        let rec_options = opts.to_record_har_json(&path);
+        let recording = self
+            .begin_har(path.into(), options.into().unwrap_or_default())
+            .await?;
+        *self.har.lock() = Some(recording);
+        Ok(())
+    }
 
+    /// Sends `harStart` for a recording to `path` and returns what
+    /// [`export_har`](Self::export_har) needs to write it.
+    pub(crate) async fn begin_har(
+        &self,
+        path: String,
+        opts: StartHarOptions,
+    ) -> Result<HarRecording> {
+        let rec_options = opts.to_record_har_json(&path);
         let result: Value = self
             .channel()
             .send("harStart", serde_json::json!({ "options": rec_options }))
@@ -405,13 +416,11 @@ impl Tracing {
             .get("harId")
             .and_then(|v| v.as_str())
             .map(str::to_owned);
-
-        *self.har.lock() = Some(HarRecording {
+        Ok(HarRecording {
             har_id,
             path,
             resources_dir: opts.resources_dir,
-        });
-        Ok(())
+        })
     }
 
     /// Stop the HAR recording started by [`start_har`](Self::start_har) and
@@ -430,41 +439,52 @@ impl Tracing {
                 "stop_har called without a matching start_har".to_string(),
             ));
         };
+        if let Some(artifact) = self.har_export(&recording).await? {
+            self.write_har(&artifact, &recording).await?;
+        }
+        Ok(())
+    }
 
+    /// Sends `harExport` for `recording` and returns the guid of the archive
+    /// it produced, if any. The driver forgets a recording once it is
+    /// exported, so this succeeds at most once per recording.
+    pub(crate) async fn har_export(&self, recording: &HarRecording) -> Result<Option<String>> {
         let mut params = serde_json::json!({ "mode": "archive" });
         if let Some(id) = &recording.har_id {
             params["harId"] = Value::String(id.clone());
         }
 
         let result: Value = self.channel().send("harExport", params).await?;
-
-        let Some(artifact_guid) = result
+        Ok(result
             .get("artifact")
             .and_then(|a| a.get("guid"))
             .and_then(|g| g.as_str())
-        else {
-            return Ok(());
-        };
+            .map(str::to_owned))
+    }
 
-        // harExport always yields a zip archive. A `.zip` destination takes it
-        // verbatim; any other path gets the `.har` JSON extracted out of it.
+    /// Writes the archive [`har_export`](Self::har_export) produced to the
+    /// recording's path: a `.zip` path takes it as-is, any other path gets
+    /// the `.har` JSON extracted out of it.
+    pub(crate) async fn write_har(
+        &self,
+        artifact_guid: &str,
+        recording: &HarRecording,
+    ) -> Result<()> {
         if recording.path.ends_with(".zip") {
-            self.save_artifact(artifact_guid, &recording.path).await?;
-        } else {
-            let tmp_zip = format!("{}.tmp.zip", recording.path);
-            self.save_artifact(artifact_guid, &tmp_zip).await?;
-            let local_utils = self.find_local_utils()?;
-            local_utils
-                .har_unzip(
-                    &tmp_zip,
-                    &recording.path,
-                    recording.resources_dir.as_deref(),
-                )
-                .await?;
-            let _ = std::fs::remove_file(&tmp_zip);
+            return self.save_artifact(artifact_guid, &recording.path).await;
         }
-
-        Ok(())
+        let local_utils = self.find_local_utils()?;
+        let tmp_zip = format!("{}.tmp.zip", recording.path);
+        self.save_artifact(artifact_guid, &tmp_zip).await?;
+        let unzipped = local_utils
+            .har_unzip(
+                &tmp_zip,
+                &recording.path,
+                recording.resources_dir.as_deref(),
+            )
+            .await;
+        let _ = std::fs::remove_file(&tmp_zip);
+        unzipped
     }
 
     /// Locate the connection's `LocalUtils` (used to extract a `.har` from the

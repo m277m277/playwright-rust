@@ -9,6 +9,7 @@
 
 use crate::api::{ConnectOptions, ConnectOverCdpOptions, LaunchOptions};
 use crate::error::Result;
+use crate::protocol::har_options::OptionHar;
 use crate::protocol::{Browser, BrowserContext, BrowserContextOptions};
 use crate::server::channel::Channel;
 use crate::server::channel_owner::{ChannelOwner, ChannelOwnerImpl, ParentOrConnection};
@@ -346,6 +347,11 @@ impl BrowserType {
             }
         }
 
+        // `recordHar` is not a driver parameter. As in the other language
+        // bindings, the HAR starts once the context exists and is written
+        // when it closes.
+        let option_har = options.record_har.take().map(OptionHar::new).transpose()?;
+
         // Handle storage_state_path: read file and convert to inline storage_state
         if let Some(path) = &options.storage_state_path {
             let file_content = tokio::fs::read_to_string(path).await.map_err(|e| {
@@ -413,6 +419,9 @@ impl BrowserType {
         let selectors = self.connection().selectors();
         if let Err(e) = selectors.add_context(context.channel().clone()).await {
             tracing::warn!("Failed to register BrowserContext with Selectors: {}", e);
+        }
+        if let Some(har) = option_har {
+            context.start_option_har(har).await?;
         }
 
         Ok(context)

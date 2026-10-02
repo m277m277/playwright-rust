@@ -170,6 +170,10 @@ pub struct BrowserContext {
     /// Whether this context has been closed.
     /// Set to true when close() is called or a "close" event is received.
     is_closed: Arc<AtomicBool>,
+    /// The HAR the `record_har` option started, until `close()` writes it.
+    /// An async lock, held across the export, so a concurrent `close()`
+    /// waits for the file instead of closing the context under it.
+    option_har: Arc<tokio::sync::Mutex<Option<crate::protocol::tracing::HarRecording>>>,
 }
 
 // Each concern is its own `impl BrowserContext` block in a child module.

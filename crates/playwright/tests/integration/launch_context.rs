@@ -444,3 +444,36 @@ async fn test_launch_with_artifacts_dir() {
     // Cleanup the directory; ignore errors (Playwright may have left files).
     let _ = std::fs::remove_dir_all(&temp);
 }
+
+#[tokio::test]
+async fn record_har_on_a_persistent_context_writes_when_it_closes() {
+    use playwright_rs::protocol::RecordHar;
+
+    let server = TestServer::start().await;
+    let user_data = TempDir::new().expect("Failed to create temp dir");
+    let out = TempDir::new().expect("Failed to create temp dir");
+    let har = out.path().join("persistent.har");
+    let url = format!("{}/echo-headers", server.url());
+
+    let playwright = Playwright::launch()
+        .await
+        .expect("Failed to launch Playwright");
+    let options = BrowserContextOptions::builder()
+        .record_har(RecordHar::new(har.to_str().expect("a UTF-8 temp path")))
+        .build();
+    let context = playwright
+        .chromium()
+        .launch_persistent_context_with_options(
+            user_data.path().to_str().expect("a UTF-8 temp path"),
+            options,
+        )
+        .await
+        .expect("Failed to launch persistent context");
+    let page = context.new_page().await.expect("Failed to create page");
+    page.goto(&url, None).await.expect("Failed to navigate");
+    context.close().await.expect("Failed to close context");
+
+    let urls = crate::common::har_urls(&har).expect("the HAR was written on close");
+    assert!(urls.contains(&url), "{url} is not in the HAR");
+    server.shutdown();
+}

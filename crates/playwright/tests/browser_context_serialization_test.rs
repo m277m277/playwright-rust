@@ -1,39 +1,13 @@
 use playwright_rs::protocol::{BrowserContextOptions, RecordHar, RecordVideo, Viewport};
 
 #[test]
-fn test_serialize_record_har_full() {
+fn record_har_is_applied_by_the_client_not_sent() {
     let options = BrowserContextOptions::builder()
-        .record_har(
-            RecordHar::new("/tmp/test.har")
-                .omit_content(true)
-                .mode("minimal")
-                .content("omit")
-                .url_filter("**/api/**"),
-        )
+        .record_har(RecordHar::new("/tmp/test.har").mode("minimal"))
         .build();
 
     let json = serde_json::to_value(options).unwrap();
-    let record_har = json.get("recordHar").unwrap();
-
-    assert_eq!(record_har["path"], "/tmp/test.har");
-    assert_eq!(record_har["omitContent"], true);
-    assert_eq!(record_har["mode"], "minimal");
-    assert_eq!(record_har["content"], "omit");
-    assert_eq!(record_har["urlFilter"], "**/api/**");
-}
-
-#[test]
-fn test_serialize_record_har_minimal() {
-    let options = BrowserContextOptions::builder()
-        .record_har(RecordHar::new("simple.har"))
-        .build();
-
-    let json = serde_json::to_value(options).unwrap();
-    let record_har = json.get("recordHar").unwrap();
-
-    assert_eq!(record_har["path"], "simple.har");
-    assert!(record_har.get("omitContent").is_none());
-    assert!(record_har.get("mode").is_none());
+    assert!(json.get("recordHar").is_none());
 }
 
 #[test]

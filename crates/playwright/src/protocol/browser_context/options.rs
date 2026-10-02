@@ -34,7 +34,7 @@ pub struct RecordHar {
     /// "full" | "minimal"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mode: Option<String>,
-    /// A glob or regex pattern to filter requests that are stored in the HAR.
+    /// A URL glob; only requests whose URL matches are stored in the HAR.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url_filter: Option<String>,
 }
@@ -356,8 +356,10 @@ pub struct BrowserContextOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub service_workers: Option<String>,
 
-    /// Options for recording HAR
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Records the context's network traffic as a HAR file. Not a driver
+    /// parameter: the recording starts once the context exists and is written
+    /// when it closes (see [`BrowserContextOptionsBuilder::record_har`]).
+    #[serde(skip)]
     pub record_har: Option<RecordHar>,
 
     /// Options for recording video
@@ -707,7 +709,26 @@ impl BrowserContextOptionsBuilder {
         self
     }
 
-    /// Sets options for recording HAR
+    /// Records the context's network traffic as a HAR file at the path in
+    /// `record_har`.
+    ///
+    /// The file is written when the context closes, by
+    /// [`BrowserContext::close`](crate::protocol::BrowserContext::close), so
+    /// close the context to get it: a browser closed without closing the
+    /// context first writes nothing. A `.zip` path stores resource bodies as
+    /// separate entries; any other path embeds them in the `.har`.
+    ///
+    /// # Errors
+    ///
+    /// Creating the context fails with
+    /// [`Error::InvalidArgument`](crate::Error::InvalidArgument), before any
+    /// context exists, if the `content` or `mode` string is not one
+    /// Playwright accepts.
+    ///
+    /// If the HAR cannot be written, `close` returns the error and leaves the
+    /// context open; a second `close` closes it.
+    ///
+    /// See: <https://playwright.dev/docs/api/class-browser#browser-new-context-option-record-har>
     pub fn record_har(mut self, record_har: RecordHar) -> Self {
         self.record_har = Some(record_har);
         self
@@ -866,12 +887,8 @@ mod tests {
         // Two of these never reach the driver as parameters: storageStatePath
         // is read and sent inline as storageState, and timeout moves into the
         // message metadata, where the server takes a call's deadline from.
-        // devtools and recordHar are not driver parameters at all, so the
-        // driver ignores them.
-        assert_eq!(
-            undeclared,
-            ["devtools", "recordHar", "storageStatePath", "timeout"]
-        );
+        // devtools is not a driver parameter at all, so the driver ignores it.
+        assert_eq!(undeclared, ["devtools", "storageStatePath", "timeout"]);
     }
 
     #[test]

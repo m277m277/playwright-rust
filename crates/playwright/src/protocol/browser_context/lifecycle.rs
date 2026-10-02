@@ -101,6 +101,7 @@ impl BrowserContext {
             service_workers_list: Arc::new(Mutex::new(Vec::new())),
             ws_route_handlers: Arc::new(Mutex::new(Vec::new())),
             is_closed: Arc::new(AtomicBool::new(false)),
+            option_har: Arc::new(tokio::sync::Mutex::new(None)),
         };
 
         // Enable dialog and console event subscriptions eagerly.
@@ -351,6 +352,21 @@ impl BrowserContext {
         crate::protocol::Credentials::new(self.channel().clone())
     }
 
+    /// Starts the HAR recording a `record_har` option asks for, once the
+    /// context exists. [`close`](Self::close) writes it.
+    pub(crate) async fn start_option_har(
+        &self,
+        har: crate::protocol::har_options::OptionHar,
+    ) -> Result<()> {
+        let recording = self
+            .tracing()
+            .await?
+            .begin_har(har.path, har.options)
+            .await?;
+        *self.option_har.lock().await = Some(recording);
+        Ok(())
+    }
+
     /// Closes the browser context and all its pages.
     ///
     /// This is a graceful operation that sends a close command to the context
@@ -365,6 +381,25 @@ impl BrowserContext {
     /// See: <https://playwright.dev/docs/api/class-browsercontext#browser-context-close>
     #[tracing::instrument(level = "info", skip_all, fields(guid = %self.guid()))]
     pub async fn close(&self) -> Result<()> {
+        // Write the HAR the `record_har` option started, while the context
+        // can still export it. Any failure returns before the context
+        // closes, as in the other language bindings. A failed export keeps
+        // the recording, so a second `close()` tries it again; once exported,
+        // the driver has let the recording go, so a failed write is reported
+        // once and a second `close()` closes the context.
+        let mut option_har = self.option_har.lock().await;
+        if let Some(recording) = option_har.as_ref() {
+            let tracing = self.tracing().await?;
+            let artifact = tracing.har_export(recording).await?;
+            let written = match &artifact {
+                Some(guid) => tracing.write_har(guid, recording).await,
+                None => Ok(()),
+            };
+            *option_har = None;
+            written?;
+        }
+        drop(option_har);
+
         // Unregister from Selectors coordinator so closed channels are not sent future messages.
         let selectors = self.connection().selectors();
         selectors.remove_context(self.channel());

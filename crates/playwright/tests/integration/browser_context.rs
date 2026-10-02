@@ -1110,3 +1110,163 @@ async fn extra_http_headers_reach_the_server() -> Result<(), Box<dyn std::error:
     server.shutdown();
     Ok(())
 }
+
+#[tokio::test]
+async fn record_har_writes_the_traffic_when_the_context_closes()
+-> Result<(), Box<dyn std::error::Error>> {
+    use playwright_rs::protocol::RecordHar;
+
+    let server = crate::test_server::TestServer::start().await;
+    let (_pw, browser, _) = crate::common::setup().await;
+    let dir = tempfile::TempDir::new()?;
+    let har = dir.path().join("run.har");
+    let zip = dir.path().join("run.har.zip");
+    let url = format!("{}/echo-headers", server.url());
+
+    for path in [&har, &zip] {
+        let options = BrowserContextOptions::builder()
+            .record_har(RecordHar::new(path.to_str().expect("a UTF-8 temp path")))
+            .build();
+        let context = browser.new_context_with_options(options).await?;
+        let page = context.new_page().await?;
+        page.goto(&url, None).await?;
+        context.close().await?;
+    }
+
+    assert!(
+        crate::common::har_urls(&har)?.contains(&url),
+        "{url} is not in the HAR"
+    );
+    let zipped = std::fs::read(&zip)?;
+    assert!(
+        zipped.starts_with(b"PK"),
+        "{} is not a zip archive",
+        zip.display()
+    );
+
+    browser.close().await?;
+    server.shutdown();
+    Ok(())
+}
+
+#[tokio::test]
+async fn record_har_and_start_har_record_side_by_side() -> Result<(), Box<dyn std::error::Error>> {
+    use playwright_rs::protocol::RecordHar;
+
+    let server = crate::test_server::TestServer::start().await;
+    let (_pw, browser, _) = crate::common::setup().await;
+    let dir = tempfile::TempDir::new()?;
+    let from_option = dir.path().join("option.har");
+    let from_tracing = dir.path().join("tracing.har");
+    let url = format!("{}/echo-headers", server.url());
+
+    let options = BrowserContextOptions::builder()
+        .record_har(RecordHar::new(
+            from_option.to_str().expect("a UTF-8 temp path"),
+        ))
+        .build();
+    let context = browser.new_context_with_options(options).await?;
+    let tracing = context.tracing().await?;
+    tracing
+        .start_har(from_tracing.to_str().expect("a UTF-8 temp path"), None)
+        .await?;
+    let page = context.new_page().await?;
+    page.goto(&url, None).await?;
+    tracing.stop_har().await?;
+    assert!(crate::common::har_urls(&from_tracing)?.contains(&url));
+    context.close().await?;
+    assert!(crate::common::har_urls(&from_option)?.contains(&url));
+
+    browser.close().await?;
+    server.shutdown();
+    Ok(())
+}
+
+#[tokio::test]
+async fn record_har_with_an_unknown_content_creates_no_context()
+-> Result<(), Box<dyn std::error::Error>> {
+    use playwright_rs::protocol::RecordHar;
+
+    let (_pw, browser, _) = crate::common::setup().await;
+    let dir = tempfile::TempDir::new()?;
+    let har = dir.path().join("run.har");
+    let before = browser.contexts().len();
+
+    let options = BrowserContextOptions::builder()
+        .record_har(RecordHar::new(har.to_str().expect("a UTF-8 temp path")).content("inline"))
+        .build();
+    let result = browser.new_context_with_options(options).await;
+
+    assert!(
+        matches!(result, Err(playwright_rs::Error::InvalidArgument(_))),
+        "expected InvalidArgument, got {:?}",
+        result.map(|_| ())
+    );
+    assert_eq!(browser.contexts().len(), before);
+
+    browser.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn record_har_that_cannot_be_written_fails_close_then_a_second_close_closes()
+-> Result<(), Box<dyn std::error::Error>> {
+    use playwright_rs::protocol::RecordHar;
+
+    let server = crate::test_server::TestServer::start().await;
+    let (_pw, browser, _) = crate::common::setup().await;
+    let dir = tempfile::TempDir::new()?;
+    let har = dir.path().join("taken.har");
+    std::fs::create_dir(&har)?;
+    let url = format!("{}/echo-headers", server.url());
+
+    let options = BrowserContextOptions::builder()
+        .record_har(RecordHar::new(har.to_str().expect("a UTF-8 temp path")))
+        .build();
+    let context = browser.new_context_with_options(options).await?;
+    let page = context.new_page().await?;
+    page.goto(&url, None).await?;
+
+    assert!(
+        context.close().await.is_err(),
+        "a directory took the HAR's path"
+    );
+    assert!(!context.is_closed());
+    assert!(!dir.path().join("taken.har.tmp.zip").exists());
+    context.close().await?;
+    assert!(context.is_closed());
+
+    browser.close().await?;
+    server.shutdown();
+    Ok(())
+}
+
+#[tokio::test]
+async fn record_har_is_written_when_close_is_called_twice_at_once()
+-> Result<(), Box<dyn std::error::Error>> {
+    use playwright_rs::protocol::RecordHar;
+
+    let server = crate::test_server::TestServer::start().await;
+    let (_pw, browser, _) = crate::common::setup().await;
+    let dir = tempfile::TempDir::new()?;
+    let har = dir.path().join("run.har");
+    let url = format!("{}/echo-headers", server.url());
+
+    let options = BrowserContextOptions::builder()
+        .record_har(RecordHar::new(har.to_str().expect("a UTF-8 temp path")))
+        .build();
+    let context = browser.new_context_with_options(options).await?;
+    let page = context.new_page().await?;
+    page.goto(&url, None).await?;
+
+    let (first, _second) = tokio::join!(context.close(), context.close());
+    first?;
+    assert!(
+        crate::common::har_urls(&har)?.contains(&url),
+        "{url} is not in the HAR"
+    );
+
+    browser.close().await?;
+    server.shutdown();
+    Ok(())
+}

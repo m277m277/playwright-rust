@@ -141,6 +141,17 @@ pub fn js_string(path: &std::path::Path) -> String {
     serde_json::to_string(&path.to_string_lossy()).expect("a string always serializes")
 }
 
+/// The request URLs a `.har` file at `path` recorded.
+pub fn har_urls(path: &std::path::Path) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    let har: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path)?)?;
+    Ok(har["log"]["entries"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| entry["request"]["url"].as_str().map(str::to_string))
+        .collect())
+}
+
 /// Poll `cond` until it returns `true` or `timeout` elapses; returns whether
 /// it became true. Replaces "sleep a fixed N ms, then assert state changed"
 /// patterns, which flake on loaded CI — this waits only as long as needed, up
