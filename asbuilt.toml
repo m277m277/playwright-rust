@@ -30,6 +30,11 @@ color_scheme = "dark"
 component = { light = "#ffffff", dark = "#3d2c22" }
 container = { light = "#ce422b", dark = "#8f2d19" }
 process = { light = "#e9d4c8", dark = "#2f2620" }
+# The non-library targets, set apart from modules: a bin in a pale rust,
+# since it is an entry point; tests and examples in quieter warm neutrals.
+bin = { light = "#f6ddd4", dark = "#5a2e20" }
+tests = { light = "#efe8e2", dark = "#2a211b" }
+examples = { light = "#fbf1e4", dark = "#3a3022" }
 
 [rust]
 # Three crates live in the repo but outside the workspace, each with its

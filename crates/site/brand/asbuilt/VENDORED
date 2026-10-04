@@ -1,10 +1,10 @@
 asbuilt brand, vendored.
 
 Source: brand/ in the asbuilt project (https://github.com/padamson/asbuilt),
-copied whole from tag v0.1.0 (commit 44d8edc), brand VERSION 2. The
-README beside this note is asbuilt's own and describes every file; where
-it says "this repo" it means asbuilt, so the paths it names there
-(crates/asbuilt-core, scripts/check-brand-copy.sh) are not in this one.
+copied whole from tag v0.2.0 (commit 28ef2ec), brand VERSION 3. The
+README beside this note is asbuilt's own and describes every file; the
+paths it names in the asbuilt repo (crates/asbuilt-core,
+scripts/check-brand-copy.sh) are not in this one.
 
 To update: replace this directory with brand/ from a newer asbuilt tag,
 keep this note, and record the tag, commit and VERSION here.

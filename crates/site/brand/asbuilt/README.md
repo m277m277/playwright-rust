@@ -17,4 +17,4 @@ records the version it took.
 - The mark: an inline `<svg viewBox="0 0 24 24" fill="currentColor"><path d="…"/></svg>` with the contents of `mark.path`, so it takes the surrounding text color. It holds its shape down to 12 pixels.
 - The wordmark: import `wordmark.css`, copy `fonts/` beside the built stylesheet, set `--brand-accent` to the host's accent, and use the markup in the comment at its top. Keep the fonts local: the bar is placed from these fonts' metrics and lands wrong on a fallback face.
 
-Inside this repo, `asbuilt docs` draws the mark before the tree's title in every page's header (`crates/asbuilt-core/src/mark.path`, a copy that `scripts/check-brand-copy.sh` keeps identical), and the landing site uses the mark, the wordmark and `mark.svg` as its favicon.
+In the asbuilt repo, `asbuilt docs` draws the mark before the tree's title in every page's header (`crates/asbuilt-core/src/mark.path`, a copy that `scripts/check-brand-copy.sh` keeps identical), and the landing site uses the mark, the wordmark and `mark.svg` as its favicon.
