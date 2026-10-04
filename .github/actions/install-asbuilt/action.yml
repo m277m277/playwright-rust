@@ -16,9 +16,10 @@ inputs:
 runs:
   using: composite
   steps:
-    # rust-cache restores registries and target dirs, not ~/.cargo/bin, so
-    # without this every run compiles asbuilt and its dependency tree from
-    # source.
+    # Keyed on the pinned version, so a hit is the right binary and the
+    # install below is skipped. rust-cache restores ~/.cargo/bin too, keyed on
+    # the lockfile rather than the pin, so after a bump it can bring back the
+    # previous asbuilt.
     - name: Cache the asbuilt binary
       id: cache
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
@@ -29,7 +30,10 @@ runs:
     - name: Install asbuilt
       if: steps.cache.outputs.cache-hit != 'true'
       shell: bash
-      run: cargo install asbuilt --version ${{ inputs.version }} --locked
+      # --force: an older asbuilt restored by rust-cache comes without cargo's
+      # install records, and cargo refuses to overwrite a binary it did not
+      # install.
+      run: cargo install asbuilt --version ${{ inputs.version }} --locked --force
 
     # `validate`, `render` and `docs` run `npx likec4@<pinned>`; asbuilt pins
     # the LikeC4 version, so its own version keys the npm cache too, and the
