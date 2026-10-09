@@ -134,7 +134,7 @@ async fn snapshot_architecture_lists_every_crate_and_draws_its_views() {
     page.goto(&root, None)
         .await
         .expect("navigate to the architecture index under the base path");
-    expect(page.locator("meta[name='generator'][content='asbuilt docs']"))
+    expect(page.locator("meta[name='generator'][content^='asbuilt docs']"))
         .to_have_count(1)
         .await
         .expect("the index is an asbuilt docs page");

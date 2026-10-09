@@ -2,6 +2,12 @@
 # check` runs in the pre-commit hook and in CI, so the model cannot
 # drift from the code without a red gate saying so.
 
+# The release every survey runs with: a model is only meaningful against one,
+# so any other refuses to run and names the install line. CI installs from
+# this pin (the padamson/asbuilt action reads it), so a bump is this line and
+# a re-survey in the same commit.
+asbuilt = "0.3.0"
+
 [output]
 path = "docs/architecture/model.c4"
 

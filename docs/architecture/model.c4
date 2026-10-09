@@ -41,11 +41,26 @@ specification {
   tag examples
   tag external
   tag tests
-  relationship implements
-  relationship constructs
-  relationship calls
-  relationship names
-  relationship uses
+  relationship implements {
+    line solid
+    head onormal
+  }
+  relationship constructs {
+    line solid
+    head diamond
+  }
+  relationship calls {
+    line solid
+    head vee
+  }
+  relationship names {
+    line dotted
+    head dot
+  }
+  relationship uses {
+    line dotted
+    head odot
+  }
 }
 
 model {

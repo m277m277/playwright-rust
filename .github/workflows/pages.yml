@@ -32,7 +32,6 @@ on:
       - "crates/site-e2e/**"
       - "docs/architecture/**"
       - "asbuilt.toml"
-      - ".github/actions/install-asbuilt/**"
       - ".github/workflows/pages.yml"
   pull_request:
     branches: [main]
@@ -134,20 +133,27 @@ jobs:
       # The architecture section: `asbuilt docs` renders the committed model's
       # views with LikeC4 (Node, pinned inside asbuilt) and Graphviz, and
       # writes the HTML tree into public/architecture/, which Trunk's copy-dir
-      # carries into both builds below. `docs` refuses a model that fell
-      # behind the code but prints no diff; `check` on the failure path does.
+      # carries into both builds below. The action runs `check` first, so a
+      # stale model fails with its diff; `docs` prints none.
       - name: Install Graphviz
         # Bounded: a contended apt blocks rather than failing (see quiesce-apt.sh).
         timeout-minutes: 15
         run: sudo apt-get update && sudo apt-get install -y graphviz
 
-      - name: Install asbuilt
-        uses: ./.github/actions/install-asbuilt
+      - name: Install asbuilt and check the architecture model
+        id: asbuilt
+        uses: padamson/asbuilt@83d374bc3d98f5d1cb893944777c3a10e66fd6d2 # v0.3.0
+
+      - name: Cache the pinned LikeC4 package
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-likec4-${{ steps.asbuilt.outputs.version }}-v1
 
       - name: Write the architecture section
         run: |
           node --version && dot -V
-          asbuilt docs -o crates/site/public/architecture || { asbuilt check; exit 1; }
+          asbuilt docs -o crates/site/public/architecture
 
       # Dogfood gate: a canonical root-served dev build the binding can drive.
       # SITE_VERSION=dev so the switcher's dev-banner assertion holds; public-url

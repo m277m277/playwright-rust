@@ -44,8 +44,7 @@ worktree under `/<dest>/`, regenerate `versions.json` + the root redirect
 commit.
 
 Triggers:
-- **push to `main`** (site paths, `docs/architecture/`, `asbuilt.toml`, the
-  asbuilt install action) →
+- **push to `main`** (site paths, `docs/architecture/`, `asbuilt.toml`) →
   rebuilds `/dev/`.
 - **`workflow_dispatch` with `version=X.Y.Z`** → publishes `/vX.Y.Z/` from
   current source.

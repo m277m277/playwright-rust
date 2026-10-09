@@ -59,11 +59,16 @@ jobs:
     - name: Cache Cargo
       uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
 
-    - name: Install asbuilt
-      uses: ./.github/actions/install-asbuilt
-
     - name: Verify the architecture model matches the code
-      run: asbuilt check
+      id: asbuilt
+      uses: padamson/asbuilt@83d374bc3d98f5d1cb893944777c3a10e66fd6d2 # v0.3.0
+
+    # asbuilt pins LikeC4, so its version keys the npm cache.
+    - name: Cache the pinned LikeC4 package
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      with:
+        path: ~/.npm
+        key: ${{ runner.os }}-npm-likec4-${{ steps.asbuilt.outputs.version }}-v1
 
     - name: Validate the architecture model and its curated views
       run: asbuilt validate
