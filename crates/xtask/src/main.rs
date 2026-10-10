@@ -93,6 +93,12 @@ enum Cmd {
     /// or nothing: `resolveLocatorHandler`, `path` and `connectToServer`
     /// all shipped that way, each for several releases.
     VerifyProtocolMethods,
+    /// Verify that every `#[tracing::instrument]` field declared
+    /// `tracing::field::Empty` has a `.record("name", ..)` call in its own
+    /// function. An unrecorded field prints nothing and fails nothing, so a
+    /// declared completion field can sit empty unnoticed: two did, for
+    /// several releases. A record on only some paths is out of its reach.
+    VerifySpanFields,
 }
 
 #[tokio::main]
@@ -105,6 +111,7 @@ async fn main() -> Result<()> {
         Cmd::VerifyChangelogLinks => verify_changelog_links(),
         Cmd::SyncProtocolSpec { check } => sync_protocol_spec(check),
         Cmd::VerifyProtocolMethods => verify_protocol_methods(),
+        Cmd::VerifySpanFields => verify_span_fields(),
     }
 }
 
@@ -1189,6 +1196,105 @@ fn sent_methods(source: &str) -> Vec<(usize, String)> {
     out
 }
 
+fn verify_span_fields() -> Result<()> {
+    let root = workspace_root();
+    let mut checked = 0usize;
+    let mut missing: Vec<String> = Vec::new();
+    for path in rust_files(&root.join("crates/playwright/src"))? {
+        let text =
+            std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+        if text.contains("#[instrument(") {
+            bail!(
+                "verify-span-fields: {} uses `#[instrument(` without the `tracing::` \
+                 prefix, which this scan does not read; spell it `#[tracing::instrument(`",
+                path.display()
+            );
+        }
+        let (n, unrecorded) = unrecorded_span_fields(&text);
+        checked += n;
+        let rel = path.strip_prefix(&root).unwrap_or(&path).display();
+        missing.extend(
+            unrecorded
+                .into_iter()
+                .map(|(line, field)| format!("{rel}:{line}: `{field}`")),
+        );
+    }
+    if checked == 0 {
+        bail!("verify-span-fields: found no `tracing::field::Empty` fields; the scan is broken");
+    }
+    if !missing.is_empty() {
+        bail!(
+            "verify-span-fields: {} Empty span field(s) never recorded in their function:\n  {}",
+            missing.len(),
+            missing.join("\n  ")
+        );
+    }
+    println!("verify-span-fields: {checked} Empty span field(s) checked");
+    Ok(())
+}
+
+/// The number of `tracing::field::Empty` fields declared in `source`'s
+/// `#[tracing::instrument(..)]` attributes, and `(line, field)` for each
+/// one whose function body has no `.record("field"` call.
+fn unrecorded_span_fields(source: &str) -> (usize, Vec<(usize, String)>) {
+    const ATTR: &str = "#[tracing::instrument(";
+    let mut checked = 0;
+    let mut missing = Vec::new();
+    let mut at = 0;
+    while let Some(found) = source[at..].find(ATTR) {
+        let open = at + found + ATTR.len();
+        let Some(attr_end) = close_of(source, open) else {
+            break;
+        };
+        at = attr_end;
+        let fields = empty_fields(&source[open..attr_end]);
+        if fields.is_empty() {
+            continue;
+        }
+        let body = source[attr_end..]
+            .find('{')
+            .map(|i| attr_end + i + 1)
+            .and_then(|start| Some(&source[start..close_of(source, start)?]))
+            .unwrap_or("");
+        for field in fields {
+            checked += 1;
+            if !body.contains(&format!(".record(\"{field}\"")) {
+                missing.push((source[..open].lines().count(), field));
+            }
+        }
+    }
+    (checked, missing)
+}
+
+/// One past the bracket closing the one opened just before `from`.
+fn close_of(source: &str, from: usize) -> Option<usize> {
+    let mut depth = 1;
+    for (i, c) in source[from..].char_indices() {
+        match c {
+            '(' | '[' | '{' => depth += 1,
+            ')' | ']' | '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(from + i + 1);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn empty_fields(attr: &str) -> Vec<String> {
+    attr.split([',', '('])
+        .filter_map(|part| {
+            let (name, value) = part.split_once('=')?;
+            let value = value.trim_end_matches(|c: char| c == ')' || c.is_whitespace());
+            let value = value.trim();
+            (value == "tracing::field::Empty").then(|| name.trim().to_string())
+        })
+        .collect()
+}
+
 fn rust_files(dir: &Path) -> Result<Vec<PathBuf>> {
     let mut out = Vec::new();
     for entry in std::fs::read_dir(dir).with_context(|| format!("read {}", dir.display()))? {
@@ -1568,5 +1674,60 @@ mod protocol_method_tests {
                 (13, "screencastFrameAck")
             ]
         );
+    }
+}
+
+#[cfg(test)]
+mod span_field_tests {
+    use super::{close_of, unrecorded_span_fields};
+
+    #[test]
+    fn close_of_returns_one_past_the_matching_bracket() {
+        assert_eq!(close_of("f(a(b))z", 2), Some(7));
+        assert_eq!(close_of("f(a", 2), None);
+    }
+
+    #[test]
+    fn a_recorded_empty_field_passes() {
+        let src = r#"
+    #[tracing::instrument(level = "debug", skip_all, fields(selector = %self.selector, count = tracing::field::Empty))]
+    pub async fn count(&self) -> Result<usize> {
+        let n = self.frame.locator_count(&self.selector).await?;
+        tracing::Span::current().record("count", n);
+        Ok(n)
+    }
+"#;
+        assert_eq!(unrecorded_span_fields(src), (1, vec![]));
+    }
+
+    #[test]
+    fn an_unrecorded_empty_field_is_reported_at_its_attribute() {
+        let src = "\n#[tracing::instrument(\n    skip_all,\n    fields(guid = %guid, id = tracing::field::Empty)\n)]\nfn send(&self) {\n    let _ = 1;\n}\n";
+        assert_eq!(
+            unrecorded_span_fields(src),
+            (1, vec![(2, "id".to_string())])
+        );
+    }
+
+    #[test]
+    fn a_record_in_the_next_function_does_not_count() {
+        let src = r#"
+#[tracing::instrument(fields(bytes_len = tracing::field::Empty))]
+fn a() {}
+fn b() { tracing::Span::current().record("bytes_len", 3); }
+"#;
+        assert_eq!(
+            unrecorded_span_fields(src),
+            (1, vec![(2, "bytes_len".to_string())])
+        );
+    }
+
+    #[test]
+    fn fields_with_values_are_not_checked() {
+        let src = r#"
+#[tracing::instrument(level = "info", skip_all, fields(guid = %self.guid(), url = %url))]
+fn goto(&self) {}
+"#;
+        assert_eq!(unrecorded_span_fields(src), (0, vec![]));
     }
 }

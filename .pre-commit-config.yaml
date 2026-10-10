@@ -130,6 +130,16 @@ repos:
         pass_filenames: false
         files: (crates/playwright/src/|protocol-spec/|crates/xtask/src/)
 
+      # 5b-quater. Every span field declared `tracing::field::Empty` must be
+      # recorded in its own function, or it prints nothing and fails nothing.
+      - id: verify-span-fields
+        name: cargo xtask verify-span-fields
+        description: Check every Empty #[instrument] field has a record call in its function
+        entry: cargo xtask verify-span-fields
+        language: system
+        pass_filenames: false
+        files: (crates/playwright/src/|crates/xtask/src/)
+
       # 5c. Verify each per-crate CHANGELOG's reference-link footer still
       # agrees with its version headings. Hand-maintained at release time,
       # and it had silently drifted across three releases before this.

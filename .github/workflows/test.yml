@@ -294,3 +294,6 @@ jobs:
 
     - name: Verify every protocol method the crate sends exists in the spec
       run: cargo xtask verify-protocol-methods
+
+    - name: Verify every Empty span field is recorded
+      run: cargo xtask verify-span-fields
