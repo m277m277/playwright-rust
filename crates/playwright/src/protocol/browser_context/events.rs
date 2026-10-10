@@ -1,7 +1,7 @@
 use super::{BrowserContext, CtxHandlerFuture, ServiceWorkerHandlerFuture};
 use crate::error::Result;
 use crate::protocol::EventValue;
-use crate::protocol::event_registry::{EventRegistry, Handler};
+use crate::protocol::event_registry::{EventRegistry, Handler, bridge};
 use crate::protocol::event_waiter::EventWaiter;
 use crate::protocol::{Download, Frame, Page, Request, ResponseObject};
 use crate::server::channel_owner::ChannelOwner;
@@ -612,95 +612,10 @@ async fn run_all<T: Clone>(handlers: &Forwarded<T>, value: T) {
     }
 }
 
-/// Bridges a registry waiter into an `EventValue` waiter. The registry
-/// receiver is dropped as soon as the caller's receiver closes, so a waiter
-/// that timed out cannot swallow the next event owed to a live one.
-fn bridge<T: Send + 'static>(
-    inner_rx: oneshot::Receiver<T>,
-    wrap: impl FnOnce(T) -> EventValue + Send + 'static,
-) -> oneshot::Receiver<EventValue> {
-    let (mut tx, rx) = oneshot::channel();
-    crate::task::spawn(async move {
-        tokio::select! {
-            v = inner_rx => {
-                if let Ok(v) = v {
-                    _ = tx.send(wrap(v));
-                }
-            }
-            () = tx.closed() => {}
-        }
-    });
-    rx
-}
-
-/// Hands `value` to the oldest waiter whose caller is still listening,
-/// discarding the ones that have gone. Returns whether anyone received it.
-pub(super) fn deliver_to_oldest_live<T>(
-    waiters: &mut Vec<oneshot::Sender<T>>,
-    mut value: T,
-) -> bool {
-    while !waiters.is_empty() {
-        match waiters.remove(0).send(value) {
-            Ok(()) => return true,
-            Err(unsent) => value = unsent,
-        }
-    }
-    false
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::time::Duration;
-
-    #[test]
-    fn oldest_live_waiter_takes_the_value_and_the_rest_stay() {
-        let (tx1, mut rx1) = oneshot::channel();
-        let (tx2, mut rx2) = oneshot::channel();
-        let mut waiters = vec![tx1, tx2];
-        assert!(deliver_to_oldest_live(&mut waiters, 1));
-        assert_eq!(rx1.try_recv(), Ok(1));
-        assert!(rx2.try_recv().is_err());
-        assert_eq!(waiters.len(), 1);
-    }
-
-    #[test]
-    fn a_waiter_whose_caller_left_is_skipped_and_dropped() {
-        let (dead, _) = oneshot::channel::<u8>();
-        let (live, mut rx) = oneshot::channel();
-        let mut waiters = vec![dead, live];
-        assert!(deliver_to_oldest_live(&mut waiters, 7));
-        assert_eq!(rx.try_recv(), Ok(7));
-        assert!(waiters.is_empty());
-    }
-
-    #[test]
-    fn no_live_waiter_reports_undelivered_and_clears_the_dead() {
-        let (dead, _) = oneshot::channel::<u8>();
-        let mut waiters = vec![dead];
-        assert!(!deliver_to_oldest_live(&mut waiters, 7));
-        assert!(waiters.is_empty());
-        assert!(!deliver_to_oldest_live(&mut waiters, 8));
-    }
-
-    #[tokio::test]
-    async fn bridge_wraps_the_value_for_the_caller() {
-        let (tx, inner_rx) = oneshot::channel();
-        let rx = bridge(inner_rx, |()| EventValue::Close);
-        tx.send(()).unwrap();
-        assert!(matches!(rx.await, Ok(EventValue::Close)));
-    }
-
-    #[tokio::test]
-    async fn bridge_releases_the_registry_waiter_when_the_caller_leaves() {
-        let (mut tx, inner_rx) = oneshot::channel::<()>();
-        let rx = bridge(inner_rx, |()| EventValue::Close);
-        drop(rx);
-        tokio::time::timeout(Duration::from_secs(1), tx.closed())
-            .await
-            .expect("the registry receiver must be dropped once the caller is gone");
-    }
 
     #[tokio::test]
     async fn run_all_runs_every_handler_in_order_past_a_failure() {

@@ -604,7 +604,7 @@ impl ChannelOwner for BrowserContext {
                             });
                         }
                         // Notify the oldest expect_event("serviceworker") waiter still listening.
-                        super::events::deliver_to_oldest_live(
+                        crate::protocol::event_registry::deliver_to_oldest_live(
                             &mut serviceworker_waiters.lock().unwrap(),
                             worker,
                         );

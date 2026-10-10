@@ -241,3 +241,38 @@ async fn test_context_service_workers_empty() {
 
     browser.close().await.expect("browser should close");
 }
+
+#[tokio::test]
+async fn expect_event_worker_is_not_lost_to_a_waiter_that_timed_out() {
+    let (_pw, browser, page) = setup().await;
+
+    let live = page
+        .expect_event("worker", Some(5000.0))
+        .await
+        .expect("expect_event should register");
+    let stale = page
+        .expect_event("worker", Some(50.0))
+        .await
+        .expect("expect_event should register");
+    assert!(
+        stale.wait().await.is_err(),
+        "no worker yet, so it times out"
+    );
+
+    page.evaluate::<(), serde_json::Value>(
+        r#"() => {
+            const blob = new Blob(['self.onmessage = () => {};'], {type: 'application/javascript'});
+            new Worker(URL.createObjectURL(blob));
+        }"#,
+        None,
+    )
+    .await
+    .expect("evaluate should create a worker");
+    let got = live.wait().await;
+    browser.close().await.expect("browser should close");
+
+    assert!(
+        matches!(got, Ok(playwright_rs::EventValue::Worker(_))),
+        "the live waiter should get the worker; got {got:?}"
+    );
+}

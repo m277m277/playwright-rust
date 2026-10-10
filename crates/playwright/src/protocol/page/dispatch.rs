@@ -391,10 +391,11 @@ impl ChannelOwner for Page {
                                 }
                             });
                         }
-                        // Notify expect_event("worker") waiters
-                        if let Some(tx) = self_clone.worker_waiters.lock().unwrap().pop() {
-                            let _ = tx.send(worker);
-                        }
+                        // Notify the oldest expect_event("worker") waiter still listening.
+                        crate::protocol::event_registry::deliver_to_oldest_live(
+                            &mut self_clone.worker_waiters.lock().unwrap(),
+                            worker,
+                        );
                     });
                 }
             }

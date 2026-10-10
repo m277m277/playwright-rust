@@ -716,16 +716,9 @@ impl Page {
             }
 
             "worker" => {
-                let (tx, rx) = oneshot::channel::<EventValue>();
-                let (inner_tx, inner_rx) = oneshot::channel::<crate::protocol::Worker>();
+                let (inner_tx, inner_rx) = oneshot::channel();
                 self.worker_waiters.lock().unwrap().push(inner_tx);
-
-                crate::task::spawn(async move {
-                    if let Ok(v) = inner_rx.await {
-                        let _ = tx.send(EventValue::Worker(v));
-                    }
-                });
-
+                let rx = crate::protocol::event_registry::bridge(inner_rx, EventValue::Worker);
                 Ok(crate::protocol::EventWaiter::new(rx, timeout_ms))
             }
 
