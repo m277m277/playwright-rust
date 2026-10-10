@@ -18,7 +18,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::any::Any;
 use std::sync::Arc;
-use tracing::Instrument;
 
 /// BrowserType represents a browser engine (Chromium, Firefox, or WebKit).
 ///
@@ -473,12 +472,9 @@ impl BrowserType {
 
         // 3. Start message loop
         let conn_for_loop = Arc::clone(&connection);
-        tokio::spawn(
-            async move {
-                conn_for_loop.run().await;
-            }
-            .in_current_span(),
-        );
+        crate::task::spawn_detached(async move {
+            conn_for_loop.run().await;
+        });
 
         // 4. Initialize Playwright
         // This exchanges the "initialize" message and returns the root Playwright object

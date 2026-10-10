@@ -620,7 +620,7 @@ fn bridge<T: Send + 'static>(
     wrap: impl FnOnce(T) -> EventValue + Send + 'static,
 ) -> oneshot::Receiver<EventValue> {
     let (mut tx, rx) = oneshot::channel();
-    tokio::spawn(async move {
+    crate::task::spawn(async move {
         tokio::select! {
             v = inner_rx => {
                 if let Ok(v) = v {

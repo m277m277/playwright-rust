@@ -2692,7 +2692,7 @@ impl ChannelOwner for Frame {
                 }
                 // Forward frameNavigated event to page-level handlers
                 let self_clone = self.clone();
-                tokio::spawn(async move {
+                crate::task::spawn(async move {
                     if let Some(page) = self_clone.page() {
                         page.trigger_framenavigated_event(self_clone).await;
                     }
@@ -2708,7 +2708,7 @@ impl ChannelOwner for Frame {
                     && self.parent_frame_guid.is_none()
                 {
                     let self_clone = self.clone();
-                    tokio::spawn(async move {
+                    crate::task::spawn(async move {
                         if let Some(page) = self_clone.page() {
                             page.trigger_load_event().await;
                         }

@@ -130,7 +130,7 @@ impl Playwright {
 
         // 4. Spawn connection message loop in background
         let conn_for_loop: Arc<Connection> = Arc::clone(&connection);
-        tokio::spawn(async move {
+        crate::task::spawn_detached(async move {
             conn_for_loop.run().await;
         });
 

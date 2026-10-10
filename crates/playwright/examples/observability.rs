@@ -38,9 +38,9 @@ async fn main() -> Result<()> {
     let browser = playwright.chromium().launch().await?;
     let page = browser.new_page().await?;
 
-    // A user span wrapping a logical workflow. Spans inside this block —
-    // including async work spawned by playwright-rs internals — nest under
-    // "checkout_flow" thanks to spawn-task propagation.
+    // A user span wrapping a logical workflow. The goto and click spans nest
+    // under "checkout_flow"; event handlers do not, since they run from the
+    // connection's read loop (see the crate docs' Observability section).
     async {
         page.goto("data:text/html,<button id='b'>Pay</button>", None)
             .await?;

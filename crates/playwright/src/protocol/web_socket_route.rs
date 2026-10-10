@@ -262,7 +262,7 @@ impl WebSocketRoute {
                 let payload = params["message"].as_str().unwrap_or("").to_string();
                 for handler in handlers {
                     let p = payload.clone();
-                    tokio::spawn(async move {
+                    crate::task::spawn(async move {
                         let _ = handler(p).await;
                     });
                 }
@@ -275,7 +275,7 @@ impl WebSocketRoute {
                     return;
                 }
                 for handler in handlers {
-                    tokio::spawn(async move {
+                    crate::task::spawn(async move {
                         let _ = handler().await;
                     });
                 }
@@ -292,7 +292,7 @@ impl WebSocketRoute {
     fn forward(&self, method: &'static str, params: &Value) {
         let channel = self.base.channel().clone();
         let params = params.clone();
-        tokio::spawn(async move {
+        crate::task::spawn(async move {
             if let Err(e) = channel.send_no_result(method, params).await {
                 tracing::debug!("WebSocketRoute {} forward failed: {}", method, e);
             }

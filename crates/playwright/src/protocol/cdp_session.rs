@@ -57,7 +57,6 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use tracing::Instrument;
 
 type EventHandlerFuture = Pin<Box<dyn Future<Output = Result<()>> + Send + 'static>>;
 type EventHandler = Arc<dyn Fn(Value) -> EventHandlerFuture + Send + Sync + 'static>;
@@ -231,28 +230,22 @@ impl ChannelOwner for CDPSession {
                         .unwrap_or_default();
                     for h in handlers {
                         let p = cdp_params.clone();
-                        tokio::spawn(
-                            async move {
-                                if let Err(e) = h(p).await {
-                                    tracing::warn!("CDPSession event handler error: {}", e);
-                                }
+                        crate::task::spawn(async move {
+                            if let Err(e) = h(p).await {
+                                tracing::warn!("CDPSession event handler error: {}", e);
                             }
-                            .in_current_span(),
-                        );
+                        });
                     }
                 }
             }
             "close" => {
                 let handlers = self.close_handlers.lock().clone();
                 for h in handlers {
-                    tokio::spawn(
-                        async move {
-                            if let Err(e) = h().await {
-                                tracing::warn!("CDPSession close handler error: {}", e);
-                            }
+                    crate::task::spawn(async move {
+                        if let Err(e) = h().await {
+                            tracing::warn!("CDPSession close handler error: {}", e);
                         }
-                        .in_current_span(),
-                    );
+                    });
                 }
             }
             _ => {}

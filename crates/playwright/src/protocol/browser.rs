@@ -774,7 +774,7 @@ impl ChannelOwner for Browser {
             .is_ok()
         {
             let handlers = self.disconnected_handlers.lock().unwrap().clone();
-            tokio::spawn(async move {
+            crate::task::spawn(async move {
                 for handler in handlers {
                     if let Err(e) = handler().await {
                         tracing::warn!("Browser disconnected handler error (from dispose): {}", e);
@@ -807,7 +807,7 @@ impl ChannelOwner for Browser {
                 .is_ok()
             {
                 let handlers = self.disconnected_handlers.lock().unwrap().clone();
-                tokio::spawn(async move {
+                crate::task::spawn(async move {
                     for handler in handlers {
                         if let Err(e) = handler().await {
                             tracing::warn!("Browser disconnected handler error: {}", e);
@@ -825,7 +825,7 @@ impl ChannelOwner for Browser {
             {
                 let guid = guid.to_string();
                 let connection = self.connection();
-                tokio::spawn(async move {
+                crate::task::spawn(async move {
                     use crate::server::connection::ConnectionExt;
                     if let Ok(ctx) = connection.get_typed::<BrowserContext>(&guid).await {
                         for handler in handlers {

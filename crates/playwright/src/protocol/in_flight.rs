@@ -118,7 +118,7 @@ mod tests {
                 .is_err(),
             "one invocation is still running"
         );
-        let waiter = tokio::spawn({
+        let waiter = crate::task::spawn({
             let flight = flight.clone();
             async move { flight.wait_idle().await }
         });
@@ -135,7 +135,7 @@ mod tests {
         let b = Arc::new(InFlight::default());
         let running = b.enter();
         let removed = [a.clone(), b.clone()];
-        let settled = tokio::spawn(async move {
+        let settled = crate::task::spawn(async move {
             settle_removed(removed.iter(), Some(UnrouteBehavior::Wait)).await;
         });
         tokio::time::sleep(Duration::from_millis(30)).await;

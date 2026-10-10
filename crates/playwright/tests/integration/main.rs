@@ -6,6 +6,10 @@
 //
 // Sync-only tests (no browser needed) remain as separate binaries in tests/.
 
+// The crate's clippy.toml steers its own spawns through `task::spawn`,
+// which tests cannot reach; a bare `tokio::spawn` is right here.
+#![allow(clippy::disallowed_methods)]
+
 mod common;
 mod test_server;
 

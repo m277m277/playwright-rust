@@ -204,32 +204,29 @@ impl ChannelOwner for Page {
                     let route_guid_owned = route_guid.to_string();
                     let self_clone = self.clone();
 
-                    tokio::spawn(
-                        async move {
-                            // Get and downcast Route object
-                            let route: Route =
-                                match connection.get_typed::<Route>(&route_guid_owned).await {
-                                    Ok(r) => r,
-                                    Err(e) => {
-                                        tracing::warn!("Failed to get route object: {}", e);
-                                        return;
-                                    }
-                                };
+                    crate::task::spawn(async move {
+                        // Get and downcast Route object
+                        let route: Route =
+                            match connection.get_typed::<Route>(&route_guid_owned).await {
+                                Ok(r) => r,
+                                Err(e) => {
+                                    tracing::warn!("Failed to get route object: {}", e);
+                                    return;
+                                }
+                            };
 
-                            // Set APIRequestContext on the route for fetch() support.
-                            // Page's parent is BrowserContext, which has the request context.
-                            if let Some(ctx) =
-                                downcast_parent::<crate::protocol::BrowserContext>(&self_clone)
-                                && let Ok(api_ctx) = ctx.request().await
-                            {
-                                route.set_api_request_context(api_ctx);
-                            }
-
-                            // Call the route handler and wait for completion
-                            self_clone.on_route_event(route).await;
+                        // Set APIRequestContext on the route for fetch() support.
+                        // Page's parent is BrowserContext, which has the request context.
+                        if let Some(ctx) =
+                            downcast_parent::<crate::protocol::BrowserContext>(&self_clone)
+                            && let Ok(api_ctx) = ctx.request().await
+                        {
+                            route.set_api_request_context(api_ctx);
                         }
-                        .in_current_span(),
-                    );
+
+                        // Call the route handler and wait for completion
+                        self_clone.on_route_event(route).await;
+                    });
                 }
             }
             "download" => {
@@ -256,31 +253,27 @@ impl ChannelOwner for Page {
                     let artifact_guid_owned = artifact_guid.to_string();
                     let self_clone = self.clone();
 
-                    tokio::spawn(
-                        async move {
-                            // Wait for Artifact object to be created
-                            let artifact_arc =
-                                match connection.get_object(&artifact_guid_owned).await {
-                                    Ok(obj) => obj,
-                                    Err(e) => {
-                                        tracing::warn!("Failed to get artifact object: {}", e);
-                                        return;
-                                    }
-                                };
+                    crate::task::spawn(async move {
+                        // Wait for Artifact object to be created
+                        let artifact_arc = match connection.get_object(&artifact_guid_owned).await {
+                            Ok(obj) => obj,
+                            Err(e) => {
+                                tracing::warn!("Failed to get artifact object: {}", e);
+                                return;
+                            }
+                        };
 
-                            // Create Download wrapper from Artifact + event params
-                            let download = Download::from_artifact(
-                                artifact_arc,
-                                url,
-                                suggested_filename,
-                                self_clone.clone(),
-                            );
+                        // Create Download wrapper from Artifact + event params
+                        let download = Download::from_artifact(
+                            artifact_arc,
+                            url,
+                            suggested_filename,
+                            self_clone.clone(),
+                        );
 
-                            // Call the download handlers
-                            self_clone.on_download_event(download).await;
-                        }
-                        .in_current_span(),
-                    );
+                        // Call the download handlers
+                        self_clone.on_download_event(download).await;
+                    });
                 }
             }
             "dialog" => {
@@ -297,34 +290,28 @@ impl ChannelOwner for Page {
                     let ws_guid_owned = ws_guid.to_string();
                     let self_clone = self.clone();
 
-                    tokio::spawn(
-                        async move {
-                            // Get and downcast WebSocket object
-                            let ws: WebSocket =
-                                match connection.get_typed::<WebSocket>(&ws_guid_owned).await {
-                                    Ok(ws) => ws,
-                                    Err(e) => {
-                                        tracing::warn!("Failed to get WebSocket object: {}", e);
-                                        return;
-                                    }
-                                };
+                    crate::task::spawn(async move {
+                        // Get and downcast WebSocket object
+                        let ws: WebSocket =
+                            match connection.get_typed::<WebSocket>(&ws_guid_owned).await {
+                                Ok(ws) => ws,
+                                Err(e) => {
+                                    tracing::warn!("Failed to get WebSocket object: {}", e);
+                                    return;
+                                }
+                            };
 
-                            // Call handlers
-                            let handlers = self_clone.websocket_handlers.lock().unwrap().clone();
-                            for handler in handlers {
-                                let ws_clone = ws.clone();
-                                tokio::spawn(
-                                    async move {
-                                        if let Err(e) = handler(ws_clone).await {
-                                            tracing::error!("Error in websocket handler: {}", e);
-                                        }
-                                    }
-                                    .in_current_span(),
-                                );
-                            }
+                        // Call handlers
+                        let handlers = self_clone.websocket_handlers.lock().unwrap().clone();
+                        for handler in handlers {
+                            let ws_clone = ws.clone();
+                            crate::task::spawn(async move {
+                                if let Err(e) = handler(ws_clone).await {
+                                    tracing::error!("Error in websocket handler: {}", e);
+                                }
+                            });
                         }
-                        .in_current_span(),
-                    );
+                    });
                 }
             }
             "webSocketRoute" => {
@@ -339,44 +326,35 @@ impl ChannelOwner for Page {
                     let wsr_guid_owned = wsr_guid.to_string();
                     let self_clone = self.clone();
 
-                    tokio::spawn(
-                        async move {
-                            let route: crate::protocol::WebSocketRoute = match connection
-                                .get_typed::<crate::protocol::WebSocketRoute>(&wsr_guid_owned)
-                                .await
-                            {
-                                Ok(r) => r,
-                                Err(e) => {
-                                    tracing::warn!("Failed to get WebSocketRoute object: {}", e);
-                                    return;
-                                }
-                            };
+                    crate::task::spawn(async move {
+                        let route: crate::protocol::WebSocketRoute = match connection
+                            .get_typed::<crate::protocol::WebSocketRoute>(&wsr_guid_owned)
+                            .await
+                        {
+                            Ok(r) => r,
+                            Err(e) => {
+                                tracing::warn!("Failed to get WebSocketRoute object: {}", e);
+                                return;
+                            }
+                        };
 
-                            let url = route.url().to_string();
-                            let handlers = self_clone.ws_route_handlers.lock().unwrap().clone();
-                            for entry in handlers.iter().rev() {
-                                if crate::protocol::route::matches_pattern(&entry.pattern, &url) {
-                                    let handler = entry.handler.clone();
-                                    let route_clone = route.clone();
-                                    tokio::spawn(
-                                        async move {
-                                            let route_after = route_clone.clone();
-                                            if let Err(e) = handler(route_clone).await {
-                                                tracing::error!(
-                                                    "Error in webSocketRoute handler: {}",
-                                                    e
-                                                );
-                                            }
-                                            route_after.after_handle().await;
-                                        }
-                                        .in_current_span(),
-                                    );
-                                    break;
-                                }
+                        let url = route.url().to_string();
+                        let handlers = self_clone.ws_route_handlers.lock().unwrap().clone();
+                        for entry in handlers.iter().rev() {
+                            if crate::protocol::route::matches_pattern(&entry.pattern, &url) {
+                                let handler = entry.handler.clone();
+                                let route_clone = route.clone();
+                                crate::task::spawn(async move {
+                                    let route_after = route_clone.clone();
+                                    if let Err(e) = handler(route_clone).await {
+                                        tracing::error!("Error in webSocketRoute handler: {}", e);
+                                    }
+                                    route_after.after_handle().await;
+                                });
+                                break;
                             }
                         }
-                        .in_current_span(),
-                    );
+                    });
                 }
             }
             "worker" => {
@@ -391,39 +369,33 @@ impl ChannelOwner for Page {
                     let worker_guid_owned = worker_guid.to_string();
                     let self_clone = self.clone();
 
-                    tokio::spawn(
-                        async move {
-                            let worker: Worker =
-                                match connection.get_typed::<Worker>(&worker_guid_owned).await {
-                                    Ok(w) => w,
-                                    Err(e) => {
-                                        tracing::warn!("Failed to get Worker object: {}", e);
-                                        return;
-                                    }
-                                };
+                    crate::task::spawn(async move {
+                        let worker: Worker =
+                            match connection.get_typed::<Worker>(&worker_guid_owned).await {
+                                Ok(w) => w,
+                                Err(e) => {
+                                    tracing::warn!("Failed to get Worker object: {}", e);
+                                    return;
+                                }
+                            };
 
-                            // Track the worker for workers() accessor
-                            self_clone.workers_list.lock().unwrap().push(worker.clone());
+                        // Track the worker for workers() accessor
+                        self_clone.workers_list.lock().unwrap().push(worker.clone());
 
-                            let handlers = self_clone.worker_handlers.lock().unwrap().clone();
-                            for handler in handlers {
-                                let worker_clone = worker.clone();
-                                tokio::spawn(
-                                    async move {
-                                        if let Err(e) = handler(worker_clone).await {
-                                            tracing::error!("Error in worker handler: {}", e);
-                                        }
-                                    }
-                                    .in_current_span(),
-                                );
-                            }
-                            // Notify expect_event("worker") waiters
-                            if let Some(tx) = self_clone.worker_waiters.lock().unwrap().pop() {
-                                let _ = tx.send(worker);
-                            }
+                        let handlers = self_clone.worker_handlers.lock().unwrap().clone();
+                        for handler in handlers {
+                            let worker_clone = worker.clone();
+                            crate::task::spawn(async move {
+                                if let Err(e) = handler(worker_clone).await {
+                                    tracing::error!("Error in worker handler: {}", e);
+                                }
+                            });
                         }
-                        .in_current_span(),
-                    );
+                        // Notify expect_event("worker") waiters
+                        if let Some(tx) = self_clone.worker_waiters.lock().unwrap().pop() {
+                            let _ = tx.send(worker);
+                        }
+                    });
                 }
             }
             "bindingCall" => {
@@ -438,7 +410,7 @@ impl ChannelOwner for Page {
                     let binding_guid_owned = binding_guid.to_string();
                     let binding_callbacks = self.binding_callbacks.clone();
 
-                    tokio::spawn(async move {
+                    crate::task::spawn(async move {
                         let binding_call: crate::protocol::BindingCall = match connection
                             .get_typed::<crate::protocol::BindingCall>(&binding_guid_owned)
                             .await
@@ -476,7 +448,7 @@ impl ChannelOwner for Page {
                         if let Err(e) = binding_call.resolve(serialized).await {
                             tracing::warn!("Failed to resolve BindingCall '{}': {}", name, e);
                         }
-                    }.in_current_span());
+                    });
                 }
             }
             "fileChooser" => {
@@ -496,32 +468,29 @@ impl ChannelOwner for Page {
                     let element_guid_owned = element_guid.to_string();
                     let self_clone = self.clone();
 
-                    tokio::spawn(
-                        async move {
-                            let element: crate::protocol::ElementHandle = match connection
-                                .get_typed::<crate::protocol::ElementHandle>(&element_guid_owned)
-                                .await
-                            {
-                                Ok(e) => e,
-                                Err(err) => {
-                                    tracing::warn!(
-                                        "Failed to get ElementHandle for fileChooser: {}",
-                                        err
-                                    );
-                                    return;
-                                }
-                            };
+                    crate::task::spawn(async move {
+                        let element: crate::protocol::ElementHandle = match connection
+                            .get_typed::<crate::protocol::ElementHandle>(&element_guid_owned)
+                            .await
+                        {
+                            Ok(e) => e,
+                            Err(err) => {
+                                tracing::warn!(
+                                    "Failed to get ElementHandle for fileChooser: {}",
+                                    err
+                                );
+                                return;
+                            }
+                        };
 
-                            let chooser = crate::protocol::FileChooser::new(
-                                self_clone.clone(),
-                                std::sync::Arc::new(element),
-                                is_multiple,
-                            );
+                        let chooser = crate::protocol::FileChooser::new(
+                            self_clone.clone(),
+                            std::sync::Arc::new(element),
+                            is_multiple,
+                        );
 
-                            self_clone.on_filechooser_event(chooser).await;
-                        }
-                        .in_current_span(),
-                    );
+                        self_clone.on_filechooser_event(chooser).await;
+                    });
                 }
             }
             "close" => {
@@ -529,30 +498,21 @@ impl ChannelOwner for Page {
                 self.is_closed.store(true, Ordering::Relaxed);
                 // Dispatch close handlers
                 let self_clone = self.clone();
-                tokio::spawn(
-                    async move {
-                        self_clone.on_close_event().await;
-                    }
-                    .in_current_span(),
-                );
+                crate::task::spawn(async move {
+                    self_clone.on_close_event().await;
+                });
             }
             "load" => {
                 let self_clone = self.clone();
-                tokio::spawn(
-                    async move {
-                        self_clone.on_load_event().await;
-                    }
-                    .in_current_span(),
-                );
+                crate::task::spawn(async move {
+                    self_clone.on_load_event().await;
+                });
             }
             "crash" => {
                 let self_clone = self.clone();
-                tokio::spawn(
-                    async move {
-                        self_clone.on_crash_event().await;
-                    }
-                    .in_current_span(),
-                );
+                crate::task::spawn(async move {
+                    self_clone.on_crash_event().await;
+                });
             }
             "pageError" => {
                 // params: {"error": {"message": "...", "stack": "..."}}
@@ -563,12 +523,9 @@ impl ChannelOwner for Page {
                     .unwrap_or("")
                     .to_string();
                 let self_clone = self.clone();
-                tokio::spawn(
-                    async move {
-                        self_clone.on_pageerror_event(message).await;
-                    }
-                    .in_current_span(),
-                );
+                crate::task::spawn(async move {
+                    self_clone.on_pageerror_event(message).await;
+                });
             }
             "screencastFrame" => {
                 // params: {"frameId": <int>, "data": "<base64 jpeg>", ...}
@@ -583,18 +540,15 @@ impl ChannelOwner for Page {
                 // throttles nothing.
                 if let Some(frame_id) = params.get("frameId").and_then(|v| v.as_i64()) {
                     let self_clone = self.clone();
-                    tokio::spawn(
-                        async move {
-                            self_clone
-                                .channel()
-                                .notify(
-                                    "screencastFrameAck",
-                                    serde_json::json!({ "frameId": frame_id }),
-                                )
-                                .await;
-                        }
-                        .in_current_span(),
-                    );
+                    crate::task::spawn(async move {
+                        self_clone
+                            .channel()
+                            .notify(
+                                "screencastFrameAck",
+                                serde_json::json!({ "frameId": frame_id }),
+                            )
+                            .await;
+                    });
                 }
 
                 if let Some(b64) = params.get("data").and_then(|v| v.as_str()) {
@@ -607,14 +561,11 @@ impl ChannelOwner for Page {
                         let handlers = self.screencast_frame_handlers.lock().unwrap().clone();
                         for h in handlers {
                             let f = frame.clone();
-                            tokio::spawn(
-                                async move {
-                                    if let Err(e) = h(f).await {
-                                        tracing::warn!("Screencast frame handler error: {}", e);
-                                    }
+                            crate::task::spawn(async move {
+                                if let Err(e) = h(f).await {
+                                    tracing::warn!("Screencast frame handler error: {}", e);
                                 }
-                                .in_current_span(),
-                            );
+                            });
                         }
                     } else {
                         tracing::warn!("Failed to decode screencast frame data");
@@ -634,22 +585,19 @@ impl ChannelOwner for Page {
                     let frame_guid_owned = frame_guid.to_string();
                     let self_clone = self.clone();
 
-                    tokio::spawn(
-                        async move {
-                            let frame: crate::protocol::Frame = match connection
-                                .get_typed::<crate::protocol::Frame>(&frame_guid_owned)
-                                .await
-                            {
-                                Ok(f) => f,
-                                Err(e) => {
-                                    tracing::warn!("Failed to get Frame for frameAttached: {}", e);
-                                    return;
-                                }
-                            };
-                            self_clone.on_frameattached_event(frame).await;
-                        }
-                        .in_current_span(),
-                    );
+                    crate::task::spawn(async move {
+                        let frame: crate::protocol::Frame = match connection
+                            .get_typed::<crate::protocol::Frame>(&frame_guid_owned)
+                            .await
+                        {
+                            Ok(f) => f,
+                            Err(e) => {
+                                tracing::warn!("Failed to get Frame for frameAttached: {}", e);
+                                return;
+                            }
+                        };
+                        self_clone.on_frameattached_event(frame).await;
+                    });
                 }
             }
             "frameDetached" => {
@@ -663,22 +611,19 @@ impl ChannelOwner for Page {
                     let frame_guid_owned = frame_guid.to_string();
                     let self_clone = self.clone();
 
-                    tokio::spawn(
-                        async move {
-                            let frame: crate::protocol::Frame = match connection
-                                .get_typed::<crate::protocol::Frame>(&frame_guid_owned)
-                                .await
-                            {
-                                Ok(f) => f,
-                                Err(e) => {
-                                    tracing::warn!("Failed to get Frame for frameDetached: {}", e);
-                                    return;
-                                }
-                            };
-                            self_clone.on_framedetached_event(frame).await;
-                        }
-                        .in_current_span(),
-                    );
+                    crate::task::spawn(async move {
+                        let frame: crate::protocol::Frame = match connection
+                            .get_typed::<crate::protocol::Frame>(&frame_guid_owned)
+                            .await
+                        {
+                            Ok(f) => f,
+                            Err(e) => {
+                                tracing::warn!("Failed to get Frame for frameDetached: {}", e);
+                                return;
+                            }
+                        };
+                        self_clone.on_framedetached_event(frame).await;
+                    });
                 }
             }
             "frameNavigated" => {
@@ -694,22 +639,19 @@ impl ChannelOwner for Page {
                     let frame_guid_owned = frame_guid.to_string();
                     let self_clone = self.clone();
 
-                    tokio::spawn(
-                        async move {
-                            let frame: crate::protocol::Frame = match connection
-                                .get_typed::<crate::protocol::Frame>(&frame_guid_owned)
-                                .await
-                            {
-                                Ok(f) => f,
-                                Err(e) => {
-                                    tracing::warn!("Failed to get Frame for frameNavigated: {}", e);
-                                    return;
-                                }
-                            };
-                            self_clone.on_framenavigated_event(frame).await;
-                        }
-                        .in_current_span(),
-                    );
+                    crate::task::spawn(async move {
+                        let frame: crate::protocol::Frame = match connection
+                            .get_typed::<crate::protocol::Frame>(&frame_guid_owned)
+                            .await
+                        {
+                            Ok(f) => f,
+                            Err(e) => {
+                                tracing::warn!("Failed to get Frame for frameNavigated: {}", e);
+                                return;
+                            }
+                        };
+                        self_clone.on_framenavigated_event(frame).await;
+                    });
                 }
             }
             "locatorHandlerTriggered" => {
@@ -719,72 +661,69 @@ impl ChannelOwner for Page {
                 if let Some(uid) = params.get("uid").and_then(|v| v.as_u64()).map(|v| v as u32) {
                     let self_clone = self.clone();
 
-                    tokio::spawn(
-                        async move {
-                            // Account for the trigger under the lock; the handler is
-                            // cloned out so nothing is held across the await below.
-                            let claimed = {
-                                let mut handlers = self_clone.locator_handlers.lock().unwrap();
-                                handlers.iter_mut().find(|e| e.uid == uid).map(|e| {
-                                    (e.handler.clone(), e.selector.clone(), e.take_invocation())
-                                })
-                            };
+                    crate::task::spawn(async move {
+                        // Account for the trigger under the lock; the handler is
+                        // cloned out so nothing is held across the await below.
+                        let claimed = {
+                            let mut handlers = self_clone.locator_handlers.lock().unwrap();
+                            handlers.iter_mut().find(|e| e.uid == uid).map(|e| {
+                                (e.handler.clone(), e.selector.clone(), e.take_invocation())
+                            })
+                        };
 
-                            // An unknown uid (the registration reply has not landed
-                            // yet, or the handler was just removed) still has to
-                            // resume the parked action.
-                            let mut remove = false;
-                            if let Some((handler, selector, invocation)) = claimed {
-                                remove = invocation.remove;
-                                if invocation.run {
-                                    let locator = self_clone.locator(selector);
-                                    // Run on its own task so a panic is caught here
-                                    // and the resolve below is still sent. A handler
-                                    // that fails keeps its entry, so the next trigger
-                                    // retries it, as upstream does.
-                                    match tokio::spawn(handler(locator)).await {
-                                        Ok(Ok(())) => {}
-                                        Ok(Err(e)) => {
-                                            tracing::warn!(
-                                                "locator handler error (uid={}): {}",
-                                                uid,
-                                                e
-                                            );
-                                            remove = false;
-                                        }
-                                        Err(e) => {
-                                            tracing::warn!(
-                                                "locator handler panicked (uid={}): {}",
-                                                uid,
-                                                e
-                                            );
-                                            remove = false;
-                                        }
+                        // An unknown uid (the registration reply has not landed
+                        // yet, or the handler was just removed) still has to
+                        // resume the parked action.
+                        let mut remove = false;
+                        if let Some((handler, selector, invocation)) = claimed {
+                            remove = invocation.remove;
+                            if invocation.run {
+                                let locator = self_clone.locator(selector);
+                                // Run on its own task so a panic is caught here
+                                // and the resolve below is still sent. A handler
+                                // that fails keeps its entry, so the next trigger
+                                // retries it, as upstream does.
+                                match crate::task::spawn(handler(locator)).await {
+                                    Ok(Ok(())) => {}
+                                    Ok(Err(e)) => {
+                                        tracing::warn!(
+                                            "locator handler error (uid={}): {}",
+                                            uid,
+                                            e
+                                        );
+                                        remove = false;
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!(
+                                            "locator handler panicked (uid={}): {}",
+                                            uid,
+                                            e
+                                        );
+                                        remove = false;
                                     }
                                 }
-                                // Drop the local entry before telling the server, so a
-                                // remove_locator_handler that races the reply cannot
-                                // pick up the stale uid.
-                                if remove {
-                                    self_clone
-                                        .locator_handlers
-                                        .lock()
-                                        .unwrap()
-                                        .retain(|e| e.uid != uid);
-                                }
                             }
-
-                            self_clone
-                                .channel()
-                                .notify(
-                                    "resolveLocatorHandlerNoReply",
-                                    serde_json::json!({ "uid": uid, "remove": remove }),
-                                )
-                                .instrument(tracing::debug_span!("locator_handler", uid))
-                                .await;
+                            // Drop the local entry before telling the server, so a
+                            // remove_locator_handler that races the reply cannot
+                            // pick up the stale uid.
+                            if remove {
+                                self_clone
+                                    .locator_handlers
+                                    .lock()
+                                    .unwrap()
+                                    .retain(|e| e.uid != uid);
+                            }
                         }
-                        .in_current_span(),
-                    );
+
+                        self_clone
+                            .channel()
+                            .notify(
+                                "resolveLocatorHandlerNoReply",
+                                serde_json::json!({ "uid": uid, "remove": remove }),
+                            )
+                            .instrument(tracing::debug_span!("locator_handler", uid))
+                            .await;
+                    });
                 }
             }
             _ => {

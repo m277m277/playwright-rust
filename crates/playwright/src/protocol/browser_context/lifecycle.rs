@@ -108,7 +108,7 @@ impl BrowserContext {
         // Console events must be subscribed to receive them without a registered handler,
         // enabling the console_messages() and page_errors() passive accumulators on Page.
         let channel = context.channel().clone();
-        tokio::spawn(async move {
+        crate::task::spawn(async move {
             _ = channel.update_subscription("dialog", true).await;
             _ = channel.update_subscription("console", true).await;
         });

@@ -6,7 +6,6 @@
 use crate::server::driver::get_driver_executable;
 use crate::{Error, Result};
 use tokio::process::{Child, Command};
-use tracing::Instrument;
 
 /// Manages the Playwright server process lifecycle
 ///
@@ -102,16 +101,13 @@ impl PlaywrightServer {
         // forwarded line-by-line via `tracing::debug!` so they're
         // accessible when needed without polluting the terminal.
         if let Some(stderr) = child.stderr.take() {
-            tokio::spawn(
-                async move {
-                    use tokio::io::{AsyncBufReadExt, BufReader};
-                    let mut lines = BufReader::new(stderr).lines();
-                    while let Ok(Some(line)) = lines.next_line().await {
-                        tracing::debug!(target: "playwright_rs::driver_stderr", "{}", line);
-                    }
+            crate::task::spawn_detached(async move {
+                use tokio::io::{AsyncBufReadExt, BufReader};
+                let mut lines = BufReader::new(stderr).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    tracing::debug!(target: "playwright_rs::driver_stderr", "{}", line);
                 }
-                .in_current_span(),
-            );
+            });
         }
 
         // Check if process started successfully

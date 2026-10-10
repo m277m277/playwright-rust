@@ -10,7 +10,6 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
-use tracing::Instrument;
 
 /// Lifecycle, timeouts, frames, and locator constructors.
 impl Page {
@@ -86,19 +85,16 @@ impl Page {
             if let Some(artifact_guid) = video_artifact_guid {
                 let connection = base.connection();
                 let v_clone = v.clone();
-                tokio::spawn(
-                    async move {
-                        match connection.get_object(&artifact_guid).await {
-                            Ok(artifact_arc) => v_clone.set_artifact(artifact_arc),
-                            Err(e) => tracing::warn!(
-                                "Failed to resolve video artifact {} from initializer: {}",
-                                artifact_guid,
-                                e
-                            ),
-                        }
+                crate::task::spawn(async move {
+                    match connection.get_object(&artifact_guid).await {
+                        Ok(artifact_arc) => v_clone.set_artifact(artifact_arc),
+                        Err(e) => tracing::warn!(
+                            "Failed to resolve video artifact {} from initializer: {}",
+                            artifact_guid,
+                            e
+                        ),
                     }
-                    .in_current_span(),
-                );
+                });
             }
             Some(v)
         } else {

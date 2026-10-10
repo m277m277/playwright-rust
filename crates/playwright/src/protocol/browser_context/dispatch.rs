@@ -42,7 +42,7 @@ impl BrowserContext {
             let ctx_request = self.request.clone();
             let ctx_request_finished = self.request_finished.clone();
             let ctx_request_failed = self.request_failed.clone();
-            tokio::spawn(async move {
+            crate::task::spawn(async move {
                 let request: Request =
                     match connection.get_typed::<Request>(&request_guid_owned).await {
                         Ok(r) => r,
@@ -101,7 +101,7 @@ impl BrowserContext {
                 .and_then(|v| v.as_str())
                 .map(|v| v.to_owned());
             let ctx_response = self.response.clone();
-            tokio::spawn(async move {
+            crate::task::spawn(async move {
                 let response: ResponseObject = match connection
                     .get_typed::<ResponseObject>(&response_guid_owned)
                     .await
@@ -177,7 +177,7 @@ impl ChannelOwner for BrowserContext {
                 // BrowserContext close event — mark as closed and fire registered close handlers
                 self.is_closed.store(true, Ordering::Relaxed);
                 let close_events = self.close_events.clone();
-                tokio::spawn(async move {
+                crate::task::spawn(async move {
                     close_events.dispatch_all(()).await;
                 });
             }
@@ -197,7 +197,7 @@ impl ChannelOwner for BrowserContext {
                     let page_events = self.page_events.clone();
                     let forwarders = self.forwarders.clone();
 
-                    tokio::spawn(async move {
+                    crate::task::spawn(async move {
                         // Get and downcast the Page object
                         let page: Page = match connection.get_typed::<Page>(&page_guid_owned).await
                         {
@@ -268,7 +268,7 @@ impl ChannelOwner for BrowserContext {
                 let connection = self.connection();
                 let weberror = self.weberror.clone();
 
-                tokio::spawn(async move {
+                crate::task::spawn(async move {
                     // Resolve page (optional — may be None if page already closed)
                     let page = if let Some(ref guid) = page_guid_owned {
                         connection.get_typed::<Page>(guid).await.ok()
@@ -304,7 +304,7 @@ impl ChannelOwner for BrowserContext {
                     let dialog_guid_owned = dialog_guid.to_string();
                     let ctx_dialog = self.dialog.clone();
 
-                    tokio::spawn(async move {
+                    crate::task::spawn(async move {
                         // Get and downcast the Dialog object
                         let dialog: crate::protocol::Dialog = match connection
                             .get_typed::<crate::protocol::Dialog>(&dialog_guid_owned)
@@ -340,7 +340,7 @@ impl ChannelOwner for BrowserContext {
                     let dialog_guid_owned = dialog_guid.to_string();
                     let ctx_dialog_closed = self.dialog_closed.clone();
 
-                    tokio::spawn(async move {
+                    crate::task::spawn(async move {
                         let Ok(dialog) = connection
                             .get_typed::<crate::protocol::Dialog>(&dialog_guid_owned)
                             .await
@@ -371,7 +371,7 @@ impl ChannelOwner for BrowserContext {
                     let binding_guid_owned = binding_guid.to_string();
                     let binding_callbacks = self.binding_callbacks.clone();
 
-                    tokio::spawn(async move {
+                    crate::task::spawn(async move {
                         let binding_call: crate::protocol::BindingCall = match connection
                             .get_typed::<crate::protocol::BindingCall>(&binding_guid_owned)
                             .await
@@ -426,7 +426,7 @@ impl ChannelOwner for BrowserContext {
                     let route_handlers = self.route_handlers.clone();
                     let request_context_guid = self.request_context_guid.clone();
 
-                    tokio::spawn(async move {
+                    crate::task::spawn(async move {
                         let route: Route =
                             match connection.get_typed::<Route>(&route_guid_owned).await {
                                 Ok(r) => r,
@@ -518,7 +518,7 @@ impl ChannelOwner for BrowserContext {
                 let connection = self.connection();
                 let ctx_console = self.console.clone();
 
-                tokio::spawn(async move {
+                crate::task::spawn(async move {
                     use crate::protocol::JSHandle;
                     use crate::protocol::console_message::{
                         ConsoleMessage, ConsoleMessageLocation,
@@ -576,7 +576,7 @@ impl ChannelOwner for BrowserContext {
                     let serviceworker_waiters = self.serviceworker_waiters.clone();
                     let service_workers_list = self.service_workers_list.clone();
 
-                    tokio::spawn(async move {
+                    crate::task::spawn(async move {
                         let worker: crate::protocol::Worker = match connection
                             .get_typed::<crate::protocol::Worker>(&worker_guid_owned)
                             .await
@@ -597,7 +597,7 @@ impl ChannelOwner for BrowserContext {
                         let handlers = serviceworker_handlers.lock().unwrap().clone();
                         for handler in handlers {
                             let worker_clone = worker.clone();
-                            tokio::spawn(async move {
+                            crate::task::spawn(async move {
                                 if let Err(e) = handler(worker_clone).await {
                                     tracing::error!("Error in serviceworker handler: {}", e);
                                 }
@@ -623,7 +623,7 @@ impl ChannelOwner for BrowserContext {
                     let wsr_guid_owned = wsr_guid.to_string();
                     let ws_route_handlers = self.ws_route_handlers.clone();
 
-                    tokio::spawn(async move {
+                    crate::task::spawn(async move {
                         let route: crate::protocol::WebSocketRoute = match connection
                             .get_typed::<crate::protocol::WebSocketRoute>(&wsr_guid_owned)
                             .await
@@ -641,7 +641,7 @@ impl ChannelOwner for BrowserContext {
                             if crate::protocol::route::matches_pattern(&entry.pattern, &url) {
                                 let handler = entry.handler.clone();
                                 let route_clone = route.clone();
-                                tokio::spawn(async move {
+                                crate::task::spawn(async move {
                                     let route_after = route_clone.clone();
                                     if let Err(e) = handler(route_clone).await {
                                         tracing::error!(

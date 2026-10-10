@@ -5,7 +5,6 @@ use crate::protocol::{Dialog, Download, Request, ResponseObject, WebSocket, Work
 use crate::server::channel_owner::ChannelOwner;
 use std::future::Future;
 use std::sync::Arc;
-use tracing::Instrument;
 
 /// Event subscriptions (`on_*`) and one-shot waiters (`expect_*`).
 impl Page {
@@ -476,19 +475,16 @@ impl Page {
 
                 // select: drop the registry receiver when the caller times
                 // out, or a stale FIFO waiter swallows the next event.
-                tokio::spawn(
-                    async move {
-                        tokio::select! {
-                            v = inner_rx => {
-                                if let Ok(v) = v {
-                                    let _ = tx.send(EventValue::Request(v));
-                                }
+                crate::task::spawn(async move {
+                    tokio::select! {
+                        v = inner_rx => {
+                            if let Ok(v) = v {
+                                let _ = tx.send(EventValue::Request(v));
                             }
-                            () = tx.closed() => {}
                         }
+                        () = tx.closed() => {}
                     }
-                    .in_current_span(),
-                );
+                });
 
                 Ok(crate::protocol::EventWaiter::new(rx, timeout_ms))
             }
@@ -500,19 +496,16 @@ impl Page {
                 let inner_rx = self.response.wait();
 
                 // select: see the "request" arm.
-                tokio::spawn(
-                    async move {
-                        tokio::select! {
-                            v = inner_rx => {
-                                if let Ok(v) = v {
-                                    let _ = tx.send(EventValue::Response(v));
-                                }
+                crate::task::spawn(async move {
+                    tokio::select! {
+                        v = inner_rx => {
+                            if let Ok(v) = v {
+                                let _ = tx.send(EventValue::Response(v));
                             }
-                            () = tx.closed() => {}
                         }
+                        () = tx.closed() => {}
                     }
-                    .in_current_span(),
-                );
+                });
 
                 Ok(crate::protocol::EventWaiter::new(rx, timeout_ms))
             }
@@ -522,19 +515,16 @@ impl Page {
                 let inner_rx = self.popup.wait();
 
                 // select: see the "request" arm.
-                tokio::spawn(
-                    async move {
-                        tokio::select! {
-                            v = inner_rx => {
-                                if let Ok(v) = v {
-                                    let _ = tx.send(EventValue::Page(v));
-                                }
+                crate::task::spawn(async move {
+                    tokio::select! {
+                        v = inner_rx => {
+                            if let Ok(v) = v {
+                                let _ = tx.send(EventValue::Page(v));
                             }
-                            () = tx.closed() => {}
                         }
+                        () = tx.closed() => {}
                     }
-                    .in_current_span(),
-                );
+                });
 
                 Ok(crate::protocol::EventWaiter::new(rx, timeout_ms))
             }
@@ -544,19 +534,16 @@ impl Page {
                 let inner_rx = self.download.wait();
 
                 // select: see the "request" arm.
-                tokio::spawn(
-                    async move {
-                        tokio::select! {
-                            v = inner_rx => {
-                                if let Ok(v) = v {
-                                    let _ = tx.send(EventValue::Download(v));
-                                }
+                crate::task::spawn(async move {
+                    tokio::select! {
+                        v = inner_rx => {
+                            if let Ok(v) = v {
+                                let _ = tx.send(EventValue::Download(v));
                             }
-                            () = tx.closed() => {}
                         }
+                        () = tx.closed() => {}
                     }
-                    .in_current_span(),
-                );
+                });
 
                 Ok(crate::protocol::EventWaiter::new(rx, timeout_ms))
             }
@@ -574,19 +561,16 @@ impl Page {
                 // event, starving the live waiter behind it. Dropping
                 // `inner_rx` the moment the outer receiver goes away lets the
                 // registry's dead-sender skip do its job.
-                tokio::spawn(
-                    async move {
-                        tokio::select! {
-                            v = inner_rx => {
-                                if let Ok(v) = v {
-                                    let _ = tx.send(EventValue::ConsoleMessage(v));
-                                }
+                crate::task::spawn(async move {
+                    tokio::select! {
+                        v = inner_rx => {
+                            if let Ok(v) = v {
+                                let _ = tx.send(EventValue::ConsoleMessage(v));
                             }
-                            () = tx.closed() => {}
                         }
+                        () = tx.closed() => {}
                     }
-                    .in_current_span(),
-                );
+                });
 
                 Ok(crate::protocol::EventWaiter::new(rx, timeout_ms))
             }
@@ -598,19 +582,16 @@ impl Page {
                 let inner_rx = self.filechooser.wait();
 
                 // select: see the "request" arm.
-                tokio::spawn(
-                    async move {
-                        tokio::select! {
-                            v = inner_rx => {
-                                if let Ok(v) = v {
-                                    let _ = tx.send(EventValue::FileChooser(v));
-                                }
+                crate::task::spawn(async move {
+                    tokio::select! {
+                        v = inner_rx => {
+                            if let Ok(v) = v {
+                                let _ = tx.send(EventValue::FileChooser(v));
                             }
-                            () = tx.closed() => {}
                         }
+                        () = tx.closed() => {}
                     }
-                    .in_current_span(),
-                );
+                });
 
                 Ok(crate::protocol::EventWaiter::new(rx, timeout_ms))
             }
@@ -620,17 +601,14 @@ impl Page {
                 let inner_rx = self.close.wait();
 
                 // select: see the "request" arm.
-                tokio::spawn(
-                    async move {
-                        tokio::select! {
-                            v = inner_rx => {
-                                if v.is_ok() { let _ = tx.send(EventValue::Close); }
-                            }
-                            () = tx.closed() => {}
+                crate::task::spawn(async move {
+                    tokio::select! {
+                        v = inner_rx => {
+                            if v.is_ok() { let _ = tx.send(EventValue::Close); }
                         }
+                        () = tx.closed() => {}
                     }
-                    .in_current_span(),
-                );
+                });
 
                 Ok(crate::protocol::EventWaiter::new(rx, timeout_ms))
             }
@@ -640,17 +618,14 @@ impl Page {
                 let inner_rx = self.load.wait();
 
                 // select: see the "request" arm.
-                tokio::spawn(
-                    async move {
-                        tokio::select! {
-                            v = inner_rx => {
-                                if v.is_ok() { let _ = tx.send(EventValue::Load); }
-                            }
-                            () = tx.closed() => {}
+                crate::task::spawn(async move {
+                    tokio::select! {
+                        v = inner_rx => {
+                            if v.is_ok() { let _ = tx.send(EventValue::Load); }
                         }
+                        () = tx.closed() => {}
                     }
-                    .in_current_span(),
-                );
+                });
 
                 Ok(crate::protocol::EventWaiter::new(rx, timeout_ms))
             }
@@ -660,17 +635,14 @@ impl Page {
                 let inner_rx = self.crash.wait();
 
                 // select: see the "request" arm.
-                tokio::spawn(
-                    async move {
-                        tokio::select! {
-                            v = inner_rx => {
-                                if v.is_ok() { let _ = tx.send(EventValue::Crash); }
-                            }
-                            () = tx.closed() => {}
+                crate::task::spawn(async move {
+                    tokio::select! {
+                        v = inner_rx => {
+                            if v.is_ok() { let _ = tx.send(EventValue::Crash); }
                         }
+                        () = tx.closed() => {}
                     }
-                    .in_current_span(),
-                );
+                });
 
                 Ok(crate::protocol::EventWaiter::new(rx, timeout_ms))
             }
@@ -680,17 +652,14 @@ impl Page {
                 let inner_rx = self.pageerror.wait();
 
                 // select: see the "request" arm.
-                tokio::spawn(
-                    async move {
-                        tokio::select! {
-                            msg = inner_rx => {
-                                if let Ok(msg) = msg { let _ = tx.send(EventValue::PageError(msg)); }
-                            }
-                            () = tx.closed() => {}
+                crate::task::spawn(async move {
+                    tokio::select! {
+                        msg = inner_rx => {
+                            if let Ok(msg) = msg { let _ = tx.send(EventValue::PageError(msg)); }
                         }
+                        () = tx.closed() => {}
                     }
-                    .in_current_span(),
-                );
+                });
 
                 Ok(crate::protocol::EventWaiter::new(rx, timeout_ms))
             }
@@ -700,17 +669,14 @@ impl Page {
                 let inner_rx = self.frameattached.wait();
 
                 // select: see the "request" arm.
-                tokio::spawn(
-                    async move {
-                        tokio::select! {
-                            v = inner_rx => {
-                                if let Ok(v) = v { let _ = tx.send(EventValue::Frame(v)); }
-                            }
-                            () = tx.closed() => {}
+                crate::task::spawn(async move {
+                    tokio::select! {
+                        v = inner_rx => {
+                            if let Ok(v) = v { let _ = tx.send(EventValue::Frame(v)); }
                         }
+                        () = tx.closed() => {}
                     }
-                    .in_current_span(),
-                );
+                });
 
                 Ok(crate::protocol::EventWaiter::new(rx, timeout_ms))
             }
@@ -720,17 +686,14 @@ impl Page {
                 let inner_rx = self.framedetached.wait();
 
                 // select: see the "request" arm.
-                tokio::spawn(
-                    async move {
-                        tokio::select! {
-                            v = inner_rx => {
-                                if let Ok(v) = v { let _ = tx.send(EventValue::Frame(v)); }
-                            }
-                            () = tx.closed() => {}
+                crate::task::spawn(async move {
+                    tokio::select! {
+                        v = inner_rx => {
+                            if let Ok(v) = v { let _ = tx.send(EventValue::Frame(v)); }
                         }
+                        () = tx.closed() => {}
                     }
-                    .in_current_span(),
-                );
+                });
 
                 Ok(crate::protocol::EventWaiter::new(rx, timeout_ms))
             }
@@ -740,17 +703,14 @@ impl Page {
                 let inner_rx = self.framenavigated.wait();
 
                 // select: see the "request" arm.
-                tokio::spawn(
-                    async move {
-                        tokio::select! {
-                            v = inner_rx => {
-                                if let Ok(v) = v { let _ = tx.send(EventValue::Frame(v)); }
-                            }
-                            () = tx.closed() => {}
+                crate::task::spawn(async move {
+                    tokio::select! {
+                        v = inner_rx => {
+                            if let Ok(v) = v { let _ = tx.send(EventValue::Frame(v)); }
                         }
+                        () = tx.closed() => {}
                     }
-                    .in_current_span(),
-                );
+                });
 
                 Ok(crate::protocol::EventWaiter::new(rx, timeout_ms))
             }
@@ -760,14 +720,11 @@ impl Page {
                 let (inner_tx, inner_rx) = oneshot::channel::<crate::protocol::Worker>();
                 self.worker_waiters.lock().unwrap().push(inner_tx);
 
-                tokio::spawn(
-                    async move {
-                        if let Ok(v) = inner_rx.await {
-                            let _ = tx.send(EventValue::Worker(v));
-                        }
+                crate::task::spawn(async move {
+                    if let Ok(v) = inner_rx.await {
+                        let _ = tx.send(EventValue::Worker(v));
                     }
-                    .in_current_span(),
-                );
+                });
 
                 Ok(crate::protocol::EventWaiter::new(rx, timeout_ms))
             }

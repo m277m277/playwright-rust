@@ -216,7 +216,7 @@ impl ChannelOwner for Debugger {
             let handlers = self.paused_handlers.lock().clone();
             for h in handlers {
                 let d = details.clone();
-                tokio::spawn(async move {
+                crate::task::spawn(async move {
                     if let Err(e) = h(d).await {
                         tracing::warn!("Debugger paused-state handler error: {}", e);
                     }

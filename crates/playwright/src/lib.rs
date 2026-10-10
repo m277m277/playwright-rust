@@ -230,13 +230,13 @@
 //! Event handlers never run inside the span of the call that registered
 //! them or of the operation that caused the event. Events arrive on the
 //! connection's read loop, which dispatches each message inside a
-//! `trace`-level `dispatch` span. Page-level handler tasks are spawned with
-//! `Instrument::in_current_span()` and inherit whatever span the read loop
-//! runs in: for a launched browser that is only the `dispatch` span (so
-//! nothing, under an `info` or `debug` filter); for one from
-//! `BrowserType::connect` it is the `connect` span, for the life of the
-//! connection. Context-level handlers and a few other spawn sites inherit
-//! no span at all. Correlate a handler with the
+//! `trace`-level `dispatch` span. Handler tasks, page-level and
+//! context-level alike, are spawned with `Instrument::in_current_span()`
+//! and inherit that span and nothing else, so under an `info` or `debug`
+//! filter a handler has no parent span. The read loop itself starts with no
+//! span, for a launched browser and one from `BrowserType::connect` alike,
+//! so it never holds the caller's span open, and neither do the driver's
+//! stderr reader and the SIGINT listener. Correlate a handler with the
 //! operation that triggered it by `guid` or `url`, not by span parentage.
 //!
 //! Levels: top-level user operations (`goto`, `click`, `fill`, `screenshot`,
@@ -263,6 +263,7 @@ pub mod api;
 mod assertions;
 mod error;
 pub mod protocol;
+mod task;
 pub mod testing;
 mod tty_guard;
 

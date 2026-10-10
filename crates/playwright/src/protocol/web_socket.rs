@@ -314,7 +314,7 @@ impl WebSocket {
         let handlers = self.handlers.lock().unwrap().clone();
         for handler in handlers {
             let event = ws_event.clone();
-            tokio::spawn(async move {
+            crate::task::spawn(async move {
                 let _ = handler(event).await;
             });
         }

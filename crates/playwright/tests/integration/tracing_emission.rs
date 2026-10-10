@@ -135,23 +135,78 @@ async fn test_tracing_trace_spans_cover_rpc_layer() {
 }
 
 #[tokio::test]
-async fn test_tracing_spawn_propagation_keeps_user_span_as_parent() {
-    let (cap, _guard) = install_subscriber("playwright_rs=info,tracing_emission_test=info");
-    let (_pw, browser, page) = crate::common::setup().await;
+async fn a_span_around_launch_closes_when_the_caller_drops_it() {
+    use tracing::Instrument;
 
-    let user_span = tracing::info_span!(target: "tracing_emission_test", "user_workflow");
-    let _enter = user_span.enter();
-
-    page.goto("data:text/html,<h1>parent-span</h1>", None)
-        .await
-        .expect("goto failed");
-
-    drop(_enter);
-    browser.close().await.expect("close failed");
+    let (cap, _guard) = install_subscriber("tracing_emission_test=info");
+    let span = tracing::info_span!(target: "tracing_emission_test", "around_launch");
+    let (_pw, browser, _page) = crate::common::setup().instrument(span).await;
 
     let out = cap.dump();
+    browser.close().await.expect("close failed");
+
     assert!(
-        out.contains("user_workflow"),
-        "expected the user_workflow span to appear in nested output:\n{out}"
+        out.lines()
+            .any(|l| l.contains("around_launch") && l.contains(" close ")),
+        "a task started by launch is still holding the caller's span open:\n{out}"
     );
+}
+
+/// Enables only the read loop's `dispatch` span (and its events), so a
+/// handler that inherits any span at all can only have inherited that one.
+const DISPATCH_ONLY: &str = "playwright_rs::server::connection=trace";
+
+type SeenSpan = Arc<Mutex<Option<Option<&'static str>>>>;
+
+fn record_current_span(seen: &SeenSpan) {
+    *seen.lock() = Some(tracing::Span::current().metadata().map(|m| m.name()));
+}
+
+#[tokio::test]
+async fn page_close_handler_runs_inside_the_dispatch_span() {
+    let (_cap, _guard) = install_subscriber(DISPATCH_ONLY);
+    let (_pw, browser, page) = crate::common::setup().await;
+
+    let seen = SeenSpan::default();
+    let sink = seen.clone();
+    page.on_close(move || {
+        let sink = sink.clone();
+        async move {
+            record_current_span(&sink);
+            Ok(())
+        }
+    })
+    .await
+    .expect("on_close failed");
+
+    page.close().await.expect("page close failed");
+    crate::common::poll_until(std::time::Duration::from_secs(5), || seen.lock().is_some()).await;
+    browser.close().await.expect("close failed");
+
+    assert_eq!(*seen.lock(), Some(Some("dispatch")));
+}
+
+#[tokio::test]
+async fn context_page_handler_runs_inside_the_dispatch_span() {
+    let (_cap, _guard) = install_subscriber(DISPATCH_ONLY);
+    let (_pw, browser, context) = crate::common::setup_context().await;
+
+    let seen = SeenSpan::default();
+    let sink = seen.clone();
+    context
+        .on_page(move |_page| {
+            let sink = sink.clone();
+            async move {
+                record_current_span(&sink);
+                Ok(())
+            }
+        })
+        .await
+        .expect("on_page failed");
+
+    context.new_page().await.expect("new_page failed");
+    crate::common::poll_until(std::time::Duration::from_secs(5), || seen.lock().is_some()).await;
+    browser.close().await.expect("close failed");
+
+    assert_eq!(*seen.lock(), Some(Some("dispatch")));
 }
