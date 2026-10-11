@@ -1,6 +1,7 @@
 // playwright.request — public APIRequest for headless API testing
 
 use playwright_rs::protocol::Playwright;
+use playwright_rs::protocol::{ClearCookiesOptions, Cookie};
 use playwright_rs::{APIRequestContextOptions, APIResponse};
 
 use crate::test_server::TestServer;
@@ -265,4 +266,190 @@ async fn api_request_context_sends_credentials_up_front() -> Result<(), Box<dyn 
     browser.close().await?;
     server.shutdown();
     Ok(())
+}
+
+async fn cookie_header_sent(
+    ctx: &playwright_rs::protocol::APIRequestContext,
+    url: &str,
+) -> Option<String> {
+    let echoed: serde_json::Value = ctx
+        .get(url, None)
+        .await
+        .expect("GET")
+        .json()
+        .await
+        .expect("echo json");
+    echoed["headers"]["cookie"].as_str().map(str::to_owned)
+}
+
+fn names(cookies: &[Cookie]) -> Vec<&str> {
+    cookies.iter().map(|c| c.name.as_str()).collect()
+}
+
+#[tokio::test]
+async fn request_context_cookies_are_added_read_and_sent() {
+    let server = TestServer::start().await;
+    let playwright = Playwright::launch().await.expect("launch");
+    let ctx = playwright
+        .request()
+        .new_context(None)
+        .await
+        .expect("context");
+
+    ctx.add_cookies(&[
+        Cookie::new("a", "b").url(format!("{}/empty.html", server.url())),
+        Cookie::new("c", "d")
+            .domain("127.0.0.1")
+            .path("/api")
+            .http_only(true)
+            .same_site("Strict"),
+        Cookie::new("e", "f").domain("other.com"),
+    ])
+    .await
+    .expect("add_cookies");
+
+    let echo = format!("{}/api/echo-request", server.url());
+    assert_eq!(
+        cookie_header_sent(&ctx, &echo).await.as_deref(),
+        Some("a=b; c=d")
+    );
+
+    let all = ctx.cookies(None).await.expect("cookies");
+    assert_eq!(names(&all), ["a", "c", "e"]);
+    let c = &all[1];
+    assert_eq!(
+        (c.path.as_str(), c.http_only, c.same_site.as_deref()),
+        ("/api", true, Some("Strict"))
+    );
+    assert_eq!(
+        all[0].same_site.as_deref(),
+        Some("Lax"),
+        "sameSite defaults to Lax"
+    );
+    assert_eq!(
+        names(
+            &ctx.cookies(Some(&[&format!("{}/empty.html", server.url())]))
+                .await
+                .unwrap()
+        ),
+        ["a"]
+    );
+    assert_eq!(
+        names(&ctx.cookies(Some(&[&echo])).await.unwrap()),
+        ["a", "c"]
+    );
+    assert!(
+        ctx.cookies(Some(&["http://nowhere.test/"]))
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
+    let err = ctx
+        .add_cookies(&[Cookie::new("a", "b")])
+        .await
+        .expect_err("a cookie needs a url or a domain");
+    assert!(
+        err.to_string()
+            .contains("Cookie should have a url or a domain/path pair"),
+        "{err}"
+    );
+
+    ctx.clear_cookies(None).await.expect("clear all");
+    assert!(ctx.cookies(None).await.unwrap().is_empty());
+    assert_eq!(cookie_header_sent(&ctx, &echo).await, None);
+
+    ctx.dispose().await.expect("dispose");
+    server.shutdown();
+}
+
+#[tokio::test]
+async fn request_context_clear_cookies_filters_by_string_and_regex() {
+    let playwright = Playwright::launch().await.expect("launch");
+    let ctx = playwright
+        .request()
+        .new_context(None)
+        .await
+        .expect("context");
+    ctx.add_cookies(&[
+        Cookie::new("session", "1").domain("one.com"),
+        Cookie::new("session", "2").domain("two.com"),
+        Cookie::new("session", "3").domain("two.com").path("/api"),
+        Cookie::new("other", "4").domain("one.com"),
+    ])
+    .await
+    .expect("add_cookies");
+    let values = || async {
+        let mut values: Vec<String> = ctx
+            .cookies(None)
+            .await
+            .expect("cookies")
+            .into_iter()
+            .map(|c| c.value)
+            .collect();
+        values.sort();
+        values
+    };
+
+    ctx.clear_cookies(
+        ClearCookiesOptions::default()
+            .name("session")
+            .domain("two.com")
+            .path("/api"),
+    )
+    .await
+    .expect("clear by strings");
+    assert_eq!(values().await, ["1", "2", "4"]);
+    ctx.clear_cookies(ClearCookiesOptions::default().domain_regex(r"one\.com$", ""))
+        .await
+        .expect("clear by domain regex");
+    assert_eq!(values().await, ["2"]);
+    ctx.clear_cookies(ClearCookiesOptions::default().name_regex("^SESS", "i"))
+        .await
+        .expect("clear by name regex with a flag");
+    assert!(values().await.is_empty());
+
+    ctx.dispose().await.expect("dispose");
+}
+
+#[tokio::test]
+async fn a_browser_context_request_shares_the_context_cookie_jar() {
+    let server = TestServer::start().await;
+    let (_pw, browser, context) = crate::common::setup_context().await;
+    let request = context.request().await.expect("context request");
+    let url = format!("{}/", server.url());
+
+    request
+        .add_cookies(&[Cookie::new("shared", "yes").url(url.clone())])
+        .await
+        .expect("add through the request context");
+    let from_context = context
+        .cookies(Some(&[&url]))
+        .await
+        .expect("context cookies");
+    assert_eq!(names(&from_context), ["shared"]);
+    assert_eq!(
+        names(
+            &request
+                .cookies(Some(&[&url]))
+                .await
+                .expect("request cookies")
+        ),
+        names(&from_context)
+    );
+
+    request
+        .clear_cookies(None)
+        .await
+        .expect("clear through the request context");
+    assert!(
+        context
+            .cookies(None)
+            .await
+            .expect("context cookies")
+            .is_empty()
+    );
+
+    browser.close().await.expect("close");
+    server.shutdown();
 }

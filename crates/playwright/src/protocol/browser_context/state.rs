@@ -162,11 +162,9 @@ impl BrowserContext {
         options: impl Into<Option<ClearCookiesOptions>>,
     ) -> Result<()> {
         let options = options.into();
-        let params = match options {
-            None => serde_json::json!({}),
-            Some(opts) => serde_json::to_value(opts).unwrap_or(serde_json::json!({})),
-        };
-        self.channel().send_no_result("clearCookies", params).await
+        self.channel()
+            .send_no_result("clearCookies", options.unwrap_or_default())
+            .await
     }
 
     /// Sets extra HTTP headers that will be sent with every request from this context.
@@ -425,9 +423,16 @@ pub struct Cookie {
     pub name: String,
     /// Cookie value
     pub value: String,
+    /// The URL a cookie being added applies to, in place of `domain` and
+    /// `path`: the driver derives both, and `secure`, from it. Never set on
+    /// a cookie read back from a context.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
     /// Cookie domain (use dot prefix for subdomain matching, e.g., ".example.com")
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub domain: String,
     /// Cookie path
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub path: String,
     /// Unix timestamp in seconds; -1 for session cookies
     pub expires: f64,
@@ -442,11 +447,13 @@ pub struct Cookie {
 
 impl Cookie {
     /// Create a session cookie (no expiry) with the given name and value.
-    /// Set `domain`+`path` (or serve it for a URL) before adding it.
+    /// Set a [`url`](Self::url), or a [`domain`](Self::domain) (the path
+    /// defaults to `/`), before adding it.
     pub fn new(name: impl Into<String>, value: impl Into<String>) -> Self {
         Self {
             name: name.into(),
             value: value.into(),
+            url: None,
             domain: String::new(),
             path: "/".to_string(),
             expires: -1.0,
@@ -455,14 +462,25 @@ impl Cookie {
             same_site: None,
         }
     }
+    /// The URL the cookie applies to, in place of a domain and path. Clears
+    /// both, since the driver rejects a cookie that has a URL and either, and
+    /// setting a domain or path afterwards clears the URL in turn.
+    pub fn url(mut self, url: impl Into<String>) -> Self {
+        self.url = Some(url.into());
+        self.domain.clear();
+        self.path.clear();
+        self
+    }
     /// Cookie domain (e.g. "example.com").
     pub fn domain(mut self, domain: impl Into<String>) -> Self {
         self.domain = domain.into();
+        self.url = None;
         self
     }
     /// Cookie path.
     pub fn path(mut self, path: impl Into<String>) -> Self {
         self.path = path.into();
+        self.url = None;
         self
     }
     /// Expiry as Unix time in seconds (-1 for a session cookie).
@@ -633,6 +651,15 @@ impl StorageStateOptions {
 /// Options for filtering which cookies to clear with `BrowserContext::clear_cookies()`.
 ///
 /// All fields are optional; when provided they act as AND-combined filters.
+/// Each of name, domain, and path filters by an exact string or by a regular
+/// expression, whichever was set last. A regular expression is matched by the
+/// driver as JavaScript, so its source is JavaScript regex syntax and its
+/// flags are JavaScript flags (`"i"`, `"m"`, `"s"`, `"u"`).
+///
+/// Used by both
+/// [`BrowserContext::clear_cookies`](crate::protocol::BrowserContext::clear_cookies)
+/// and
+/// [`APIRequestContext::clear_cookies`](crate::protocol::APIRequestContext::clear_cookies).
 ///
 /// See: <https://playwright.dev/docs/api/class-browsercontext#browser-context-clear-cookies>
 #[derive(Debug, Clone, Default, Serialize)]
@@ -642,28 +669,76 @@ pub struct ClearCookiesOptions {
     /// Filter by cookie name (exact match).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// Filter by cookie name with a regular expression: its source.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name_regex_source: Option<String>,
+    /// Flags for [`name_regex_source`](Self::name_regex_source).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name_regex_flags: Option<String>,
     /// Filter by cookie domain.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub domain: Option<String>,
+    /// Filter by cookie domain with a regular expression: its source.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub domain_regex_source: Option<String>,
+    /// Flags for [`domain_regex_source`](Self::domain_regex_source).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub domain_regex_flags: Option<String>,
     /// Filter by cookie path.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
+    /// Filter by cookie path with a regular expression: its source.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path_regex_source: Option<String>,
+    /// Flags for [`path_regex_source`](Self::path_regex_source).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path_regex_flags: Option<String>,
 }
 
 impl ClearCookiesOptions {
     /// Only clear cookies with this name.
     pub fn name(mut self, name: impl Into<String>) -> Self {
         self.name = Some(name.into());
+        self.name_regex_source = None;
+        self.name_regex_flags = None;
+        self
+    }
+    /// Only clear cookies whose name matches the JavaScript regular
+    /// expression `source` with `flags` (`""` for none).
+    pub fn name_regex(mut self, source: impl Into<String>, flags: impl Into<String>) -> Self {
+        self.name = None;
+        self.name_regex_source = Some(source.into());
+        self.name_regex_flags = Some(flags.into());
         self
     }
     /// Only clear cookies for this domain.
     pub fn domain(mut self, domain: impl Into<String>) -> Self {
         self.domain = Some(domain.into());
+        self.domain_regex_source = None;
+        self.domain_regex_flags = None;
+        self
+    }
+    /// Only clear cookies whose domain matches the JavaScript regular
+    /// expression `source` with `flags` (`""` for none).
+    pub fn domain_regex(mut self, source: impl Into<String>, flags: impl Into<String>) -> Self {
+        self.domain = None;
+        self.domain_regex_source = Some(source.into());
+        self.domain_regex_flags = Some(flags.into());
         self
     }
     /// Only clear cookies for this path.
     pub fn path(mut self, path: impl Into<String>) -> Self {
         self.path = Some(path.into());
+        self.path_regex_source = None;
+        self.path_regex_flags = None;
+        self
+    }
+    /// Only clear cookies whose path matches the JavaScript regular
+    /// expression `source` with `flags` (`""` for none).
+    pub fn path_regex(mut self, source: impl Into<String>, flags: impl Into<String>) -> Self {
+        self.path = None;
+        self.path_regex_source = Some(source.into());
+        self.path_regex_flags = Some(flags.into());
         self
     }
 }
@@ -691,6 +766,83 @@ impl GrantPermissionsOptions {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_cookie_for_a_url_sends_the_url_instead_of_a_domain_and_path() {
+        let sent =
+            serde_json::to_value(Cookie::new("a", "b").url("http://localhost:8080/app")).unwrap();
+        assert_eq!(sent["url"], "http://localhost:8080/app");
+        assert!(sent.get("domain").is_none(), "{sent}");
+        assert!(sent.get("path").is_none(), "{sent}");
+
+        let scoped = serde_json::to_value(
+            Cookie::new("a", "b")
+                .url("http://localhost:8080/app")
+                .domain("example.com")
+                .path("/"),
+        )
+        .unwrap();
+        assert_eq!(
+            (scoped["domain"].as_str(), scoped["path"].as_str()),
+            (Some("example.com"), Some("/"))
+        );
+        assert!(scoped.get("url").is_none(), "{scoped}");
+    }
+
+    #[test]
+    fn clear_cookies_filters_send_a_string_or_a_regex_under_the_driver_spelling() {
+        use crate::protocol_spec::{
+            API_REQUEST_CONTEXT, BROWSER_CONTEXT, command_parameters, keys,
+        };
+
+        let options = ClearCookiesOptions::default()
+            .name_regex("^sess", "")
+            .domain_regex(r"one\.com$", "i")
+            .path("/app");
+        let sent = serde_json::to_value(&options).unwrap();
+        assert_eq!(
+            sent,
+            serde_json::json!({
+                "nameRegexSource": "^sess",
+                "nameRegexFlags": "",
+                "domainRegexSource": "one\\.com$",
+                "domainRegexFlags": "i",
+                "path": "/app"
+            })
+        );
+        assert!(keys(&sent).is_subset(&command_parameters(BROWSER_CONTEXT, "clearCookies")));
+        assert!(keys(&sent).is_subset(&command_parameters(API_REQUEST_CONTEXT, "clearCookies")));
+    }
+
+    #[test]
+    fn a_clear_cookies_filter_is_a_string_or_a_regex_whichever_was_set_last() {
+        let regex_then_string = ClearCookiesOptions::default()
+            .name_regex("^sess", "")
+            .domain_regex("x", "")
+            .path_regex("y", "")
+            .name("sid")
+            .domain("example.com")
+            .path("/");
+        assert_eq!(
+            serde_json::to_value(&regex_then_string).unwrap(),
+            serde_json::json!({"name": "sid", "domain": "example.com", "path": "/"})
+        );
+        let string_then_regex = ClearCookiesOptions::default()
+            .name("sid")
+            .domain("example.com")
+            .path("/")
+            .name_regex("^sess", "")
+            .domain_regex("x", "")
+            .path_regex("y", "m");
+        assert_eq!(
+            serde_json::to_value(&string_then_regex).unwrap(),
+            serde_json::json!({
+                "nameRegexSource": "^sess", "nameRegexFlags": "",
+                "domainRegexSource": "x", "domainRegexFlags": "",
+                "pathRegexSource": "y", "pathRegexFlags": "m"
+            })
+        );
+    }
 
     #[test]
     fn storage_state_options_serialize_with_protocol_casing() {

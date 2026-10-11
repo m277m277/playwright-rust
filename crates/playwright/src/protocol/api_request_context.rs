@@ -227,6 +227,68 @@ impl APIRequestContext {
         })
     }
 
+    /// Adds cookies to this request context's cookie jar. For the context
+    /// a `BrowserContext` or `Page` exposes through `request()`, that is the
+    /// browser context's jar, so the cookies reach its pages too.
+    ///
+    /// Each cookie needs a `url`, or a `domain` and `path`.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if a cookie has neither a `url` nor a `domain` and
+    /// `path`, or the context has been disposed.
+    ///
+    /// See: <https://playwright.dev/docs/api/class-apirequestcontext#api-request-context-add-cookies>
+    #[tracing::instrument(level = "debug", skip_all, fields(count = cookies.len()))]
+    pub async fn add_cookies(&self, cookies: &[crate::protocol::Cookie]) -> Result<()> {
+        self.base
+            .channel()
+            .send_no_result("addCookies", json!({ "cookies": cookies }))
+            .await
+    }
+
+    /// Returns the cookies in this request context's jar, filtered to those
+    /// that apply to `urls` when given.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the context has been disposed.
+    ///
+    /// See: <https://playwright.dev/docs/api/class-apirequestcontext#api-request-context-cookies>
+    #[tracing::instrument(level = "debug", skip_all, fields(count = tracing::field::Empty))]
+    pub async fn cookies(&self, urls: Option<&[&str]>) -> Result<Vec<crate::protocol::Cookie>> {
+        #[derive(serde::Deserialize)]
+        struct CookiesResponse {
+            cookies: Vec<crate::protocol::Cookie>,
+        }
+        let response: CookiesResponse = self
+            .base
+            .channel()
+            .send("cookies", json!({ "urls": urls.unwrap_or(&[]) }))
+            .await?;
+        tracing::Span::current().record("count", response.cookies.len());
+        Ok(response.cookies)
+    }
+
+    /// Removes cookies from this request context's jar: all of them, or those
+    /// matching every filter set in `options`.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the context has been disposed.
+    ///
+    /// See: <https://playwright.dev/docs/api/class-apirequestcontext#api-request-context-clear-cookies>
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub async fn clear_cookies(
+        &self,
+        options: impl Into<Option<crate::protocol::ClearCookiesOptions>>,
+    ) -> Result<()> {
+        self.base
+            .channel()
+            .send_no_result("clearCookies", options.into().unwrap_or_default())
+            .await
+    }
+
     /// Disposes this `APIRequestContext`, freeing server resources.
     ///
     /// After calling `dispose()`, the context cannot be used for further requests.

@@ -442,6 +442,7 @@ mod tests {
         let cookie = |name: &str, value: &str| Cookie {
             name: name.to_string(),
             value: value.to_string(),
+            url: None,
             domain: "app.test".to_string(),
             path: "/".to_string(),
             expires: -1.0,
