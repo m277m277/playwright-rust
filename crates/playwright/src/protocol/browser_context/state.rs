@@ -743,7 +743,7 @@ mod tests {
         // save/load through JSON preserves credential content, not just
         // count.
         // Exactly the driver's VirtualCredential schema: five required
-        // string fields.
+        // string fields and the signature counter.
         let json = serde_json::json!({
             "cookies": [],
             "origins": [],
@@ -752,7 +752,8 @@ mod tests {
                 "rpId": "example.com",
                 "userHandle": "dXNlcg",
                 "privateKey": "cGtleQ",
-                "publicKey": "cHVi"
+                "publicKey": "cHVi",
+                "signCount": 43
             }]
         });
         let state: StorageState = serde_json::from_value(json.clone()).unwrap();

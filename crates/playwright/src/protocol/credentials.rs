@@ -47,6 +47,12 @@ pub struct VirtualCredential {
     /// Base64url-encoded public key.
     #[serde(default)]
     pub public_key: String,
+    /// The signature counter, which each assertion increments. A relying
+    /// party that checks it rejects one that goes backwards, so a storage
+    /// state carries it. Defaults to 0 when reading a state saved without
+    /// one.
+    #[serde(default)]
+    pub sign_count: u32,
 }
 
 /// Optional fields for [`Credentials::create`]. When omitted, the authenticator
@@ -62,6 +68,8 @@ pub struct CredentialsCreateOptions {
     pub private_key: Option<String>,
     /// Base64url public key to import.
     pub public_key: Option<String>,
+    /// Initial signature counter. The authenticator starts at 0 otherwise.
+    pub sign_count: Option<u32>,
 }
 
 impl CredentialsCreateOptions {
@@ -83,6 +91,11 @@ impl CredentialsCreateOptions {
     /// Import a specific public key (base64url).
     pub fn public_key(mut self, public_key: impl Into<String>) -> Self {
         self.public_key = Some(public_key.into());
+        self
+    }
+    /// Start the signature counter at `sign_count`.
+    pub fn sign_count(mut self, sign_count: u32) -> Self {
+        self.sign_count = Some(sign_count);
         self
     }
 }
@@ -175,6 +188,9 @@ impl Credentials {
             }
             if let Some(pk) = o.public_key {
                 params["publicKey"] = json!(pk);
+            }
+            if let Some(count) = o.sign_count {
+                params["signCount"] = json!(count);
             }
         }
         #[derive(serde::Deserialize)]
