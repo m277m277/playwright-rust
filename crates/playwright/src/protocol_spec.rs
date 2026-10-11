@@ -22,6 +22,7 @@ pub(crate) const BROWSER_TYPE: &str = spec_file!("browserType.yml");
 pub(crate) const FRAME: &str = spec_file!("frame.yml");
 pub(crate) const BROWSER_CONTEXT: &str = spec_file!("browserContext.yml");
 pub(crate) const API_REQUEST_CONTEXT: &str = spec_file!("api.yml");
+pub(crate) const PAGE: &str = spec_file!("page.yml");
 
 /// The parameter names `command` declares in `spec`, its `$mixin` entries
 /// expanded from `mixins.yml`. Panics if the command or a mixin is missing,
@@ -56,8 +57,43 @@ pub(crate) fn command_parameters(spec: &str, command: &str) -> BTreeSet<String> 
     parameters
 }
 
+/// The property names of the object-typed `property` of the top-level mixin
+/// `mixin` in `mixins.yml`, such as `recordVideo` in `ContextOptions`: its own
+/// children only, with a `$mixin` among them expanded, and not the children of
+/// a nested object. Panics if either is missing.
+pub(crate) fn nested_properties(mixin: &str, property: &str) -> BTreeSet<String> {
+    let mut lines = MIXINS.lines();
+    lines
+        .by_ref()
+        .find(|line| *line == format!("{mixin}:"))
+        .unwrap_or_else(|| panic!("no mixin `{mixin}` in mixins.yml"));
+    lines
+        .by_ref()
+        .take_while(|line| line.trim().is_empty() || indent(line) > 0)
+        .find(|line| *line == format!("    {property}:"))
+        .unwrap_or_else(|| panic!("no property `{property}` in mixin `{mixin}`"));
+    let mut properties = BTreeSet::new();
+    for line in lines {
+        if !line.trim().is_empty() && indent(line) <= 4 {
+            break;
+        }
+        if indent(line) != 8 {
+            continue;
+        }
+        let Some((key, value)) = line.trim().split_once(':') else {
+            continue;
+        };
+        if key.starts_with("$mixin") {
+            properties.extend(mixin_properties(value.trim()));
+        } else {
+            properties.insert(key.to_string());
+        }
+    }
+    properties
+}
+
 /// The property names of the top-level mixin `name` in `mixins.yml`.
-fn mixin_properties(name: &str) -> BTreeSet<String> {
+pub(crate) fn mixin_properties(name: &str) -> BTreeSet<String> {
     let mut lines = MIXINS.lines();
     lines
         .by_ref()

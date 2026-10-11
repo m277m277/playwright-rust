@@ -163,7 +163,8 @@ pub use route::{
 };
 pub use screencast::{
     ActionCursor, ActionPosition, ChapterOptions, OverlayId, Screencast, ScreencastFrame,
-    ScreencastSize, ScreencastStartOptions, ShowActionsOptions, ShowOverlayOptions,
+    ScreencastSize, ScreencastStartOptions, ShowActionsOptions, ShowActionsStyle,
+    ShowOverlayOptions,
 };
 pub use screenshot::{Animations, Caret, Scale, ScreenshotClip, ScreenshotOptions, ScreenshotType};
 pub use select_option::SelectOption;

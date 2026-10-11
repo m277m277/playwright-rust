@@ -238,3 +238,73 @@ async fn test_screencast_overlay_and_chapter_calls_succeed() {
     screencast.stop().await.expect("stop failed");
     browser.close().await.expect("Failed to close browser");
 }
+
+#[tokio::test]
+async fn a_screencast_records_at_a_frame_rate_and_refuses_a_zero_one() {
+    let (_pw, browser, page) = crate::common::setup().await;
+    page.set_content("<body>recorded</body>", None)
+        .await
+        .expect("set_content");
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("fps.webm");
+
+    let err = page
+        .screencast()
+        .start(ScreencastStartOptions::default().path(path.clone()).fps(0))
+        .await
+        .expect_err("a zero frame rate is refused");
+    assert!(
+        err.to_string()
+            .contains(r#""fps" must be a positive number, got 0"#),
+        "{err}"
+    );
+
+    page.screencast()
+        .start(ScreencastStartOptions::default().path(path.clone()).fps(60))
+        .await
+        .expect("start at 60 fps");
+    page.evaluate_value("new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))")
+        .await
+        .expect("wait for two frames");
+    page.screencast().stop().await.expect("stop");
+    assert!(std::fs::metadata(&path).expect("recorded file").len() > 0);
+
+    browser.close().await.expect("close");
+}
+
+#[tokio::test]
+async fn show_actions_with_a_style_still_lets_actions_run() {
+    let (_pw, browser, page) = crate::common::setup().await;
+    page.set_content(
+        "<button onclick=\"window.result = 'Clicked'\">Click</button>",
+        None,
+    )
+    .await
+    .expect("set_content");
+    let screencast = page.screencast();
+    screencast
+        .start(ScreencastStartOptions::default())
+        .await
+        .expect("start");
+    screencast
+        .show_actions(
+            ShowActionsOptions::default().style(
+                playwright_rs::ShowActionsStyle::default()
+                    .point("width: 20px; height: 20px; background: red")
+                    .highlight("outline: 2px solid #333")
+                    .title("font-size: 16px"),
+            ),
+        )
+        .await
+        .expect("show_actions with a style");
+
+    page.locator("button").click(None).await.expect("click");
+    let result: String = page
+        .evaluate("() => window.result", None::<&()>)
+        .await
+        .expect("result");
+    assert_eq!(result, "Clicked");
+
+    screencast.stop().await.expect("stop");
+    browser.close().await.expect("close");
+}

@@ -85,6 +85,7 @@ impl RecordHar {
 ///
 /// See: <https://playwright.dev/docs/api/class-browser#browser-new-context-option-record-video>
 #[derive(Debug, Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub struct RecordVideo {
     /// Path to the directory to put videos into.
@@ -92,6 +93,15 @@ pub struct RecordVideo {
     /// Optional dimensions of the recorded videos.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub size: Option<Viewport>,
+    /// Frame rate of the recorded videos. Must be positive. Firefox and
+    /// WebKit capture at most 25 frames per second.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fps: Option<u32>,
+    /// Decorate each action in the recorded videos, as
+    /// [`Screencast::show_actions`](crate::protocol::Screencast::show_actions)
+    /// does for a screencast.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub show_actions: Option<crate::protocol::ShowActionsOptions>,
 }
 
 impl RecordVideo {
@@ -99,12 +109,22 @@ impl RecordVideo {
     pub fn new(dir: impl Into<String>) -> Self {
         Self {
             dir: dir.into(),
-            size: None,
+            ..Self::default()
         }
     }
     /// Recorded video size.
     pub fn size(mut self, size: Viewport) -> Self {
         self.size = Some(size);
+        self
+    }
+    /// Recorded video frame rate.
+    pub fn fps(mut self, fps: u32) -> Self {
+        self.fps = Some(fps);
+        self
+    }
+    /// Decorate each action in the recorded videos.
+    pub fn show_actions(mut self, show_actions: crate::protocol::ShowActionsOptions) -> Self {
+        self.show_actions = Some(show_actions);
         self
     }
 }
@@ -873,7 +893,9 @@ mod tests {
 
     #[test]
     fn every_key_sent_is_a_parameter_the_driver_declares() {
-        use crate::protocol_spec::{BROWSER, BROWSER_TYPE, command_parameters, keys};
+        use crate::protocol_spec::{
+            BROWSER, BROWSER_TYPE, command_parameters, keys, mixin_properties, nested_properties,
+        };
 
         // A literal with no `..Default::default()`, so a new field fails to
         // compile here until it is added and checked.
@@ -929,10 +951,26 @@ mod tests {
             forced_colors: Some(String::new()),
             service_workers: Some(String::new()),
             record_har: Some(RecordHar::new("h.har")),
-            record_video: Some(RecordVideo::new("videos")),
+            record_video: Some(
+                RecordVideo::new("videos")
+                    .size(Viewport {
+                        width: 1,
+                        height: 1,
+                    })
+                    .fps(30)
+                    .show_actions(
+                        crate::protocol::ShowActionsOptions::default()
+                            .duration(1.0)
+                            .style(crate::protocol::ShowActionsStyle::default().title("x")),
+                    ),
+            ),
         };
 
-        let sent = keys(&serde_json::to_value(&options).unwrap());
+        let value = serde_json::to_value(&options).unwrap();
+        let video = &value["recordVideo"];
+        assert!(keys(video).is_subset(&nested_properties("ContextOptions", "recordVideo")));
+        assert!(keys(&video["showActions"]).is_subset(&mixin_properties("ShowActionsOptions")));
+        let sent = keys(&value);
         let mut declared = command_parameters(BROWSER, "newContext");
         declared.extend(command_parameters(BROWSER_TYPE, "launchPersistentContext"));
         let undeclared: Vec<&str> = sent

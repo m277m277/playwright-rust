@@ -876,3 +876,46 @@ async fn test_page_video_save_as() -> Result<(), Box<dyn std::error::Error>> {
     browser.close().await?;
     Ok(())
 }
+
+#[tokio::test]
+async fn a_context_records_video_at_a_frame_rate_and_refuses_a_zero_one() {
+    use playwright_rs::protocol::{BrowserContextOptions, RecordVideo};
+    let (_pw, browser, _page) = crate::common::setup().await;
+    let temp = tempfile::tempdir().expect("tempdir");
+    let dir = temp.path().to_str().expect("utf-8 path").to_string();
+
+    let err = browser
+        .new_context_with_options(
+            BrowserContextOptions::builder()
+                .record_video(RecordVideo::new(dir.clone()).fps(0))
+                .build(),
+        )
+        .await
+        .expect_err("a zero frame rate is refused");
+    assert!(
+        err.to_string()
+            .contains(r#""recordVideo.fps" must be a positive number, got 0"#),
+        "{err}"
+    );
+
+    let context = browser
+        .new_context_with_options(
+            BrowserContextOptions::builder()
+                .record_video(RecordVideo::new(dir).fps(60))
+                .build(),
+        )
+        .await
+        .expect("context recording at 60 fps");
+    let page = context.new_page().await.expect("page");
+    page.set_content("<h1>fps</h1>", None)
+        .await
+        .expect("set_content");
+    let video = page.video().expect("video");
+    page.close().await.expect("close page");
+    let saved = temp.path().join("saved.webm");
+    video.save_as(&saved).await.expect("save video");
+    assert!(std::fs::metadata(&saved).expect("video file").len() > 0);
+
+    context.close().await.expect("close context");
+    browser.close().await.expect("close");
+}

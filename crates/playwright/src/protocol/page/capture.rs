@@ -270,20 +270,9 @@ impl Page {
         &self,
         options: crate::protocol::ScreencastStartOptions,
     ) -> Result<()> {
-        let mut params = serde_json::json!({});
-        if let Some(size) = options.size {
-            params["size"] = serde_json::json!({
-                "width": size.width,
-                "height": size.height,
-            });
-        }
-        if let Some(quality) = options.quality {
-            params["quality"] = serde_json::json!(quality);
-        }
         let has_handlers = !self.screencast_frame_handlers.lock().unwrap().is_empty();
-        params["sendFrames"] = serde_json::json!(has_handlers);
+        let params = options.params(has_handlers);
         let recording = options.path.is_some();
-        params["record"] = serde_json::json!(recording);
 
         #[derive(serde::Deserialize)]
         struct StartResponse {
@@ -336,21 +325,8 @@ impl Page {
         &self,
         options: crate::protocol::ShowActionsOptions,
     ) -> Result<()> {
-        let mut params = serde_json::json!({});
-        if let Some(d) = options.duration {
-            params["duration"] = serde_json::json!(d);
-        }
-        if let Some(p) = options.position {
-            params["position"] = serde_json::json!(p.as_str());
-        }
-        if let Some(f) = options.font_size {
-            params["fontSize"] = serde_json::json!(f);
-        }
-        if let Some(c) = options.cursor {
-            params["cursor"] = serde_json::json!(c.as_str());
-        }
         self.channel()
-            .send_no_result("screencastShowActions", params)
+            .send_no_result("screencastShowActions", options)
             .await
     }
 

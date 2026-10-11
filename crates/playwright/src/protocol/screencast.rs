@@ -102,6 +102,10 @@ pub struct ScreencastStartOptions {
     /// `BrowserContextOptions::record_video` instead (the `Video`
     /// class).
     pub path: Option<PathBuf>,
+    /// Frame rate of the file recorded to [`path`](Self::path); it has no
+    /// effect without one. Must be positive. Firefox and WebKit capture at
+    /// most 25 frames per second.
+    pub fps: Option<u32>,
 }
 
 impl ScreencastStartOptions {
@@ -119,6 +123,32 @@ impl ScreencastStartOptions {
     pub fn path(mut self, path: PathBuf) -> Self {
         self.path = Some(path);
         self
+    }
+    /// Frame rate of the recorded file.
+    pub fn fps(mut self, fps: u32) -> Self {
+        self.fps = Some(fps);
+        self
+    }
+
+    /// The `screencastStart` parameters: frames are sent only when a frame
+    /// handler is registered, and a file is recorded only when a path is set.
+    pub(crate) fn params(&self, send_frames: bool) -> serde_json::Value {
+        let mut params = serde_json::json!({});
+        if let Some(size) = self.size {
+            params["size"] = serde_json::json!({
+                "width": size.width,
+                "height": size.height,
+            });
+        }
+        if let Some(quality) = self.quality {
+            params["quality"] = serde_json::json!(quality);
+        }
+        if let Some(fps) = self.fps {
+            params["fps"] = serde_json::json!(fps);
+        }
+        params["sendFrames"] = serde_json::json!(send_frames);
+        params["record"] = serde_json::json!(self.path.is_some());
+        params
     }
 }
 
@@ -139,6 +169,15 @@ pub enum ActionPosition {
     BottomLeft,
     Bottom,
     BottomRight,
+}
+
+impl serde::Serialize for ActionPosition {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
 }
 
 impl ActionPosition {
@@ -164,6 +203,15 @@ pub enum ActionCursor {
     Pointer,
 }
 
+impl serde::Serialize for ActionCursor {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
 impl ActionCursor {
     pub(crate) fn as_str(self) -> &'static str {
         match self {
@@ -173,18 +221,68 @@ impl ActionCursor {
     }
 }
 
-/// Options for [`Screencast::show_actions`].
-#[derive(Debug, Default, Clone)]
+/// CSS for the decorations [`ShowActionsOptions`] draws, each a list of
+/// declarations such as `"width: 20px; height: 20px; background: red"`.
+///
+/// See: <https://playwright.dev/docs/api/class-screencast#screencast-show-actions-option-style>
+#[derive(Debug, Default, Clone, serde::Serialize)]
+#[non_exhaustive]
+pub struct ShowActionsStyle {
+    /// The marker drawn at each action point.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub point: Option<String>,
+    /// The outline drawn around the action's target.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub highlight: Option<String>,
+    /// The action's title label; replaces the deprecated `font_size`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+}
+
+impl ShowActionsStyle {
+    /// CSS for the action-point marker.
+    pub fn point(mut self, css: impl Into<String>) -> Self {
+        self.point = Some(css.into());
+        self
+    }
+    /// CSS for the target highlight.
+    pub fn highlight(mut self, css: impl Into<String>) -> Self {
+        self.highlight = Some(css.into());
+        self
+    }
+    /// CSS for the action title.
+    pub fn title(mut self, css: impl Into<String>) -> Self {
+        self.title = Some(css.into());
+        self
+    }
+}
+
+/// Options for [`Screencast::show_actions`], and for
+/// [`RecordVideo::show_actions`](crate::protocol::RecordVideo::show_actions)
+/// on a context's recorded video.
+#[derive(Debug, Default, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub struct ShowActionsOptions {
     /// How long each action label stays on screen (milliseconds).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub duration: Option<f64>,
     /// Where the label appears.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub position: Option<ActionPosition>,
     /// Label font size, pixels.
+    #[deprecated(
+        since = "0.20.0",
+        note = "use `style` with a `title` such as `font-size: 16px`"
+    )]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub font_size: Option<i32>,
     /// Pointer-cursor decoration at action points.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub cursor: Option<ActionCursor>,
+    /// CSS for the marker, the target highlight, and the title.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub style: Option<ShowActionsStyle>,
 }
 
 impl ShowActionsOptions {
@@ -199,8 +297,20 @@ impl ShowActionsOptions {
         self
     }
     /// Label font size in pixels.
+    #[deprecated(
+        since = "0.20.0",
+        note = "use `style` with a `title` such as `font-size: 16px`"
+    )]
     pub fn font_size(mut self, font_size: i32) -> Self {
-        self.font_size = Some(font_size);
+        #[allow(deprecated)]
+        {
+            self.font_size = Some(font_size);
+        }
+        self
+    }
+    /// CSS for the action decorations.
+    pub fn style(mut self, style: ShowActionsStyle) -> Self {
+        self.style = Some(style);
         self
     }
     /// Pointer-cursor decoration at action points.
@@ -345,7 +455,81 @@ impl Screencast {
 mod options_tests {
     use super::{
         ActionCursor, ActionPosition, ScreencastSize, ScreencastStartOptions, ShowActionsOptions,
+        ShowActionsStyle,
     };
+    use crate::protocol_spec::{
+        PAGE, command_parameters, keys, mixin_properties, nested_properties,
+    };
+    use serde_json::json;
+
+    #[test]
+    fn show_actions_options_serialize_to_the_driver_spelling() {
+        let options = ShowActionsOptions::default()
+            .duration(500.0)
+            .position(ActionPosition::TopLeft)
+            .cursor(ActionCursor::Pointer)
+            .style(
+                ShowActionsStyle::default()
+                    .point("width: 20px")
+                    .highlight("outline: 2px solid #333")
+                    .title("font-size: 16px"),
+            );
+        let sent = serde_json::to_value(&options).unwrap();
+        assert_eq!(
+            sent,
+            json!({
+                "duration": 500.0,
+                "position": "top-left",
+                "cursor": "pointer",
+                "style": {
+                    "point": "width: 20px",
+                    "highlight": "outline: 2px solid #333",
+                    "title": "font-size: 16px"
+                }
+            })
+        );
+        assert!(keys(&sent).is_subset(&mixin_properties("ShowActionsOptions")));
+        assert!(keys(&sent["style"]).is_subset(&nested_properties("ShowActionsOptions", "style")));
+        assert_eq!(
+            serde_json::to_value(ShowActionsOptions::default()).unwrap(),
+            json!({})
+        );
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn the_deprecated_font_size_is_still_sent() {
+        let sent = serde_json::to_value(ShowActionsOptions::default().font_size(14)).unwrap();
+        assert_eq!(sent, json!({"fontSize": 14}));
+    }
+
+    #[test]
+    fn start_params_carry_fps_and_what_the_page_needs() {
+        let options = ScreencastStartOptions::default()
+            .size(ScreencastSize {
+                width: 640,
+                height: 480,
+            })
+            .quality(80)
+            .fps(60)
+            .path("out.webm".into());
+        let sent = options.params(true);
+        assert_eq!(
+            sent,
+            json!({
+                "size": {"width": 640, "height": 480},
+                "quality": 80,
+                "fps": 60,
+                "sendFrames": true,
+                "record": true
+            })
+        );
+        assert!(keys(&sent).is_subset(&command_parameters(PAGE, "screencastStart")));
+        assert_eq!(
+            ScreencastStartOptions::default().params(false),
+            json!({"sendFrames": false, "record": false})
+        );
+    }
 
     #[test]
     fn start_builder_sets_quality_and_size() {
