@@ -3,7 +3,7 @@ name: playwright-rs-usage
 description: Procedural reference for using playwright-rs in Rust browser-automation code — object model (Browser/Context/Page/Locator), the `locator!()` macro, builder pattern for options, auto-wait semantics, adding the crate and installing its browsers, and how to capture / inspect traces for failure diagnosis. Use when writing tests or scripts with playwright-rs as a dependency. Loaded automatically when the current repo has playwright-rs in its Cargo.toml.
 license: Apache-2.0
 metadata:
-  version: "0.15.4"
+  version: "0.15.5"
 ---
 
 # Using playwright-rs
@@ -312,6 +312,15 @@ Concept-level pointers; the exact options live on docs.rs.
   narrows to the visible matches (Playwright's replacement for
   `:visible`), and `filter(FilterOptions::default().visible(false))` is
   the hidden half.
+- **Testing a page's WebMCP tools.** A page that registers tools for
+  agents through the WebMCP browser API is tested through
+  `page.webmcp()`: `tools(None)` lists them with their input schema, and
+  `call_tool::<_, serde_json::Value>("add", &json!({"a": 2}), None)` runs
+  one (`&()` for no input). A tool's own failure comes back as a result
+  with `isError`, not as an `Err`. The API is behind a flag: launch
+  Chromium with `args(vec!["--enable-features=WebMCP".into()])`, Firefox
+  with the `dom.modelcontext.enabled` and
+  `dom.modelcontext.testing.enabled` user prefs; WebKit has none.
 - **Scoping to each parent.** `cells.nth(1).within(&rows)` is the
   second cell of every row: `nth`, `first`, and `last` resolve inside
   each element the parent matches, which a chained `rows.locator(..)`

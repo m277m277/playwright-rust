@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **WebMCP: `Page::webmcp` and `Frame::webmcp`**, which list the tools a page registers through the experimental WebMCP browser API (`tools`, as `WebMCPTool`s with their input schema and hints) and call them (`call_tool`, with the result deserialized as any serde type), so a test can exercise them as an agent would. Chromium needs `--enable-features=WebMCP` in `args` and Firefox two `dom.modelcontext` preferences; WebKit does not support it.
 - **`Locator::within`**, which scopes a locator to each element another locator matches: `cells.nth(1).within(&rows)` is the second cell of every row, where `rows.locator(..)` would number the cells across the whole table.
 - **`Page::get_by_ref`**, which finds the element an `ai`-mode aria snapshot names by its ref (`button "Save" [ref=e2]`), so an agent can act on what a snapshot reported.
 - **`Page::content_with_options` and `Frame::content_with_options`, taking `ContentOptions::include_shadow`**, which serializes open shadow roots as declarative shadow DOM (`<template shadowrootmode="open">`) where `content()` leaves them out. Closed shadow roots are never included. `content()` itself is unchanged.

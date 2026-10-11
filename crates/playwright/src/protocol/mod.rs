@@ -90,6 +90,7 @@ pub mod web_error;
 pub mod web_socket;
 pub mod web_socket_route;
 pub mod web_storage;
+pub mod webmcp;
 pub mod worker;
 
 pub use accessibility::{Accessibility, AccessibilitySnapshotOptions};
@@ -178,4 +179,5 @@ pub use web_error::{WebError, WebErrorLocation};
 pub use web_socket::WebSocket;
 pub use web_socket_route::{WebSocketRoute, WebSocketRouteCloseOptions};
 pub use web_storage::{WebStorage, WebStorageKind};
+pub use webmcp::{WebMCP, WebMCPOptions, WebMCPTool, WebMCPToolAnnotations};
 pub use worker::Worker;

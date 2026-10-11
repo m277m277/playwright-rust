@@ -171,6 +171,15 @@ impl Page {
         frame
     }
 
+    /// The tools this page registers through the experimental WebMCP browser
+    /// API, which are its main frame's. See
+    /// [`WebMCP`](crate::protocol::WebMCP) for the launch flags it needs.
+    ///
+    /// See: <https://playwright.dev/docs/api/class-page#page-webmcp>
+    pub fn webmcp(&self) -> crate::protocol::WebMCP {
+        crate::protocol::WebMCP::new(self.main_frame_wired())
+    }
+
     /// Returns the current URL of the page.
     ///
     /// This returns the last committed URL, including hash fragments from anchor navigation.

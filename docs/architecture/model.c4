@@ -659,6 +659,12 @@ action / chapter / HTML overlays.'
         }
         link ../../crates/playwright/src/protocol/web_storage.rs
       }
+      webmcp = component 'webmcp' {
+        metadata {
+          path 'crates/playwright/src/protocol/webmcp.rs'
+        }
+        link ../../crates/playwright/src/protocol/webmcp.rs
+      }
       worker = component 'worker' {
         metadata {
           path 'crates/playwright/src/protocol/worker.rs'
@@ -1276,6 +1282,7 @@ contents lazily.'
   playwright_rs.protocol.frame -[names]-> playwright_rs.protocol.select_option 'SelectOption'
   playwright_rs.protocol.frame -[names]-> playwright_rs.protocol.tap 'TapOptions'
   playwright_rs.protocol.frame -[names]-> playwright_rs.protocol.wait_for 'WaitForFunctionOptions, WaitForOptions'
+  playwright_rs.protocol.frame -[constructs]-> playwright_rs.protocol.webmcp 'WebMCP'
   playwright_rs.protocol.frame -[names]-> playwright_rs.server.channel 'Channel'
   playwright_rs.protocol.frame -[implements]-> playwright_rs.server.channel_owner 'ChannelOwner, ChannelOwnerImpl, DisposeReason, ParentOrConnection'
   playwright_rs.protocol.frame -[names]-> playwright_rs.server.connection 'ConnectionExt, ConnectionLike'
@@ -1411,6 +1418,7 @@ contents lazily.'
   playwright_rs.protocol.page.lifecycle -[names]-> playwright_rs.protocol.page.navigation 'GotoOptions'
   playwright_rs.protocol.page.lifecycle -[constructs]-> playwright_rs.protocol.video 'Video'
   playwright_rs.protocol.page.lifecycle -[constructs]-> playwright_rs.protocol.web_storage 'WebStorage, WebStorageKind'
+  playwright_rs.protocol.page.lifecycle -[constructs]-> playwright_rs.protocol.webmcp 'WebMCP'
   playwright_rs.protocol.page.lifecycle -[names]-> playwright_rs.protocol.worker 'Worker'
   playwright_rs.protocol.page.lifecycle -[names]-> playwright_rs.server.channel 'Channel'
   playwright_rs.protocol.page.lifecycle -[constructs]-> playwright_rs.server.channel_owner 'ChannelOwner, ChannelOwnerImpl, ParentOrConnection'
@@ -1512,6 +1520,10 @@ contents lazily.'
   playwright_rs.protocol.web_socket_route -[calls]-> playwright_rs.task 'spawn'
   playwright_rs.protocol.web_storage -[names]-> playwright_rs.error 'Result'
   playwright_rs.protocol.web_storage -[names]-> playwright_rs.server.channel 'Channel'
+  playwright_rs.protocol.webmcp -[calls]-> playwright_rs.error 'Error, Result'
+  playwright_rs.protocol.webmcp -[calls]-> playwright_rs.protocol.evaluate_conversion 'parse_result, serialize_argument'
+  playwright_rs.protocol.webmcp -[names]-> playwright_rs.protocol.frame 'Frame'
+  playwright_rs.protocol.webmcp -[uses]-> playwright_rs.server.channel_owner 'ChannelOwner'
   playwright_rs.protocol.worker -[calls]-> playwright_rs.error 'Error, Result'
   playwright_rs.protocol.worker -[calls]-> playwright_rs.protocol.evaluate_conversion 'parse_result, serialize_argument, serialize_null'
   playwright_rs.protocol.worker -[calls]-> playwright_rs.protocol.js_handle 'JSHandle'
@@ -1620,6 +1632,7 @@ contents lazily.'
   playwright_rs.tests -[names]-> playwright_rs.protocol.video 'Video'
   playwright_rs.tests -[constructs]-> playwright_rs.protocol.wait_for 'WaitForFunctionOptions, WaitForOptions, WaitForState'
   playwright_rs.tests -[names]-> playwright_rs.protocol.web_socket 'WebSocket'
+  playwright_rs.tests -[names]-> playwright_rs.protocol.webmcp 'WebMCPTool'
   playwright_rs.tests -[names]-> playwright_rs.server.channel_owner 'ChannelOwner'
   playwright_rs.tests -[constructs]-> playwright_rs.server.connection 'Connection'
   playwright_rs.tests -[calls]-> playwright_rs.server.driver 'get_driver_executable, install_browsers'

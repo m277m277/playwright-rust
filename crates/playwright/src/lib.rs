@@ -356,6 +356,9 @@ pub use protocol::{
 // Re-export WebStorage (page.local_storage / session_storage)
 pub use protocol::{WebStorage, WebStorageKind};
 
+// Re-export WebMCP (page.webmcp / frame.webmcp)
+pub use protocol::{WebMCP, WebMCPOptions, WebMCPTool, WebMCPToolAnnotations};
+
 // Re-export WebAuthn credentials (browser_context.credentials)
 pub use protocol::{
     Credentials, CredentialsCreateOptions, CredentialsGetOptions, VirtualCredential,

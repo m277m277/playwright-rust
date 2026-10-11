@@ -80,6 +80,7 @@ mod unroute_behavior;
 mod wait_for_function;
 mod web_error;
 mod web_storage;
+mod webmcp;
 mod websocket;
 mod windows_cleanup;
 mod worker;

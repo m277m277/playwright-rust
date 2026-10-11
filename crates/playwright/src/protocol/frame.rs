@@ -758,6 +758,15 @@ impl Frame {
         Ok(response.value)
     }
 
+    /// The tools this frame's page registers through the experimental WebMCP
+    /// browser API. See [`WebMCP`](crate::protocol::WebMCP) for the launch
+    /// flags it needs.
+    ///
+    /// See: <https://playwright.dev/docs/api/class-frame#frame-webmcp>
+    pub fn webmcp(&self) -> crate::protocol::WebMCP {
+        crate::protocol::WebMCP::new(self.clone())
+    }
+
     /// Returns the full HTML content of the frame, including the DOCTYPE.
     ///
     /// See: <https://playwright.dev/docs/api/class-frame#frame-content>
