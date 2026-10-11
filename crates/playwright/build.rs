@@ -10,7 +10,7 @@
 //!
 //! By default the driver lands in the user cache, at the same version-keyed
 //! path `playwright-rs install` writes and the runtime lookup probes
-//! (`<cache>/playwright-rust/<version>/playwright-<version>-<platform>`; see
+//! (`<cache>/playwright-rust/<version>/playwright-<version>-<platform>-node<node>`; see
 //! ADR 0007). One download then serves every target directory, every
 //! cargo-mutants copy, and every workspace on the machine, and a consumer
 //! that has built once is offline-safe. The assembled files are watched, so
@@ -55,7 +55,7 @@ fn main() {
         return;
     }
 
-    let versioned = format!("playwright-{PLAYWRIGHT_VERSION}-{platform}");
+    let versioned = driver_dir_name(PLAYWRIGHT_VERSION, platform);
 
     // The source is recorded so the runtime can say what became of the driver
     // when a launch finds none, and so tests assert a layout only where it

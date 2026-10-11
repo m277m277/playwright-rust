@@ -252,7 +252,7 @@ fn try_bundled_driver() -> Result<Option<(PathBuf, PathBuf)>> {
 ///
 /// `build.rs` assembles there by default and `playwright-rs install` writes
 /// the same path, `<cache>/playwright-rust/<version>/playwright-<version>-
-/// <platform>/`, so this finds a driver from either. It matters on its own
+/// <platform>-node<node>/`, so this finds a driver from either. It matters on its own
 /// when the bundled lookup fails: a build that skipped or relocated the
 /// download, or a `cargo install`ed binary whose recorded path is gone. The
 /// version and platform come from compile-time env vars emitted by build.rs.
@@ -804,11 +804,7 @@ mod tests {
     #[test]
     fn try_user_cache_driver_in_resolves_when_files_present() {
         let temp = tempfile::tempdir().unwrap();
-        let driver_subdir = temp
-            .path()
-            .join("playwright-rust")
-            .join("1.60.0")
-            .join("playwright-1.60.0-linux");
+        let driver_subdir = crate::driver_urls::cached_driver_dir(temp.path(), "1.60.0", "linux");
         std::fs::create_dir_all(driver_subdir.join("package")).unwrap();
         std::fs::write(driver_subdir.join("node"), b"").unwrap();
         std::fs::write(driver_subdir.join("package").join("cli.js"), b"").unwrap();
@@ -869,11 +865,8 @@ mod tests {
     #[test]
     fn try_user_cache_driver_in_uses_node_exe_for_windows_platforms() {
         let temp = tempfile::tempdir().unwrap();
-        let driver_subdir = temp
-            .path()
-            .join("playwright-rust")
-            .join("1.60.0")
-            .join("playwright-1.60.0-win32_x64");
+        let driver_subdir =
+            crate::driver_urls::cached_driver_dir(temp.path(), "1.60.0", "win32_x64");
         std::fs::create_dir_all(driver_subdir.join("package")).unwrap();
         std::fs::write(driver_subdir.join("node.exe"), b"").unwrap();
         std::fs::write(driver_subdir.join("package").join("cli.js"), b"").unwrap();

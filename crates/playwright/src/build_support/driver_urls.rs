@@ -9,8 +9,7 @@
 /// Node.js runtime bundled with the driver. Must match the upstream
 /// Playwright release's own pin for `PLAYWRIGHT_VERSION` (playwright-python
 /// commits it as `NODE_VERSION` at the matching tag).
-#[allow(dead_code)]
-const NODE_VERSION: &str = "24.17.0";
+const NODE_VERSION: &str = "24.21.0";
 
 /// Playwright platform identifier for an (os, arch) pair, e.g.
 /// `("macos", "aarch64")` → `mac-arm64`. `None` for unsupported pairs.
@@ -79,8 +78,17 @@ pub(crate) fn node_exe_name(playwright_platform: &str) -> &'static str {
     }
 }
 
+/// Name of an assembled driver's directory,
+/// `playwright-<version>-<platform>-node<node>`, wherever it is put. The Node
+/// version is part of it because the driver bundles its runtime: without it,
+/// moving [`NODE_VERSION`] would leave every directory already assembled
+/// running the old Node.
+pub(crate) fn driver_dir_name(version: &str, platform: &str) -> String {
+    format!("playwright-{version}-{platform}-node{NODE_VERSION}")
+}
+
 /// Where an assembled driver lives under a cache root:
-/// `<root>/playwright-rust/<version>/playwright-<version>-<platform>`.
+/// `<root>/playwright-rust/<version>/<driver_dir_name>`.
 ///
 /// One layout shared by the build script (which assembles there by
 /// default), the CLI (`playwright-rs install`), and the runtime lookup, so
@@ -93,7 +101,7 @@ pub(crate) fn cached_driver_dir(
     cache_root
         .join("playwright-rust")
         .join(version)
-        .join(format!("playwright-{version}-{platform}"))
+        .join(driver_dir_name(version, platform))
 }
 
 /// Path of the `node` executable inside the Node dist archive.
@@ -174,10 +182,12 @@ mod driver_urls_tests {
     }
 
     #[test]
-    fn cached_driver_dir_is_keyed_by_version_and_platform() {
+    fn cached_driver_dir_is_keyed_by_version_platform_and_node() {
         assert_eq!(
             cached_driver_dir(std::path::Path::new("/c"), "1.63.0", "mac-arm64"),
-            std::path::PathBuf::from("/c/playwright-rust/1.63.0/playwright-1.63.0-mac-arm64")
+            std::path::PathBuf::from(format!(
+                "/c/playwright-rust/1.63.0/playwright-1.63.0-mac-arm64-node{NODE_VERSION}"
+            ))
         );
     }
 
