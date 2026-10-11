@@ -85,9 +85,13 @@ esac
 # revision, so the commit that first adds the skill compares against empty.
 # CRLF is stripped first: a Windows checkout can hand back \r\n through the
 # index while the guard reads bytes with `git show`.
+# awk reads to the end rather than exiting at the version: an early exit
+# kills `git show` with SIGPIPE once the skill outgrows the pipe buffer
+# (16 KiB on macOS), and under pipefail that blanks the version just read.
 read_skill_version() {
   tr -d '\r' | awk '
-    /^---$/ { fence++; if (fence >= 2) exit; next }
+    done { next }
+    /^---$/ { fence++; if (fence >= 2) done = 1; next }
     fence == 1 && /^metadata:[[:space:]]*$/ { inmeta = 1; next }
     fence == 1 && inmeta && /^[^[:space:]]/ { inmeta = 0 }
     fence == 1 && inmeta && /^[[:space:]]+version:[[:space:]]*"[^"]*"/ {
@@ -95,7 +99,7 @@ read_skill_version() {
       sub(/^[[:space:]]+version:[[:space:]]*"/, "", s)
       sub(/".*$/, "", s)
       print s
-      exit
+      done = 1
     }
   '
 }
