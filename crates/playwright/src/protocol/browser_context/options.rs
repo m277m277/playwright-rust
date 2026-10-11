@@ -347,7 +347,9 @@ pub struct BrowserContextOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub slow_mo: Option<f64>,
 
-    /// Timeout for browser launch in milliseconds
+    /// Timeout for browser launch in milliseconds, for
+    /// `launch_persistent_context` (default:
+    /// [`DEFAULT_LAUNCH_TIMEOUT_MS`](crate::DEFAULT_LAUNCH_TIMEOUT_MS))
     #[serde(skip_serializing_if = "Option::is_none")]
     pub timeout: Option<f64>,
 

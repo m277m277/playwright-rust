@@ -287,6 +287,16 @@ pub const PLAYWRIGHT_VERSION: &str = env!("PLAYWRIGHT_DRIVER_VERSION");
 /// See: <https://playwright.dev/docs/test-timeouts>
 pub const DEFAULT_TIMEOUT_MS: f64 = 30000.0;
 
+/// Default timeout in milliseconds for starting a browser: `launch`,
+/// `launch_persistent_context`, and `connect_over_cdp`.
+///
+/// Three minutes, the default Playwright documents for launching and the
+/// value playwright-python sends, since a cold browser start on a loaded CI
+/// runner can take longer than [`DEFAULT_TIMEOUT_MS`].
+///
+/// See: <https://playwright.dev/docs/api/class-browsertype#browser-type-launch-option-timeout>
+pub const DEFAULT_LAUNCH_TIMEOUT_MS: f64 = 180000.0;
+
 // Re-export error types
 pub use error::{Error, Result};
 

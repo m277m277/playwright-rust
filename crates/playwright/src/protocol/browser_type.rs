@@ -157,7 +157,7 @@ impl BrowserType {
     ///
     /// Returns error if:
     /// - Browser executable not found
-    /// - Launch timeout (default 30s)
+    /// - Launch timeout (default three minutes, [`DEFAULT_LAUNCH_TIMEOUT_MS`](crate::DEFAULT_LAUNCH_TIMEOUT_MS))
     /// - Browser process fails to start
     ///
     /// See: <https://playwright.dev/docs/api/class-browsertype#browser-type-launch>
@@ -216,11 +216,6 @@ impl BrowserType {
 
                     // Update options with enhanced args
                     options.args = Some(args);
-
-                    // Increase timeout for Windows CI (slower startup)
-                    if options.timeout.is_none() {
-                        options.timeout = Some(60000.0); // 60 seconds for Windows CI
-                    }
                 }
                 options
             }
@@ -265,7 +260,7 @@ impl BrowserType {
     ///
     /// Returns error if:
     /// - Browser executable not found
-    /// - Launch timeout (default 30s)
+    /// - Launch timeout (default three minutes, [`DEFAULT_LAUNCH_TIMEOUT_MS`](crate::DEFAULT_LAUNCH_TIMEOUT_MS))
     /// - Browser process fails to start
     /// - User data directory cannot be created
     ///
@@ -338,11 +333,6 @@ impl BrowserType {
 
                 // Update options with enhanced args
                 options.args = Some(args);
-
-                // Increase timeout for Windows CI (slower startup)
-                if options.timeout.is_none() {
-                    options.timeout = Some(60000.0); // 60 seconds for Windows CI
-                }
             }
         }
 
@@ -385,7 +375,7 @@ impl BrowserType {
 
         // Set default timeout if not specified (required in Playwright 1.56.1+)
         if params.get("timeout").is_none() {
-            params["timeout"] = serde_json::json!(crate::DEFAULT_TIMEOUT_MS);
+            params["timeout"] = serde_json::json!(crate::DEFAULT_LAUNCH_TIMEOUT_MS);
         }
 
         // Convert bool ignoreDefaultArgs to ignoreAllDefaultArgs
@@ -549,7 +539,7 @@ impl BrowserType {
             slow_mo: options.slow_mo,
             no_defaults: options.no_defaults,
             artifacts_dir: options.artifacts_dir,
-            timeout: options.timeout.unwrap_or(crate::DEFAULT_TIMEOUT_MS),
+            timeout: options.timeout.unwrap_or(crate::DEFAULT_LAUNCH_TIMEOUT_MS),
         };
 
         // Send connectOverCDP RPC to the local Playwright server

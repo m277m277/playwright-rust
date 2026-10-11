@@ -15,7 +15,8 @@ pub struct ConnectOverCdpOptions {
     /// Slows down Playwright operations by the specified amount of milliseconds.
     pub slow_mo: Option<f64>,
     /// Maximum time in milliseconds to wait for the connection to be established.
-    /// Defaults to 30000 (30 seconds). Pass 0 to disable timeout.
+    /// Defaults to [`DEFAULT_LAUNCH_TIMEOUT_MS`](crate::DEFAULT_LAUNCH_TIMEOUT_MS)
+    /// (three minutes). Pass 0 to disable timeout.
     pub timeout: Option<f64>,
     /// Disables Playwright's default overrides (download behavior, focus/media
     /// emulation) when attaching to an already-running browser — for "attach

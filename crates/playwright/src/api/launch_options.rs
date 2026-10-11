@@ -91,7 +91,8 @@ pub struct LaunchOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub slow_mo: Option<f64>,
 
-    /// Timeout for browser launch in milliseconds (default: DEFAULT_TIMEOUT_MS)
+    /// Timeout for browser launch in milliseconds (default:
+    /// [`DEFAULT_LAUNCH_TIMEOUT_MS`](crate::DEFAULT_LAUNCH_TIMEOUT_MS))
     #[serde(skip_serializing_if = "Option::is_none")]
     pub timeout: Option<f64>,
 
@@ -248,7 +249,7 @@ impl LaunchOptions {
 
         // A launch with no timeout has no deadline on the server.
         if value.get("timeout").is_none() {
-            value["timeout"] = json!(crate::DEFAULT_TIMEOUT_MS);
+            value["timeout"] = json!(crate::DEFAULT_LAUNCH_TIMEOUT_MS);
         }
 
         // Convert env HashMap to array of {name, value} objects
@@ -328,6 +329,18 @@ mod tests {
         // timeout moves into the message metadata, where the server takes a
         // call's deadline from.
         assert_eq!(undeclared, ["timeout"]);
+    }
+
+    #[test]
+    fn a_launch_without_a_timeout_gets_three_minutes() {
+        assert_eq!(
+            LaunchOptions::default().normalize()["timeout"],
+            json!(180000.0)
+        );
+        assert_eq!(
+            LaunchOptions::default().timeout(5000.0).normalize()["timeout"],
+            json!(5000.0)
+        );
     }
 
     #[test]
