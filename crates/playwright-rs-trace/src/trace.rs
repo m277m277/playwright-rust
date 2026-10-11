@@ -13,9 +13,11 @@ use zip::ZipArchive;
 const TRACE_ENTRY: &str = "trace.trace";
 const NETWORK_ENTRY: &str = "trace.network";
 /// Trace formats this parser reads. v9 gave frame snapshots a `phase`
-/// and wrote blob references as whole archive paths; both formats parse,
-/// and a reference from either opens through [`TraceReader::blob`].
-const SUPPORTED_VERSIONS: std::ops::RangeInclusive<u32> = 8..=9;
+/// and wrote blob references as whole archive paths; all formats parse,
+/// and a reference from any opens through [`TraceReader::blob`]. v10
+/// dropped `stepId` and takes call ids from the client (`abcd@7`, where
+/// v9 wrote `call@7`), which changes no field this parser types.
+const SUPPORTED_VERSIONS: std::ops::RangeInclusive<u32> = 8..=10;
 const RESOURCE_SNAPSHOT_KIND: &str = "resource-snapshot";
 
 /// Streaming reader over a Playwright trace zip.

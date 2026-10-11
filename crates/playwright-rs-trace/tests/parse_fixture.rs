@@ -15,11 +15,14 @@ const BASIC_FIXTURE: &[u8] = include_bytes!("fixtures/basic.trace.zip");
 /// covered by a real recording once the bundled driver moved past them.
 const BASIC_V8_FIXTURE: &[u8] = include_bytes!("fixtures/basic-v8.trace.zip");
 
+/// A trace from the last driver that wrote v9, kept for the same reason.
+const BASIC_V9_FIXTURE: &[u8] = include_bytes!("fixtures/basic-v9.trace.zip");
+
 /// Driver the fixture was recorded with. `cargo xtask verify-driver-version`
 /// anchors this to `build.rs`'s `PLAYWRIGHT_VERSION`, so bumping the driver
 /// without regenerating the fixture fails a gate instead of quietly leaving
 /// the parser untested against the format it will actually meet.
-const FIXTURE_DRIVER: &str = "playwright@1.63.0";
+const FIXTURE_DRIVER: &str = "playwright@1.64.0";
 
 fn open_basic() -> TraceReader<Cursor<&'static [u8]>> {
     TraceReader::open(Cursor::new(BASIC_FIXTURE)).expect("open basic fixture")
@@ -29,7 +32,7 @@ fn open_basic() -> TraceReader<Cursor<&'static [u8]>> {
 fn opens_basic_fixture_and_reads_context() {
     let reader = open_basic();
     let ctx = reader.context();
-    assert_eq!(ctx.version, 9, "playwright@1.63.0 writes trace v9");
+    assert_eq!(ctx.version, 10, "playwright@1.64.0 writes trace v10");
     assert_eq!(ctx.browser_name, "chromium");
     let expected_driver = FIXTURE_DRIVER
         .strip_prefix("playwright@")
@@ -224,6 +227,50 @@ fn the_v8_fixture_parses_with_names_and_derived_phases() {
     );
 }
 
+/// v9 named calls `call@N`; v10 takes the client's own id, `abcd@N`.
+#[test]
+fn actions_pair_on_call_ids_of_either_shape() {
+    for (fixture, version, legacy) in [(BASIC_V9_FIXTURE, 9, true), (BASIC_FIXTURE, 10, false)] {
+        let mut reader = TraceReader::open(Cursor::new(fixture)).expect("open fixture");
+        assert_eq!(reader.context().version, version);
+        let actions: Vec<_> = reader
+            .actions()
+            .expect("actions")
+            .collect::<Result<_, _>>()
+            .expect("action stream");
+        let goto = actions
+            .iter()
+            .find(|a| a.method == "goto")
+            .unwrap_or_else(|| panic!("v{version} records the goto: {actions:?}"));
+        assert!(goto.end_time.is_some(), "v{version} goto completed");
+        assert_eq!(
+            goto.call_id.starts_with("call@"),
+            legacy,
+            "v{version} call id {}",
+            goto.call_id
+        );
+    }
+}
+
+#[test]
+fn a_numeric_call_id_still_pairs_its_events() {
+    let zip_bytes = build_synthetic_trace(&[
+        &context_line(10),
+        r#"{"type":"before","callId":7,"parentId":3,"startTime":1.0,"class":"Frame","method":"goto","params":{}}"#,
+        r#"{"type":"after","callId":7,"endTime":2.0}"#,
+    ]);
+    let mut reader = TraceReader::open(Cursor::new(zip_bytes)).expect("open synthetic trace");
+    let actions: Vec<_> = reader
+        .actions()
+        .expect("actions")
+        .collect::<Result<_, _>>()
+        .expect("action stream");
+    assert_eq!(actions.len(), 1, "{actions:?}");
+    assert_eq!(actions[0].call_id, "7");
+    assert_eq!(actions[0].parent_id.as_deref(), Some("3"));
+    assert_eq!(actions[0].end_time, Some(2.0));
+}
+
 /// A `context-options` line declaring `version`, as the driver writes it.
 fn context_line(version: u32) -> String {
     format!(
@@ -267,13 +314,13 @@ fn screencast_blob_resolves_to_its_archive_path_on_v8_and_v9() {
 
 #[test]
 fn a_future_trace_version_is_refused() {
-    let zip_bytes = build_synthetic_trace(&[&context_line(10)]);
+    let zip_bytes = build_synthetic_trace(&[&context_line(11)]);
 
     let Err(error) = TraceReader::open(Cursor::new(zip_bytes)) else {
-        panic!("v10 is newer than this parser and must be refused");
+        panic!("v11 is newer than this parser and must be refused");
     };
     assert!(
-        matches!(&error, TraceError::UnsupportedVersion { found: 10, supported } if *supported == (8..=9)),
+        matches!(&error, TraceError::UnsupportedVersion { found: 11, supported } if *supported == (8..=10)),
         "got {error:?}"
     );
 }

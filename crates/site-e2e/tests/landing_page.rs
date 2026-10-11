@@ -470,11 +470,11 @@ async fn dev_build_reflects_unreleased_state() {
         "dev build shows the unreleased crates.io badge"
     );
     let pw_badge = page
-        .locator("#hero-badges img[alt='Playwright 1.63.0']")
+        .locator("#hero-badges img[alt='Playwright 1.64.0']")
         .count()
         .await
         .expect("count Playwright badge");
-    assert_eq!(pw_badge, 1, "dev build shows the 1.63.0 Playwright badge");
+    assert_eq!(pw_badge, 1, "dev build shows the 1.64.0 Playwright badge");
 
     // Dogfood the screencast API (shipped in 0.15.0): record the page with
     // cursor decoration and save a frame as the DogfoodBanner's receipt (the

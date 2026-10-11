@@ -149,6 +149,7 @@ pub struct ContextOptions {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BeforeEvent {
+    #[serde(deserialize_with = "call_id")]
     pub call_id: String,
     pub start_time: f64,
     #[serde(default)]
@@ -161,7 +162,10 @@ pub struct BeforeEvent {
     pub title: Option<String>,
     pub page_id: Option<String>,
     pub before_snapshot: Option<String>,
+    /// The test runner's id for the call. Trace format v10 dropped it, so
+    /// it is `None` on v10 traces.
     pub step_id: Option<String>,
+    #[serde(default, deserialize_with = "optional_call_id")]
     pub parent_id: Option<String>,
 }
 
@@ -170,6 +174,7 @@ pub struct BeforeEvent {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InputEvent {
+    #[serde(deserialize_with = "call_id")]
     pub call_id: String,
     pub point: Option<Point>,
     pub input_snapshot: Option<String>,
@@ -179,6 +184,7 @@ pub struct InputEvent {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LogEvent {
+    #[serde(deserialize_with = "call_id")]
     pub call_id: String,
     pub message: String,
     pub time: f64,
@@ -188,6 +194,7 @@ pub struct LogEvent {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AfterEvent {
+    #[serde(deserialize_with = "call_id")]
     pub call_id: String,
     pub end_time: f64,
     #[serde(default)]
@@ -279,6 +286,7 @@ pub struct FrameSnapshotEvent {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FrameSnapshotWire {
+    #[serde(deserialize_with = "call_id")]
     call_id: String,
     #[serde(default)]
     phase: Option<ActionPhase>,
@@ -427,6 +435,44 @@ where
     D: serde::Deserializer<'de>,
 {
     Ok(to_resource_path(String::deserialize(deserializer)?))
+}
+
+/// A call id as the trace writes it. Trace v10 records the id the client
+/// sent; the JS and Python clients send a string, but a client that sends
+/// an integer gets a number back, and that should pair its events rather
+/// than turn every one into `Unknown`.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum CallIdWire {
+    Text(String),
+    Number(u64),
+}
+
+impl From<CallIdWire> for String {
+    fn from(id: CallIdWire) -> Self {
+        match id {
+            CallIdWire::Text(id) => id,
+            CallIdWire::Number(id) => id.to_string(),
+        }
+    }
+}
+
+/// `deserialize_with` for a call id; see [`CallIdWire`].
+pub(crate) fn call_id<'de, D>(deserializer: D) -> std::result::Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(CallIdWire::deserialize(deserializer)?.into())
+}
+
+/// `deserialize_with` for an optional call id, such as a parent's.
+pub(crate) fn optional_call_id<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Option::<CallIdWire>::deserialize(deserializer)?.map(String::from))
 }
 
 /// Failure payload attached to an [`AfterEvent`].

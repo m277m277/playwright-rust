@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Bundled Playwright driver is now 1.64.0** (was 1.63.0). Browser builds: Chromium 156, Firefox 157, WebKit 27.2; videos are now encoded as VP9. One upstream behavior change reaches Rust callers: an element inside an iframe that is itself hidden (for example `visibility: hidden`) now counts as hidden for actions, `is_visible()` and `to_be_visible()`. The protocol spec was diffed across both tags: no command or parameter this crate sends was renamed, and the additive surface is listed in the v1.0 gap analysis.
+- **Requests carry string call ids in the `abcd@7` shape of the other clients.** 1.64 takes a request's id verbatim as the call id it records in traces, where it used to prefix it as `call@7`, so integer ids put numeric call ids into every trace, which the trace format types as strings.
 - **Every declared span field is recorded now.** `ElementHandle::screenshot` records `bytes_len` and `BrowserContext::cookies` records `count`, both declared since the tracing work landed and never filled; `Locator::aria_snapshot` drops its never-filled `mode` field, and `ResponseObject::body` and `::http_version` drop duplicates of fields the public `Response` already records. The crate docs now say which span an event handler inherits: the connection read loop's, never the caller's.
 
 ### Deprecated

@@ -225,10 +225,28 @@ fn take_timeout(params: &mut Value) -> Option<f64> {
         .and_then(|v| v.as_f64())
 }
 
+/// Four random lowercase letters that name this connection in its call ids,
+/// the `abcd@7` shape of the JS and Python clients. Since 1.64 the driver
+/// takes a request's `id` verbatim as the call id it writes into traces, and
+/// the trace format types that id as a string.
+fn call_id_prefix() -> String {
+    use std::hash::{BuildHasher, Hasher};
+    let mut bits = std::collections::hash_map::RandomState::new()
+        .build_hasher()
+        .finish();
+    (0..4)
+        .map(|_| {
+            let letter = b'a' + (bits % 26) as u8;
+            bits /= 26;
+            letter as char
+        })
+        .collect()
+}
+
 /// Protocol request message sent to Playwright server
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
-    pub id: u32,
+    pub id: String,
     #[serde(
         serialize_with = "serialize_arc_str",
         deserialize_with = "deserialize_arc_str"
@@ -262,7 +280,7 @@ where
 /// Protocol response message from Playwright server
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Response {
-    pub id: u32,
+    pub id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -330,10 +348,11 @@ type ObjectRegistry = HashMap<Arc<str>, Arc<dyn ChannelOwner>>;
 
 /// JSON-RPC connection to Playwright server
 pub struct Connection {
-    last_id: AtomicU32,
+    next_ordinal: AtomicU32,
+    call_id_prefix: String,
     /// Pending request callbacks. Sync lock: only ever held for an
     /// insert/remove, never across an await point.
-    callbacks: Arc<ParkingLotMutex<HashMap<u32, oneshot::Sender<Result<Value>>>>>,
+    callbacks: Arc<ParkingLotMutex<HashMap<String, oneshot::Sender<Result<Value>>>>>,
     /// Transport writer. A tokio (async-aware) mutex on purpose: the guard is
     /// held across the `send().await`, which is what serializes whole-message
     /// writes onto the single pipe/socket.
@@ -369,7 +388,8 @@ impl Connection {
         message_rx: mpsc::Receiver<Value>,
     ) -> Self {
         Self {
-            last_id: AtomicU32::new(0),
+            next_ordinal: AtomicU32::new(0),
+            call_id_prefix: call_id_prefix(),
             callbacks: Arc::new(ParkingLotMutex::new(HashMap::new())),
             sender: Arc::new(TokioMutex::new(Some(Box::new(sender)))),
             message_rx: Arc::new(TokioMutex::new(Some(message_rx))),
@@ -420,11 +440,12 @@ impl Connection {
     ) -> Result<Value> {
         self.assert_same_runtime();
 
-        let id = self.last_id.fetch_add(1, Ordering::SeqCst);
-        tracing::Span::current().record("id", id);
+        let ordinal = self.next_ordinal.fetch_add(1, Ordering::SeqCst);
+        let id = format!("{}@{ordinal}", self.call_id_prefix);
+        tracing::Span::current().record("id", id.as_str());
 
         let (tx, rx) = oneshot::channel();
-        self.callbacks.lock().insert(id, tx);
+        self.callbacks.lock().insert(id.clone(), tx);
 
         let mut metadata = Metadata::now();
         metadata.timeout = take_timeout(&mut params);
@@ -452,7 +473,7 @@ impl Connection {
             }
         }
 
-        tracing::trace!("Waiting for response to ID {}", id);
+        tracing::trace!("Waiting for response to ID {}", request.id);
         rx.await
             .map_err(|_| Error::ChannelClosed)
             .and_then(|result| result)
@@ -802,6 +823,7 @@ impl ConnectionLike for Connection {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
 
     #[test]
     fn response_parses_with_unexpected_error_details_shape() {
@@ -811,7 +833,7 @@ mod tests {
         // pending callback never resolves and the caller — which has no
         // client-side timeout — hangs forever.
         let raw = serde_json::json!({
-            "id": 7,
+            "id": "abcd@7",
             "error": { "error": { "message": "boom" } },
             "errorDetails": { "timedOut": 1 }
         });
@@ -820,8 +842,81 @@ mod tests {
         let Message::Response(response) = msg else {
             panic!("expected a Response");
         };
-        assert_eq!(response.id, 7);
+        assert_eq!(response.id, "abcd@7");
         assert!(response.error.is_some());
         assert!(response.error_details.is_some());
+    }
+
+    struct CapturingSender(tokio::sync::mpsc::UnboundedSender<Value>);
+
+    impl TransportSender for CapturingSender {
+        fn send(
+            &mut self,
+            message: Value,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send + '_>> {
+            let _ = self.0.send(message);
+            Box::pin(async { Ok(()) })
+        }
+    }
+
+    struct IdleReceiver;
+
+    impl TransportReceiver for IdleReceiver {
+        fn run(
+            &mut self,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send + '_>> {
+            Box::pin(std::future::pending())
+        }
+    }
+
+    #[tokio::test]
+    async fn requests_carry_one_prefix_and_a_rising_ordinal() {
+        let (wire_tx, mut wire_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_server_tx, message_rx) = mpsc::channel(1);
+        let connection = Arc::new(Connection::new(
+            CapturingSender(wire_tx),
+            IdleReceiver,
+            message_rx,
+        ));
+        for _ in 0..2 {
+            let connection = Arc::clone(&connection);
+            crate::task::spawn(async move {
+                let _ = connection
+                    .send_message(String::new(), "initialize".into(), Value::Null)
+                    .await;
+            });
+        }
+
+        let mut ids = Vec::new();
+        for _ in 0..2 {
+            let request = tokio::time::timeout(Duration::from_secs(5), wire_rx.recv())
+                .await
+                .expect("a request reaches the wire")
+                .expect("the wire is open");
+            ids.push(
+                request["id"]
+                    .as_str()
+                    .expect("the id is a string")
+                    .to_owned(),
+            );
+        }
+        ids.sort();
+        let prefix = &connection.call_id_prefix;
+        assert_eq!(ids, [format!("{prefix}@0"), format!("{prefix}@1")]);
+    }
+
+    #[test]
+    fn call_id_prefix_is_four_lowercase_letters() {
+        let prefixes: Vec<String> = (0..16).map(|_| call_id_prefix()).collect();
+        for prefix in &prefixes {
+            assert_eq!(prefix.len(), 4, "{prefix:?}");
+            assert!(prefix.bytes().all(|b| b.is_ascii_lowercase()), "{prefix:?}");
+        }
+        assert!(
+            prefixes
+                .iter()
+                .any(|p| p.bytes().any(|b| b != p.as_bytes()[0])),
+            "each letter draws on its own bits: {prefixes:?}"
+        );
     }
 }

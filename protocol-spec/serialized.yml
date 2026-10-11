@@ -104,4 +104,6 @@ SerializedError:
         message: string
         name: string
         stack: string?
+        # See https://nodejs.org/api/errors.html#errorcode
+        code: string?
     value: SerializedValue?

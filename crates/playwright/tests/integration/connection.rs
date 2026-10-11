@@ -481,9 +481,8 @@ async fn test_browser_type_connect() {
                     if let Ok(request) = serde_json::from_str::<serde_json::Value>(&text) {
                         // Check if this is an initialize request
                         if request.get("method").and_then(|m| m.as_str()) == Some("initialize") {
-                            let id = request.get("id").and_then(|i| i.as_u64()).unwrap_or(0);
                             let response = json!({
-                                "id": id,
+                                "id": request["id"],
                                 "result": {
                                     "playwright": {
                                         "guid": "playwright"
@@ -559,7 +558,7 @@ async fn test_browser_type_connect() {
         server_conn.read_exact(&mut msg_buf).await.unwrap();
 
         let msg: serde_json::Value = serde_json::from_slice(&msg_buf).unwrap();
-        if let Some(id) = msg["id"].as_i64() {
+        if let Some(id) = msg.get("id") {
             let response = json!({
                 "id": id,
                 "result": {

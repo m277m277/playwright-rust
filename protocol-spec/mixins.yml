@@ -31,6 +31,12 @@ ShowActionsOptions:
       literals:
       - none
       - pointer
+    style:
+      type: object?
+      properties:
+        point: string?
+        highlight: string?
+        title: string?
 
 CommonScreenshotOptions:
   type: mixin
@@ -196,6 +202,7 @@ ContextOptions:
           properties:
             width: int
             height: int
+        fps: int?
         showActions:
           type: object?
           properties:
