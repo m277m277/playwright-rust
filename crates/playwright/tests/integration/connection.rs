@@ -231,91 +231,87 @@ async fn script_failure(
     )
 }
 
-/// Launch Chrome with --remote-debugging-port and return the CDP endpoint URL.
-///
-/// Uses Playwright Node.js to find the Chrome binary and launch it with
-/// remote debugging enabled, then discovers the CDP endpoint via /json/version.
+/// A Chrome with `--remote-debugging-port`, started by the test itself as a
+/// direct child and killed when dropped, so it dies with the test whether the
+/// test passes or panics. It used to be started by a Node script that killed
+/// it when its stdin closed; killing that script skipped the handler, and
+/// every run left a Chrome running.
+struct CdpChrome {
+    process: tokio::process::Child,
+    endpoint: String,
+    _profile: tempfile::TempDir,
+}
+
+/// Start Chrome for Testing (the binary the pinned driver resolves) with
+/// remote debugging on a free port, and read the endpoint it announces.
 async fn start_chrome_with_cdp(
     node: &std::path::Path,
     package_path: &std::path::Path,
-) -> anyhow::Result<(tokio::process::Child, String)> {
-    // Node.js script that:
-    // 1. Gets Chrome executable path from Playwright
-    // 2. Spawns Chrome with --remote-debugging-port=0
-    // 3. Reads the DevTools URL from stderr
-    // 4. Outputs the HTTP endpoint to stdout
-    let script = format!(
-        r#"
-const {{ chromium }} = require({});
-const {{ spawn }} = require('child_process');
-const http = require('http');
-
-const execPath = chromium.executablePath();
-
-const child = spawn(execPath, [
-    '--headless',
-    '--remote-debugging-port=0',
-    '--no-sandbox',
-    '--disable-gpu',
-    '--use-mock-keychain',
-    '--no-first-run'
-], {{ stdio: ['pipe', 'pipe', 'pipe'] }});
-
-// Chrome outputs the DevTools URL to stderr
-let stderr = '';
-child.stderr.on('data', (data) => {{
-    stderr += data.toString();
-    // Look for the DevTools listening message
-    const match = stderr.match(/DevTools listening on (ws:\/\/[^\s]+)/);
-    if (match) {{
-        // Extract port from ws://127.0.0.1:PORT/devtools/browser/...
-        const portMatch = match[1].match(/:(\d+)\//);
-        if (portMatch) {{
-            console.log('http://127.0.0.1:' + portMatch[1]);
-        }}
-    }}
-}});
-
-// Keep running until stdin closes
-process.stdin.resume();
-process.stdin.on('close', () => {{
-    child.kill();
-    process.exit(0);
-}});
-
-// Also kill on timeout (safety)
-setTimeout(() => {{
-    child.kill();
-    process.exit(1);
-}}, 25000);
-"#,
-        crate::common::js_string(package_path)
-    );
-
-    let mut child = Command::new(node)
+) -> anyhow::Result<CdpChrome> {
+    let lookup = Command::new(node)
         .arg("-e")
-        .arg(&script)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
+        .arg(format!(
+            "process.stdout.write(require({}).chromium.executablePath())",
+            crate::common::js_string(package_path)
+        ))
+        .output()
+        .await?;
+    anyhow::ensure!(
+        lookup.status.success(),
+        "could not resolve the Chromium executable: {}",
+        String::from_utf8_lossy(&lookup.stderr).trim()
+    );
+    let executable = String::from_utf8(lookup.stdout)?;
+
+    let profile = tempfile::tempdir()?;
+    let mut process = Command::new(executable.trim())
+        .args([
+            "--headless",
+            "--remote-debugging-port=0",
+            "--no-sandbox",
+            "--disable-gpu",
+            "--use-mock-keychain",
+            "--no-first-run",
+        ])
+        .arg(format!("--user-data-dir={}", profile.path().display()))
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
         .spawn()?;
 
-    let stdout = child.stdout.take().expect("stdout was piped");
-    let mut reader = tokio::io::BufReader::new(stdout).lines();
-
+    // Chrome announces `DevTools listening on ws://127.0.0.1:<port>/...` on
+    // stderr. The rest of its stderr is drained in the background, so it
+    // never writes into a closed pipe.
+    let mut lines = BufReader::new(process.stderr.take().expect("stderr was piped")).lines();
     let endpoint = tokio::time::timeout(Duration::from_secs(15), async {
-        while let Ok(Some(line)) = reader.next_line().await {
-            if line.starts_with("http://") || line.starts_with("ws://") {
-                return Some(line);
+        while let Ok(Some(line)) = lines.next_line().await {
+            if let Some(url) = line.strip_prefix("DevTools listening on ws://")
+                && let Some(host_port) = url.split('/').next()
+            {
+                return Some(format!("http://{host_port}"));
             }
         }
         None
     })
     .await;
+    tokio::spawn(async move { while let Ok(Some(_)) = lines.next_line().await {} });
+
     match endpoint {
-        Ok(Some(endpoint)) => Ok((child, endpoint)),
-        outcome => Err(script_failure("Chrome with CDP", child, outcome.is_err()).await),
+        Ok(Some(endpoint)) => Ok(CdpChrome {
+            process,
+            endpoint,
+            _profile: profile,
+        }),
+        outcome => {
+            let _ = process.kill().await;
+            let why = if outcome.is_err() {
+                "timed out waiting for"
+            } else {
+                "exited without printing"
+            };
+            Err(anyhow::anyhow!("Chrome {why} its CDP endpoint"))
+        }
     }
 }
 
@@ -327,9 +323,10 @@ async fn test_connect_over_cdp_real_chrome() {
     let (node, package_path) = crate::common::driver_node_and_package();
 
     // Start Chrome with CDP
-    let (mut chrome_process, cdp_endpoint) = start_chrome_with_cdp(&node, &package_path)
+    let mut chrome = start_chrome_with_cdp(&node, &package_path)
         .await
         .unwrap_or_else(|e| panic!("{e}"));
+    let cdp_endpoint = chrome.endpoint.clone();
 
     tracing::info!("Chrome CDP endpoint: {}", cdp_endpoint);
 
@@ -365,7 +362,7 @@ async fn test_connect_over_cdp_real_chrome() {
         Err(e) => {
             tracing::error!("Failed to connect over CDP: {}", e);
             let _ = playwright.shutdown().await;
-            let _ = chrome_process.kill().await;
+            let _ = chrome.process.kill().await;
             let _ = std::fs::remove_dir_all(&artifacts_dir);
             panic!("connect_over_cdp failed: {:?}", e);
         }
@@ -392,7 +389,7 @@ async fn test_connect_over_cdp_real_chrome() {
     // Cleanup
     browser.close().await.ok();
     playwright.shutdown().await.ok();
-    let _ = chrome_process.kill().await;
+    let _ = chrome.process.kill().await;
     let _ = std::fs::remove_dir_all(&artifacts_dir);
 }
 
