@@ -257,3 +257,52 @@ async fn nth_on_an_any_frame_locator_is_refused() {
     let _ = page.frame_locator(None).first();
     browser.close().await.expect("close browser");
 }
+
+#[tokio::test]
+async fn an_element_inside_a_hidden_iframe_is_hidden() {
+    let (_pw, browser, page) = crate::common::setup().await;
+    page.set_content(
+        r#"<iframe id="hidden" style="visibility: hidden" srcdoc="<button>in hidden</button>"></iframe>
+           <iframe id="shown" srcdoc="<button>in shown</button>"></iframe>"#,
+        None,
+    )
+    .await
+    .expect("set_content");
+
+    let shown = page.frame_locator("#shown").locator("button");
+    playwright_rs::expect(shown.clone())
+        .to_be_visible()
+        .await
+        .expect("a button in a shown iframe is visible");
+    let hidden = page.frame_locator("#hidden").locator("button");
+    playwright_rs::expect(hidden.clone())
+        .to_have_count(1)
+        .await
+        .expect("the hidden iframe's button exists");
+    playwright_rs::expect(hidden.clone())
+        .to_be_hidden()
+        .await
+        .expect("a button in a hidden iframe is hidden");
+    assert!(!hidden.is_visible().await.expect("is_visible"));
+
+    // A frame reached directly starts out visible: only a selector that
+    // enters the iframe carries the iframe's own visibility with it.
+    let frame = page
+        .query_selector("#hidden")
+        .await
+        .expect("query")
+        .expect("iframe element")
+        .content_frame()
+        .await
+        .expect("content_frame")
+        .expect("a frame");
+    assert!(
+        frame
+            .locator("button")
+            .is_visible()
+            .await
+            .expect("is_visible")
+    );
+
+    browser.close().await.expect("close");
+}
