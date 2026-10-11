@@ -21,6 +21,11 @@ gloo-net = { version = "0.7", default-features = false, features = ["http", "jso
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 wasm-bindgen-futures = "0.4"
+# Register the page's WebMCP tools for agents (`src/agent_tools.rs`): the
+# browser API is too new for typed bindings, so it is reached through js-sys.
+wasm-bindgen = "0.2"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = ["Document", "Element", "HtmlElement", "HtmlSelectElement", "Navigator", "Node", "NodeList", "Window", "console"] }
 
 # Build-time only: highlight code snippets to HTML so nothing is shipped to the
 # WASM bundle. `default-fancy` swaps the C oniguruma regex for pure-Rust

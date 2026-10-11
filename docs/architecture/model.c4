@@ -832,6 +832,17 @@ so whether it inherits the caller\'s span is decided at the call site.'
       path 'crates/site'
     }
     link ../../crates/site
+    agent_tools = component 'agent_tools' {
+      description 'The tools this page publishes to AI agents through WebMCP, the experimental
+browser API that lets a page offer structured tools in place of DOM a model
+has to read. A browser without it (nearly every one today) gets nothing
+registered and no difference in the page. The dogfood test lists and calls
+these from playwright-rs, through `page.webmcp()`.'
+      metadata {
+        path 'crates/site/src/agent_tools.rs'
+      }
+      link ../../crates/site/src/agent_tools.rs
+    }
     app = component 'app' {
       metadata {
         path 'crates/site/src/app.rs'
@@ -1647,6 +1658,7 @@ contents lazily.'
   playwright_rs_fuzz.fuzz_parse_result -[calls]-> playwright_rs.protocol.evaluate_conversion 'parse_result'
   playwright_rs_fuzz.fuzz_parse_value -[calls]-> playwright_rs.protocol.evaluate_conversion 'parse_value'
   playwright_rs_fuzz.fuzz_serialize_argument -[calls]-> playwright_rs.protocol.evaluate_conversion 'serialize_argument'
+  playwright_rs_site.agent_tools -[calls]-> playwright_rs_site.components.version_switcher 'navigate_to'
   playwright_rs_site.app -[uses]-> playwright_rs_site.components.comparison 'Comparison'
   playwright_rs_site.app -[uses]-> playwright_rs_site.components.dogfood_banner 'DogfoodBanner'
   playwright_rs_site.app -[uses]-> playwright_rs_site.components.features 'Features'
@@ -1672,20 +1684,22 @@ contents lazily.'
   playwright_rs_site.components.install -[uses]-> playwright_rs_site.snippets 'snippets'
   playwright_rs_site.components.install -[calls]-> playwright_rs_site.version 'is_dev'
   playwright_rs_site.components.version_switcher -[calls]-> playwright_rs_site.version 'SITE_VERSION, is_dev'
-  playwright_rs_site.components.walkthrough -[names]-> playwright_rs_site.snippets 'SERVE_01_RS, SERVE_02_RS, SERVE_03_RS, SERVE_04_RS, WALK_01_RS, WALK_02_RS, WALK_03_RS, WALK_04_RS, WALK_05_RS, WALK_06_RS, snippets'
+  playwright_rs_site.components.walkthrough -[names]-> playwright_rs_site.snippets 'SERVE_01_RS, SERVE_02_RS, SERVE_03_RS, SERVE_04_RS, WALK_01_RS, WALK_02_RS, WALK_03_RS, WALK_04_RS, WALK_05_RS, WALK_06_RS, WALK_07_RS, snippets'
   playwright_rs_site.components.walkthrough -[calls]-> playwright_rs_site.version 'is_dev'
   playwright_rs_site_e2e.tests -[names]-> playwright_rs 'PLAYWRIGHT_VERSION'
+  playwright_rs_site_e2e.tests -[constructs]-> playwright_rs.api.launch_options 'LaunchOptions'
   playwright_rs_site_e2e.tests -[calls]-> playwright_rs.assertions 'expect, expect_page'
-  playwright_rs_site_e2e.tests -[constructs]-> playwright_rs.protocol.aria_snapshot 'AriaSnapshotOptions'
+  playwright_rs_site_e2e.tests -[constructs]-> playwright_rs.protocol.aria_snapshot 'AriaSnapshotMode, AriaSnapshotOptions'
   playwright_rs_site_e2e.tests -[names]-> playwright_rs.protocol.browser 'Browser'
   playwright_rs_site_e2e.tests -[constructs]-> playwright_rs.protocol.browser_context.options 'Viewport'
   playwright_rs_site_e2e.tests -[constructs]-> playwright_rs.protocol.har_options 'StartHarOptions'
   playwright_rs_site_e2e.tests -[names]-> playwright_rs.protocol.locator 'Locator'
   playwright_rs_site_e2e.tests -[names]-> playwright_rs.protocol.page 'Page'
   playwright_rs_site_e2e.tests -[calls]-> playwright_rs.protocol.playwright 'Playwright'
-  playwright_rs_site_e2e.tests -[constructs]-> playwright_rs.protocol.screencast 'ActionCursor, ScreencastStartOptions, ShowActionsOptions'
+  playwright_rs_site_e2e.tests -[constructs]-> playwright_rs.protocol.screencast 'ActionCursor, ScreencastStartOptions, ShowActionsOptions, ShowActionsStyle'
   playwright_rs_site_e2e.tests -[constructs]-> playwright_rs.protocol.screenshot 'Animations, ScreenshotOptions'
   playwright_rs_site_e2e.tests -[constructs]-> playwright_rs.protocol.tracing 'TracingStartOptions, TracingStopOptions'
+  playwright_rs_site_e2e.tests -[calls]-> playwright_rs_trace.trace 'open'
   playwright_rs_trace.action -[names]-> playwright_rs_trace.error 'Result'
   playwright_rs_trace.action -[names]-> playwright_rs_trace.event 'ActionError, AfterEvent, BeforeEvent, InputEvent, LogEvent, Point, TraceEvent'
   playwright_rs_trace.jsonl -[constructs]-> playwright_rs_trace.error 'Result, TraceError'

@@ -467,7 +467,7 @@ tower-http = {{ version = "0.7", features = ["fs"] }}
          use axum::http::{StatusCode, header::CONTENT_TYPE};\n\
          use axum::response::IntoResponse;\n\
          use std::sync::{Arc, Mutex};\n\
-         use playwright_rs::protocol::{Playwright, ScreenshotOptions, StorageStateOptions, Viewport};\n\
+         use playwright_rs::protocol::{AriaSnapshotMode, AriaSnapshotOptions, Playwright, ScreenshotOptions, StorageStateOptions, Viewport};\n\
          use playwright_rs::expect;\n\
          use tower_http::services::ServeDir;\n\n",
     );

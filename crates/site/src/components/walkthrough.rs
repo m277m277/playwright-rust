@@ -39,6 +39,11 @@ fn dogfood_steps() -> Vec<Step> {
             snippets::WALK_06_RS,
             "receipts/steps/06.png",
         ),
+        (
+            "Let an agent switch the comparison",
+            snippets::WALK_07_RS,
+            "receipts/steps/07.png",
+        ),
     ]
 }
 

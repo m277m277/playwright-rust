@@ -24,4 +24,5 @@ pub use hero::Hero;
 pub use install::Install;
 pub use unreleased_badge::UnreleasedBadge;
 pub use version_switcher::VersionSwitcher;
+pub(crate) use version_switcher::navigate_to;
 pub use walkthrough::{ServeWalkthrough, Walkthrough};

@@ -13,7 +13,7 @@ struct Manifest {
     versions: Vec<String>,
 }
 
-fn navigate_to(value: &str) {
+pub(crate) fn navigate_to(value: &str) {
     let url = match value {
         "dev" => "/dev/".to_string(),
         v => format!("/v{v}/"),

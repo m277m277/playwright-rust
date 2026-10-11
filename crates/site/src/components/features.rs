@@ -135,7 +135,7 @@ pub fn Features() -> impl IntoView {
                 <FeatureCard
                     id="feature-webmcp"
                     title="Agent tools (WebMCP)"
-                    blurb="List and call the tools your page registers for AI agents, as an agent would."
+                    blurb="List and call the tools a page publishes for AI agents, as an agent would. This page publishes its own, and its deploy gate calls them."
                     unreleased=true
                 >
                     <CodeBlock html=snippets::CARD_WEBMCP_RS/>

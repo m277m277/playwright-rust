@@ -8,6 +8,7 @@ const TRACE: &str = "receipts/trace.zip";
 const HAR: &str = "receipts/dogfood.har";
 const ARIA: &str = "receipts/aria-snapshot.txt";
 const SCREENCAST: &str = "receipts/screencast.jpeg";
+const AGENT_TOOLS: &str = "receipts/agent-tools.json";
 
 #[component]
 pub fn DogfoodBanner() -> impl IntoView {
@@ -30,7 +31,8 @@ pub fn DogfoodBanner() -> impl IntoView {
                     <div class=card>
                         <h3 class="font-semibold text-rust-300">"Trace"</h3>
                         <p class="mt-1 flex-1 text-sm text-rust-50/70">
-                            "Step-by-step timeline of the run. Open it in "
+                            "Step-by-step timeline of the run, read back by playwright-rs-trace "
+                            "before it ships. Open it in "
                             <a href=TRACE_VIEWER class="underline hover:text-rust-300">
                                 "trace.playwright.dev"
                             </a> "."
@@ -56,7 +58,7 @@ pub fn DogfoodBanner() -> impl IntoView {
                     // A frame the dogfood run captured via the screencast API
                     // (shipped in 0.15.0). The dev run produces the receipt and
                     // the snapshot build copies it in, so it ships everywhere,
-                    // same as the other three.
+                    // same as the other receipts.
                     {view! {
                         <div class=card>
                             <div class="flex items-center gap-2">
@@ -64,11 +66,19 @@ pub fn DogfoodBanner() -> impl IntoView {
                             </div>
                             <p class="mt-1 flex-1 text-sm text-rust-50/70">
                                 "A frame captured with the screencast API and "
-                                "cursor decoration."
+                                "styled action decorations."
                             </p>
                             <a href=SCREENCAST download class=dl>"Download .jpeg"</a>
                         </div>
                     }}
+                    <div class=card>
+                        <h3 class="font-semibold text-rust-300">"Agent tools"</h3>
+                        <p class="mt-1 flex-1 text-sm text-rust-50/70">
+                            "The tools this page publishes to AI agents through WebMCP, as "
+                            "playwright-rs listed them before calling each one."
+                        </p>
+                        <a href=AGENT_TOOLS download class=dl>"Download .json"</a>
+                    </div>
                 </div>
 
                 <p class="mt-6 text-sm font-semibold">

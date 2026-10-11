@@ -25,9 +25,9 @@ use axum::Router;
 use axum::http::{StatusCode, header::CONTENT_TYPE};
 use axum::response::IntoResponse;
 use playwright_rs::protocol::{
-    ActionCursor, Animations, AriaSnapshotOptions, Page, Playwright, ScreencastStartOptions,
-    ScreenshotOptions, ShowActionsOptions, StartHarOptions, TracingStartOptions,
-    TracingStopOptions, Viewport,
+    ActionCursor, Animations, AriaSnapshotMode, AriaSnapshotOptions, Page, Playwright,
+    ScreencastStartOptions, ScreenshotOptions, ShowActionsOptions, ShowActionsStyle,
+    StartHarOptions, TracingStartOptions, TracingStopOptions, Viewport,
 };
 use playwright_rs::{expect, expect_page};
 use tower_http::services::ServeDir;
@@ -144,7 +144,14 @@ async fn landing_page_works_as_advertised() {
     let (addr, server) = serve(&dist).await;
 
     let pw = Playwright::launch().await.expect("launch playwright");
-    let browser = pw.chromium().launch().await.expect("launch chromium");
+    // WebMCP is behind a flag in Chromium; step 7 drives the page's tools.
+    let browser = pw
+        .chromium()
+        .launch_with_options(
+            playwright_rs::LaunchOptions::new().args(vec!["--enable-features=WebMCP".into()]),
+        )
+        .await
+        .expect("launch chromium with WebMCP");
     let context = browser.new_context().await.expect("new context");
 
     // Trace the whole run; published as a downloadable receipt.
@@ -229,6 +236,26 @@ async fn landing_page_works_as_advertised() {
         .await
         .expect("aria snapshot");
     std::fs::write(receipts.join("aria-snapshot.txt"), aria_tree).expect("write aria receipt");
+    // The hero the way an agent reads it: `ai` mode tags each element with a
+    // ref, and get_by_ref turns the one it picked back into a locator. The
+    // snapshot is scoped to the hero, since the footer has a Docs link too.
+    let ai_tree = page
+        .locator("#hero")
+        .aria_snapshot(AriaSnapshotOptions::default().mode(AriaSnapshotMode::Ai))
+        .await
+        .expect("ai-mode aria snapshot of the hero");
+    let docs_ref = ai_tree
+        .lines()
+        .find(|line| line.contains(r#"link "Docs""#))
+        .and_then(|line| line.split("[ref=").nth(1))
+        .and_then(|rest| rest.split(']').next())
+        .unwrap_or_else(|| {
+            panic!("the hero's ai snapshot names its Docs link with a ref:\n{ai_tree}")
+        });
+    expect(page.get_by_ref(docs_ref))
+        .to_have_attribute("id", "cta-docs")
+        .await
+        .expect("the snapshot's ref resolves to the hero's Docs button");
     shot(&page, &steps, "01.png", "#hero").await;
 
     // Step 2: switch the comparison language and assert the resulting state.
@@ -333,7 +360,7 @@ async fn landing_page_works_as_advertised() {
          (id + a token unique to its snippet) to the list above",
         cards.len()
     );
-    for (id, token) in cards {
+    for &(id, token) in &cards {
         expect(page.locator(id))
             .to_be_visible()
             .await
@@ -342,14 +369,31 @@ async fn landing_page_works_as_advertised() {
             .to_contain_text(token)
             .await
             .unwrap_or_else(|e| panic!("feature card {id} should show its snippet: {e:?}"));
-        let colored = page
-            .locator(format!("{id} span[style*='color']"))
-            .count()
-            .await
-            .unwrap_or_else(|e| panic!("count colored spans in {id}: {e:?}"));
-        assert!(
-            colored > 0,
-            "feature card {id} should render highlighted (colored) code, found {colored} colored spans"
+    }
+    // Every card highlights its code: the first colored span inside each card,
+    // one per card, so a card that renders plain text drops the count.
+    let colored_per_card = page
+        .locator("span[style*='color']")
+        .first()
+        .within(&page.locator("[id^='feature-']"))
+        .count()
+        .await
+        .expect("count cards with highlighted code");
+    if colored_per_card != rendered {
+        let mut plain = Vec::new();
+        for (id, _) in &cards {
+            let colored = page
+                .locator(format!("{id} span[style*='color']"))
+                .count()
+                .await
+                .unwrap_or_else(|e| panic!("count colored spans in {id}: {e:?}"));
+            if colored == 0 {
+                plain.push(*id);
+            }
+        }
+        panic!(
+            "{colored_per_card} of {rendered} feature cards render highlighted code; \
+             the ones with none: {plain:?}"
         );
     }
     shot(&page, &steps, "04.png", "#features").await;
@@ -381,6 +425,29 @@ async fn landing_page_works_as_advertised() {
         .expect("masked hero screenshot");
     std::fs::write(steps.join("06.png"), bytes).expect("write step 06 screenshot");
 
+    // Step 7: an agent changes the page through a tool the page publishes
+    // (WebMCP), and the locators a click would be checked with confirm it.
+    // Step 2 switched to Java by clicking; the agent asks for .NET.
+    let shown: serde_json::Value = page
+        .webmcp()
+        .call_tool(
+            "compare_with",
+            &serde_json::json!({ "language": ".NET" }),
+            None,
+        )
+        .await
+        .expect("call compare_with");
+    let answer = shown["content"][0]["text"].as_str().unwrap_or_default();
+    assert!(
+        answer.contains(".NET:") && answer.contains("Rust:"),
+        "the agent gets both versions: {shown}"
+    );
+    expect(page.locator("#comparison [data-lang='.NET']"))
+        .to_have_attribute("aria-selected", "true")
+        .await
+        .expect("the tool switched the comparison as a click would");
+    shot(&page, &steps, "07.png", "#comparison").await;
+
     // The walkthrough is itself an interactive stepper. Driving it covers the
     // third interactive widget on the page.
     page.locator("#walk-next")
@@ -388,7 +455,7 @@ async fn landing_page_works_as_advertised() {
         .await
         .expect("click the walkthrough Next button");
     expect(page.locator("#walkthrough"))
-        .to_contain_text("Step 2 of 6")
+        .to_contain_text("Step 2 of 7")
         .await
         .expect("the walkthrough advances to the next step");
 
@@ -402,6 +469,24 @@ async fn landing_page_works_as_advertised() {
         )))
         .await
         .expect("write trace receipt");
+    // A published receipt nobody can open is no receipt: read it back with
+    // the crate's own parser and find the run's navigation in it. A driver
+    // that changes the trace format, or how it names calls, fails here
+    // instead of in a visitor's download.
+    let mut trace =
+        playwright_rs::trace::open(receipts.join("trace.zip")).expect("open trace receipt");
+    let actions = trace
+        .actions()
+        .expect("trace actions")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("every action in the receipt parses");
+    assert!(
+        actions
+            .iter()
+            .any(|a| a.method == "goto" && a.end_time.is_some()),
+        "the trace receipt records the completed navigation: {:?}",
+        actions.iter().map(|a| &a.method).collect::<Vec<_>>()
+    );
 
     browser.close().await.ok();
     server.abort();
@@ -500,9 +585,17 @@ async fn dev_build_reflects_unreleased_state() {
         .await
         .expect("start screencast");
     screencast
-        .show_actions(ShowActionsOptions::default().cursor(ActionCursor::Pointer))
+        .show_actions(
+            ShowActionsOptions::default()
+                .cursor(ActionCursor::Pointer)
+                .style(
+                    ShowActionsStyle::default()
+                        .point("width: 18px; height: 18px; border-radius: 50%; background: #ce422b")
+                        .highlight("outline: 2px solid #ce422b"),
+                ),
+        )
         .await
-        .expect("show_actions with pointer cursor");
+        .expect("show_actions with a pointer cursor and the brand style");
     // An interaction makes the cursor overlay appear and drives fresh frames.
     page.locator("#cta-docs")
         .hover(None)
@@ -733,4 +826,183 @@ async fn site_served_in_process_boots_and_reacts() {
         .expect("the second step shows its receipt");
 
     browser.close().await.expect("close browser");
+}
+
+/// The page publishes tools for AI agents through WebMCP (`agent_tools.rs` in
+/// the site). An agent driving a browser can call them in place of reading the
+/// page, so list and call each the way an agent would, from playwright-rs.
+/// Chromium keeps the API behind a flag; the tool list is published as a
+/// receipt.
+#[tokio::test]
+async fn the_page_publishes_tools_for_agents() {
+    let Some(dist) = dist_or_skip("agent tools test") else {
+        return;
+    };
+    let manifest = versions_manifest(&backend_answering(
+        r#"{"latest":"9.9.9","versions":["9.9.9","0.14.0"]}"#,
+    ));
+    let (addr, server) = common::serve_with(&dist, Some(manifest)).await;
+    let pw = Playwright::launch().await.expect("launch playwright");
+    let browser = pw
+        .chromium()
+        .launch_with_options(
+            playwright_rs::LaunchOptions::new().args(vec!["--enable-features=WebMCP".into()]),
+        )
+        .await
+        .expect("launch chromium with WebMCP");
+    let page = browser.new_page().await.expect("new page");
+    page.goto(&format!("http://{addr}"), None)
+        .await
+        .expect("open the site");
+    expect(page.locator("#hero-title"))
+        .to_have_text("Playwright for Rust")
+        .await
+        .expect("the app mounts, which is when it registers its tools");
+
+    let webmcp = page.webmcp();
+    let mut tools = webmcp.tools(None).await.expect("list the page's tools");
+    tools.sort_by(|a, b| a.name.cmp(&b.name));
+    let names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
+    assert_eq!(
+        names,
+        [
+            "compare_with",
+            "get_install",
+            "get_snippet",
+            "list_features",
+            "list_versions",
+            "open_version"
+        ]
+    );
+    for tool in &tools {
+        assert!(
+            !tool.description.is_empty(),
+            "{} describes itself",
+            tool.name
+        );
+        let changes_the_page = ["compare_with", "open_version"].contains(&tool.name.as_str());
+        assert_eq!(
+            tool.annotations.as_ref().and_then(|a| a.read_only),
+            (!changes_the_page).then_some(true),
+            "{} says whether it only reads the page",
+            tool.name
+        );
+    }
+    let receipt: Vec<serde_json::Value> = tools
+        .iter()
+        .map(|t| {
+            serde_json::json!({
+                "name": t.name,
+                "description": t.description,
+                "input_schema": t.input_schema,
+            })
+        })
+        .collect();
+    let receipts = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../site/public/receipts");
+    std::fs::create_dir_all(&receipts).expect("create receipts dir");
+    std::fs::write(
+        receipts.join("agent-tools.json"),
+        serde_json::to_string_pretty(&receipt).expect("tool list as JSON"),
+    )
+    .expect("write the agent tools receipt");
+
+    let text = |result: &serde_json::Value| {
+        result["content"][0]["text"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string()
+    };
+
+    let install: serde_json::Value = webmcp
+        .call_tool("get_install", &(), None)
+        .await
+        .expect("call get_install");
+    assert!(text(&install).contains("playwright-rs"), "{install}");
+
+    let listed: serde_json::Value = webmcp
+        .call_tool("list_features", &(), None)
+        .await
+        .expect("call list_features");
+    let features: Vec<serde_json::Value> =
+        serde_json::from_str(&text(&listed)).expect("list_features answers with JSON");
+    let cards = page
+        .locator("[id^='feature-']")
+        .count()
+        .await
+        .expect("count the feature cards");
+    assert_eq!(features.len(), cards, "one entry per card the page shows");
+    assert!(
+        features
+            .iter()
+            .any(|f| f["id"] == "locators" && f["title"] == "Auto-waiting locators"),
+        "{features:?}"
+    );
+
+    let snippet: serde_json::Value = webmcp
+        .call_tool(
+            "get_snippet",
+            &serde_json::json!({ "id": "locators" }),
+            None,
+        )
+        .await
+        .expect("call get_snippet");
+    assert!(text(&snippet).contains("page.locator"), "{snippet}");
+    let unknown: serde_json::Value = webmcp
+        .call_tool("get_snippet", &serde_json::json!({ "id": "nope" }), None)
+        .await
+        .expect("an unknown id is the tool's own error, not a failed call");
+    assert_eq!(unknown["isError"], true, "{unknown}");
+    assert!(
+        text(&unknown).contains("locators"),
+        "it names the ids it knows: {unknown}"
+    );
+
+    // The versions come from the switcher, which read them from /versions.json.
+    expect(page.locator("#version-select"))
+        .to_contain_text("v0.14.0")
+        .await
+        .expect("the switcher has loaded the versions");
+    let listed: serde_json::Value = webmcp
+        .call_tool("list_versions", &(), None)
+        .await
+        .expect("call list_versions");
+    let versions: Vec<serde_json::Value> =
+        serde_json::from_str(&text(&listed)).expect("list_versions answers with JSON");
+    let open: Vec<&str> = versions
+        .iter()
+        .filter(|v| v["open"] == true)
+        .filter_map(|v| v["version"].as_str())
+        .collect();
+    assert_eq!(open, ["dev"], "{versions:?}");
+    assert!(
+        versions.iter().any(|v| v["version"] == "0.14.0"),
+        "{versions:?}"
+    );
+
+    let refused: serde_json::Value = webmcp
+        .call_tool(
+            "open_version",
+            &serde_json::json!({ "version": "0.0.1" }),
+            None,
+        )
+        .await
+        .expect("an unknown version is the tool's own error");
+    assert_eq!(refused["isError"], true, "{refused}");
+    // Last, since the page navigates away once the tool answers.
+    let opened: serde_json::Value = webmcp
+        .call_tool(
+            "open_version",
+            &serde_json::json!({ "version": "0.14.0" }),
+            None,
+        )
+        .await
+        .expect("call open_version");
+    assert!(text(&opened).contains("0.14.0"), "{opened}");
+    expect_page(&page)
+        .to_have_url(&format!("http://{addr}/v0.14.0/"))
+        .await
+        .expect("the page opens that version, as the switcher would");
+
+    browser.close().await.ok();
+    server.abort();
 }

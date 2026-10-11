@@ -875,6 +875,7 @@ dependencies = [
  "libc",
  "parking_lot",
  "playwright-rs-macros",
+ "playwright-rs-trace",
  "regex",
  "rustls",
  "serde",
@@ -905,8 +906,19 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "playwright-rs",
+ "serde_json",
  "tokio",
  "tower-http",
+]
+
+[[package]]
+name = "playwright-rs-trace"
+version = "0.2.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror",
+ "zip",
 ]
 
 [[package]]
