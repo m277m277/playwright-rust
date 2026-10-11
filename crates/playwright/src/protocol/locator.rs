@@ -587,6 +587,17 @@ impl FilterOptions {
     }
 }
 
+/// What is left of a `timeout_ms` budget after `elapsed`, for the second
+/// step of a two-step action that shares one deadline. Playwright reads 0 as
+/// no timeout, so it stays 0; otherwise at least a millisecond is left, since
+/// a remainder of 0 would turn into no timeout at all.
+fn remaining_ms(timeout_ms: f64, elapsed: std::time::Duration) -> f64 {
+    if timeout_ms == 0.0 {
+        return 0.0;
+    }
+    (timeout_ms - elapsed.as_secs_f64() * 1000.0).max(1.0)
+}
+
 /// The selector [`Locator::within`] builds: `child` chained under `parent`,
 /// so relative parts of `child` such as `nth` resolve inside each element
 /// `parent` matches.
@@ -1733,25 +1744,24 @@ impl Locator {
         &self,
         options: impl Into<Option<crate::protocol::ScreenshotOptions>>,
     ) -> Result<Vec<u8>> {
-        let options = options.into();
-        // Query for the element using strict mode (should return exactly one)
+        let mut options = self.with_timeout(options.into());
+        let timeout = options.timeout.unwrap_or(crate::DEFAULT_TIMEOUT_MS);
+        let started = std::time::Instant::now();
+        // Wait for the element as every locator action does, then take the
+        // screenshot within what is left of the same deadline.
         let element = self
             .frame
-            .query_selector(&self.selector)
-            .await
-            .map_err(|e| self.wrap_error_with_selector(e))?
-            .ok_or_else(|| {
-                crate::error::Error::ElementNotFound(format!(
-                    "Element not found: {}",
-                    self.selector
-                ))
-            })?;
-
-        // Delegate to ElementHandle.screenshot() with default timeout injected
-        let bytes = element
-            .screenshot(Some(self.with_timeout(options)))
+            .locator_wait_for_element(&self.selector, timeout)
             .await
             .map_err(|e| self.wrap_error_with_selector(e))?;
+        options.timeout = Some(remaining_ms(timeout, started.elapsed()));
+        let captured = element.screenshot(Some(options)).await;
+        // The wait created the handle; a failed dispose only leaves it to live
+        // as long as the page.
+        let _ = crate::server::channel_owner::ChannelOwner::channel(element.as_ref())
+            .send_no_result("dispose", serde_json::json!({}))
+            .await;
+        let bytes = captured.map_err(|e| self.wrap_error_with_selector(e))?;
         tracing::Span::current().record("bytes_len", bytes.len());
         Ok(bytes)
     }
@@ -2313,6 +2323,14 @@ mod tests {
         assert_eq!(opts.has_not_text.as_deref(), Some("b"));
         assert_eq!(opts.visible, Some(false));
         assert_eq!(FilterOptions::default().visible, None);
+    }
+
+    #[test]
+    fn a_shared_deadline_leaves_the_remainder_and_keeps_zero_as_no_timeout() {
+        use std::time::Duration;
+        assert_eq!(remaining_ms(5_000.0, Duration::from_millis(1_500)), 3_500.0);
+        assert_eq!(remaining_ms(5_000.0, Duration::from_millis(6_000)), 1.0);
+        assert_eq!(remaining_ms(0.0, Duration::from_millis(1_500)), 0.0);
     }
 
     #[test]

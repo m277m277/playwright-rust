@@ -986,18 +986,24 @@ impl Frame {
             return Ok(None);
         }
 
-        // Element response contains { guid: "elementHandle@123" }
-        let guid = element_value["guid"].as_str().ok_or_else(|| {
+        self.element_handle_from(element_value).await.map(Some)
+    }
+
+    /// The `ElementHandle` a driver response names as `{ guid: "elementHandle@123" }`,
+    /// from the connection's object registry.
+    async fn element_handle_from(
+        &self,
+        element: &serde_json::Value,
+    ) -> Result<Arc<crate::protocol::ElementHandle>> {
+        let guid = element["guid"].as_str().ok_or_else(|| {
             crate::error::Error::ProtocolError("Element GUID missing".to_string())
         })?;
-
-        // Look up the ElementHandle object in the connection's object registry and downcast
-        let connection = self.base.connection();
-        let handle: crate::protocol::ElementHandle = connection
+        let handle: crate::protocol::ElementHandle = self
+            .base
+            .connection()
             .get_typed::<crate::protocol::ElementHandle>(guid)
             .await?;
-
-        Ok(Some(Arc::new(handle)))
+        Ok(Arc::new(handle))
     }
 
     /// Returns all elements matching the selector.
@@ -1693,6 +1699,34 @@ impl Frame {
         // waitForSelector returns an ElementHandle or null — we discard the return value
         let _: serde_json::Value = self.channel().send("waitForSelector", params).await?;
         Ok(())
+    }
+
+    /// Waits up to `timeout` for the one element `selector` matches to be
+    /// attached, and returns its handle: what a locator does before an action
+    /// it carries out on an element handle, so the element need not exist
+    /// yet when the action is called. The caller owns the handle and should
+    /// dispose of it.
+    pub(crate) async fn locator_wait_for_element(
+        &self,
+        selector: &str,
+        timeout: f64,
+    ) -> Result<Arc<crate::protocol::ElementHandle>> {
+        let response: serde_json::Value = self
+            .channel()
+            .send(
+                "waitForSelector",
+                serde_json::json!({
+                    "selector": selector,
+                    "strict": true,
+                    "state": "attached",
+                    "timeout": timeout,
+                }),
+            )
+            .await?;
+        let element = response.get("element").ok_or_else(|| {
+            crate::error::Error::ProtocolError("waitForSelector returned no element".to_string())
+        })?;
+        self.element_handle_from(element).await
     }
 
     /// Evaluates a JavaScript expression in the scope of the element matching the selector.

@@ -438,3 +438,49 @@ async fn test_screenshot_mask_accepted() {
     browser.close().await.expect("Failed to close browser");
     server.shutdown();
 }
+
+#[tokio::test]
+async fn a_locator_screenshot_waits_for_its_element_up_to_the_timeout() {
+    let (_pw, browser, page) = crate::common::setup().await;
+    page.set_default_timeout(5_000.0).await;
+    page.set_content(
+        "<div>hello</div><script>setTimeout(() => {\
+           const late = document.createElement('div');\
+           late.id = 'late';\
+           late.textContent = 'late';\
+           document.body.append(late);\
+         }, 200)</script>",
+        None,
+    )
+    .await
+    .expect("set_content");
+
+    let bytes = page
+        .locator("#late")
+        .screenshot(None)
+        .await
+        .expect("waits for an element that appears after the call");
+    assert!(!bytes.is_empty());
+
+    let started = std::time::Instant::now();
+    let err = page
+        .locator("#missing")
+        .screenshot(
+            playwright_rs::protocol::ScreenshotOptions::builder()
+                .timeout(500.0)
+                .build(),
+        )
+        .await
+        .expect_err("an element that never appears");
+    assert!(
+        matches!(err, playwright_rs::Error::Timeout(_)),
+        "times out rather than failing at once: {err:?}"
+    );
+    assert!(
+        started.elapsed() >= std::time::Duration::from_millis(400),
+        "{:?}",
+        started.elapsed()
+    );
+
+    browser.close().await.expect("close");
+}

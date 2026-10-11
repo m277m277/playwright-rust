@@ -134,3 +134,14 @@ async fn test_evaluate_with_arguments() {
     browser.close().await.expect("Failed to close browser");
     server.shutdown();
 }
+
+#[tokio::test]
+async fn a_regex_comes_back_as_its_literal() {
+    let (_pw, browser, page) = crate::common::setup().await;
+    let regex: String = page
+        .evaluate("() => /ab+c/gi", None::<&()>)
+        .await
+        .expect("evaluate a regex");
+    assert_eq!(regex, "/ab+c/gi");
+    browser.close().await.expect("close");
+}

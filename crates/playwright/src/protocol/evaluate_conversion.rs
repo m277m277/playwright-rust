@@ -21,6 +21,7 @@
 //! - `{"d": "2025-12-25T00:00:00.000Z"}` - Date values (ISO 8601 format in UTC)
 //! - `{"bi": "12345678901234567890"}` - BigInt values (as strings)
 //! - `{"u": "https://example.com"}` - URL values (as strings)
+//! - `{"r": {"p": "ab+c", "f": "gi"}}` - Regular expressions (as their `/ab+c/gi` literal)
 //! - `{"e": {"m": "msg", "n": "name", "s": "stack"}}` - Error objects
 //! - `{"ta": {"b": "base64...", "k": "ui8"}}` - TypedArray values (base64 encoded)
 //! - `{"a": [...], "id": 0}` - Arrays (with circular reference tracking)
@@ -257,6 +258,7 @@ pub fn serialize_null() -> Value {
 /// - `{"d": "2025-12-25T00:00:00.000Z"}` → `Value::String("2025-12-25T00:00:00.000Z")`
 /// - `{"bi": "12345678901234567890"}` → `Value::String("12345678901234567890")`
 /// - `{"u": "https://example.com"}` → `Value::String("https://example.com")`
+/// - `{"r": {"p": "ab+c", "f": "gi"}}` → `Value::String("/ab+c/gi")`
 /// - `{"e": {...}}` → `Value::Object` with error details
 /// - `{"ta": {...}}` → `Value::Array` of decoded values
 /// - `{"a": [...]}` → `Value::Array([...])`
@@ -361,6 +363,14 @@ pub fn parse_value(value: &Value, refs: Option<&mut HashMap<usize, Value>>) -> V
         // Handle URL (stored as string)
         if let Some(u) = obj.get("u").and_then(|v| v.as_str()) {
             return json!(u);
+        }
+
+        // Handle a regular expression: its literal, as `RegExp.prototype.toString`
+        // writes it. Rust has no JavaScript regex type to rebuild it as.
+        if let Some(regex) = obj.get("r").and_then(|v| v.as_object()) {
+            let source = regex.get("p").and_then(|v| v.as_str()).unwrap_or_default();
+            let flags = regex.get("f").and_then(|v| v.as_str()).unwrap_or_default();
+            return json!(format!("/{source}/{flags}"));
         }
 
         // Handle error objects
@@ -1199,5 +1209,19 @@ mod tests {
 
         let items = obj.get("items").and_then(|v| v.as_array()).unwrap();
         assert_eq!(items.len(), 3);
+    }
+
+    #[test]
+    fn a_regex_result_reads_as_its_literal() {
+        assert_eq!(
+            parse_result(&json!({"r": {"p": "ab+c", "f": "gi"}})),
+            json!("/ab+c/gi")
+        );
+        // The source arrives escaped as JavaScript writes it, so the literal
+        // reads back the same way.
+        assert_eq!(
+            parse_result(&json!({"r": {"p": "a\\/b", "f": ""}})),
+            json!("/a\\/b/")
+        );
     }
 }
