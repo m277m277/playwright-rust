@@ -52,6 +52,11 @@ pub struct DeviceDescriptor {
     pub user_agent: String,
     /// The viewport dimensions.
     pub viewport: DeviceViewport,
+    /// The screen size the device reports through `window.screen`, larger
+    /// than the viewport on a device whose browser chrome takes room. Pass
+    /// it as [`BrowserContextOptions::screen`](crate::protocol::BrowserContextOptions::screen)
+    /// to emulate the device fully. Not every descriptor has one.
+    pub screen: Option<DeviceViewport>,
     /// The device pixel ratio (e.g., `3.0` for Retina displays).
     pub device_scale_factor: f64,
     /// Whether the device is a mobile device.
@@ -60,4 +65,32 @@ pub struct DeviceDescriptor {
     pub has_touch: bool,
     /// The default browser type for the device: `"chromium"`, `"firefox"`, or `"webkit"`.
     pub default_browser_type: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn descriptor(screen: Option<serde_json::Value>) -> DeviceDescriptor {
+        let mut json = serde_json::json!({
+            "userAgent": "ua",
+            "viewport": {"width": 390, "height": 664},
+            "deviceScaleFactor": 3,
+            "isMobile": true,
+            "hasTouch": true,
+            "defaultBrowserType": "webkit"
+        });
+        if let Some(screen) = screen {
+            json["screen"] = screen;
+        }
+        serde_json::from_value(json).expect("descriptor deserializes")
+    }
+
+    #[test]
+    fn a_descriptor_carries_its_screen_when_it_has_one() {
+        let with = descriptor(Some(serde_json::json!({"width": 390, "height": 844})));
+        let screen = with.screen.expect("screen is read");
+        assert_eq!((screen.width, screen.height), (390, 844));
+        assert!(descriptor(None).screen.is_none());
+    }
 }

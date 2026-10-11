@@ -15,6 +15,15 @@ pub struct Viewport {
     pub height: u32,
 }
 
+impl From<crate::protocol::DeviceViewport> for Viewport {
+    fn from(size: crate::protocol::DeviceViewport) -> Self {
+        Self {
+            width: size.width,
+            height: size.height,
+        }
+    }
+}
+
 /// Options for recording HAR.
 ///
 /// See: <https://playwright.dev/docs/api/class-browser#browser-new-context-option-record-har>
@@ -199,6 +208,14 @@ pub struct BrowserContextOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "noDefaultViewport")]
     pub no_viewport: Option<bool>,
+
+    /// The screen size `window.screen` and media queries report, separate
+    /// from the viewport. Defaults to the viewport's size, and is used only
+    /// when a viewport is set, so it has no effect with `no_viewport`. A
+    /// device descriptor's [`screen`](crate::protocol::DeviceDescriptor::screen)
+    /// belongs here when emulating that device.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub screen: Option<Viewport>,
 
     /// Custom user agent string
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -396,6 +413,7 @@ impl BrowserContextOptions {
 pub struct BrowserContextOptionsBuilder {
     viewport: Option<Viewport>,
     no_viewport: Option<bool>,
+    screen: Option<Viewport>,
     user_agent: Option<String>,
     locale: Option<String>,
     timezone_id: Option<String>,
@@ -451,6 +469,16 @@ impl BrowserContextOptionsBuilder {
         if no_viewport {
             self.viewport = None; // Clear viewport if setting no_viewport
         }
+        self
+    }
+
+    /// Sets the screen size `window.screen` and media queries report,
+    /// separate from the viewport. Used only when a viewport is set. Takes a
+    /// device descriptor's `screen` directly.
+    ///
+    /// See: <https://playwright.dev/docs/api/class-browser#browser-new-context-option-screen>
+    pub fn screen(mut self, screen: impl Into<Viewport>) -> Self {
+        self.screen = Some(screen.into());
         self
     }
 
@@ -766,6 +794,7 @@ impl BrowserContextOptionsBuilder {
         BrowserContextOptions {
             viewport: self.viewport,
             no_viewport: self.no_viewport,
+            screen: self.screen,
             user_agent: self.user_agent,
             locale: self.locale,
             timezone_id: self.timezone_id,
@@ -854,6 +883,10 @@ mod tests {
                 height: 1,
             }),
             no_viewport: Some(false),
+            screen: Some(Viewport {
+                width: 1,
+                height: 1,
+            }),
             user_agent: Some(String::new()),
             locale: Some(String::new()),
             timezone_id: Some(String::new()),

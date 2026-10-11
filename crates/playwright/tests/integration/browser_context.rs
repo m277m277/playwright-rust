@@ -1270,3 +1270,40 @@ async fn record_har_is_written_when_close_is_called_twice_at_once()
     server.shutdown();
     Ok(())
 }
+
+#[tokio::test]
+async fn a_device_screen_is_what_the_page_reports_apart_from_the_viewport() {
+    let (playwright, browser, _page) = crate::common::setup().await;
+    let iphone = &playwright.devices()["iPhone 13"];
+    let screen = iphone.screen.clone().expect("iPhone 13 has a screen");
+    assert!(screen.height > iphone.viewport.height, "{screen:?}");
+
+    let context = browser
+        .new_context_with_options(
+            BrowserContextOptions::builder()
+                .viewport(iphone.viewport.clone().into())
+                .screen(screen.clone())
+                .build(),
+        )
+        .await
+        .expect("context with a screen");
+    let page = context.new_page().await.expect("page");
+    let reported: Vec<u32> = page
+        .evaluate(
+            "() => [screen.width, screen.height, innerWidth, innerHeight]",
+            None::<&()>,
+        )
+        .await
+        .expect("evaluate");
+    assert_eq!(
+        reported,
+        [
+            screen.width,
+            screen.height,
+            iphone.viewport.width,
+            iphone.viewport.height
+        ]
+    );
+
+    browser.close().await.expect("close");
+}
