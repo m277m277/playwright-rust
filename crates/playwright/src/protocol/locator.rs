@@ -113,9 +113,16 @@ pub struct BoundingBox {
 ///
 /// JSON-stringifies the text and appends `i` (case-insensitive) or `s` (strict/exact).
 /// Matches the `escapeForTextSelector`/`escapeForAttributeSelector` in Playwright TypeScript.
+/// `s` as a JSON string literal, the quoting the selector engines read.
+fn json_quote(s: &str) -> String {
+    // Serializing a `str` cannot fail: it has no map keys or non-finite
+    // numbers to reject.
+    serde_json::to_string(s).expect("a str always serializes")
+}
+
 fn escape_for_selector(text: &str, exact: bool) -> String {
     let suffix = if exact { "s" } else { "i" };
-    let escaped = serde_json::to_string(text).unwrap_or_else(|_| format!("\"{}\"", text));
+    let escaped = json_quote(text);
     format!("{}{}", escaped, suffix)
 }
 
@@ -580,6 +587,14 @@ impl FilterOptions {
     }
 }
 
+/// The selector [`Locator::within`] builds: `child` chained under `parent`,
+/// so relative parts of `child` such as `nth` resolve inside each element
+/// `parent` matches.
+fn within_selector(child: &str, parent: &str) -> String {
+    let quoted = json_quote(child);
+    format!("{parent} >> internal:chain={quoted}")
+}
+
 /// The selector `filter` builds: each narrowing appended in the order
 /// upstream's client appends it, since the engine applies them in order.
 ///
@@ -605,12 +620,12 @@ fn filter_selector(
     }
 
     if let Some(inner) = has {
-        let quoted = serde_json::to_string(inner).unwrap_or_else(|_| format!("\"{inner}\""));
+        let quoted = json_quote(inner);
         selector = format!("{selector} >> internal:has={quoted}");
     }
 
     if let Some(inner) = has_not {
-        let quoted = serde_json::to_string(inner).unwrap_or_else(|_| format!("\"{inner}\""));
+        let quoted = json_quote(inner);
         selector = format!("{selector} >> internal:has-not={quoted}");
     }
 
@@ -1055,12 +1070,34 @@ impl Locator {
     ///
     /// See: <https://playwright.dev/docs/api/class-locator#locator-and>
     pub fn and_(&self, locator: &Locator) -> Locator {
-        let inner = serde_json::to_string(&locator.selector)
-            .unwrap_or_else(|_| format!("\"{}\"", locator.selector));
+        let inner = json_quote(&locator.selector);
         Locator::new(
             Arc::clone(&self.frame),
             format!("{} >> internal:and={}", self.selector, inner),
             self.page.clone(),
+        )
+    }
+
+    /// Creates a locator matching the elements this locator finds inside each
+    /// element `parent` matches, read in the natural order: "this button,
+    /// within that dialog".
+    ///
+    /// Relative parts of this locator, such as [`nth`](Self::nth) or
+    /// [`last`](Self::last), resolve inside each parent separately, so
+    /// `cells.nth(2).within(&rows)` is the third cell of every row rather than
+    /// the third cell of the table.
+    ///
+    /// Both locators should come from the same frame. That is not checked
+    /// (as it is not for [`and_`](Self::and_) and [`or_`](Self::or_)): the
+    /// result searches the frame `parent` belongs to, so a locator from
+    /// another frame finds nothing there rather than raising an error.
+    ///
+    /// See: <https://playwright.dev/docs/api/class-locator#locator-within>
+    pub fn within(&self, parent: &Locator) -> Locator {
+        Locator::new(
+            Arc::clone(&parent.frame),
+            within_selector(&self.selector, &parent.selector),
+            parent.page.clone(),
         )
     }
 
@@ -1090,8 +1127,7 @@ impl Locator {
     ///
     /// See: <https://playwright.dev/docs/api/class-locator#locator-or>
     pub fn or_(&self, locator: &Locator) -> Locator {
-        let inner = serde_json::to_string(&locator.selector)
-            .unwrap_or_else(|_| format!("\"{}\"", locator.selector));
+        let inner = json_quote(&locator.selector);
         Locator::new(
             Arc::clone(&self.frame),
             format!("{} >> internal:or={}", self.selector, inner),
@@ -2086,8 +2122,7 @@ impl Locator {
     ///
     /// See: <https://playwright.dev/docs/api/class-locator#locator-describe>
     pub fn describe(&self, description: &str) -> Locator {
-        let escaped =
-            serde_json::to_string(description).unwrap_or_else(|_| format!("\"{}\"", description));
+        let escaped = json_quote(description);
         Locator::new(
             Arc::clone(&self.frame),
             format!("{} >> internal:describe={}", self.selector, escaped),
@@ -2278,6 +2313,18 @@ mod tests {
         assert_eq!(opts.has_not_text.as_deref(), Some("b"));
         assert_eq!(opts.visible, Some(false));
         assert_eq!(FilterOptions::default().visible, None);
+    }
+
+    #[test]
+    fn within_selector_chains_the_child_under_the_parent() {
+        assert_eq!(
+            within_selector("internal:role=cell >> nth=1", "internal:role=row"),
+            r#"internal:role=row >> internal:chain="internal:role=cell >> nth=1""#
+        );
+        assert_eq!(
+            within_selector(r#"text="Save""#, "dialog"),
+            r#"dialog >> internal:chain="text=\"Save\"""#
+        );
     }
 
     #[test]

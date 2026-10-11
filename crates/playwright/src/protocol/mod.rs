@@ -135,7 +135,7 @@ pub use event_value::EventValue;
 pub use event_waiter::EventWaiter;
 pub use file_chooser::FileChooser;
 pub use file_payload::FilePayload;
-pub use frame::Frame;
+pub use frame::{ContentOptions, Frame};
 pub use frame_locator::FrameLocator;
 pub use har_options::{HarContent, HarMode, StartHarOptions};
 pub use js_handle::JSHandle;

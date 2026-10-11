@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`Locator::within`**, which scopes a locator to each element another locator matches: `cells.nth(1).within(&rows)` is the second cell of every row, where `rows.locator(..)` would number the cells across the whole table.
+- **`Page::get_by_ref`**, which finds the element an `ai`-mode aria snapshot names by its ref (`button "Save" [ref=e2]`), so an agent can act on what a snapshot reported.
+- **`Page::content_with_options` and `Frame::content_with_options`, taking `ContentOptions::include_shadow`**, which serializes open shadow roots as declarative shadow DOM (`<template shadowrootmode="open">`) where `content()` leaves them out. Closed shadow roots are never included. `content()` itself is unchanged.
 - **Passkey signature counters: `VirtualCredential::sign_count` and `CredentialsCreateOptions::sign_count`.** The driver tracks the counter each WebAuthn assertion increments and saves it in a storage state, but `VirtualCredential` had no field for it, so a state saved and restored through this crate restarted every counter at 0, which a relying party that checks counters rejects. The field is read and written now (a state saved without one loads as 0), and `create` can seed a starting value.
 - **`AccessibilitySnapshotOptions::interesting_only` and `::root` setters.** 0.19.0 left this struct without them because the emulated snapshot ignores both fields; it still does, and the struct docs say so, but an option struct with public `Option` fields and no setters was the odd one out.
 

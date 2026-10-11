@@ -954,3 +954,41 @@ async fn test_page_locator_handler_that_panics_still_resumes_the_action() {
     assert!(calls.load(Ordering::SeqCst) >= 2);
     browser.close().await.expect("close");
 }
+
+#[tokio::test]
+async fn content_with_shadow_includes_open_shadow_roots_only() {
+    let (_pw, browser, page) = crate::common::setup().await;
+    let html = r#"<!DOCTYPE html><html lang="en"><head></head><body><div id="host"><template shadowrootmode="open"><div id="nested"><template shadowrootmode="open"><span>nested</span></template><slot></slot></div></template><span>light</span></div><div id="closed"></div></body></html>"#;
+    page.set_content(
+        &html.replace(
+            r#"<div id="closed">"#,
+            r#"<div id="closed"><template shadowrootmode="closed"><span>closed</span></template>"#,
+        ),
+        None,
+    )
+    .await
+    .expect("set_content");
+
+    assert_eq!(
+        page.content().await.expect("content"),
+        r#"<!DOCTYPE html><html lang="en"><head></head><body><div id="host"><span>light</span></div><div id="closed"></div></body></html>"#
+    );
+    let with_shadow = playwright_rs::ContentOptions::default().include_shadow(true);
+    assert_eq!(
+        page.content_with_options(with_shadow.clone())
+            .await
+            .expect("page content with shadow"),
+        html
+    );
+    assert_eq!(
+        page.main_frame()
+            .await
+            .expect("main frame")
+            .content_with_options(with_shadow)
+            .await
+            .expect("frame content with shadow"),
+        html
+    );
+
+    browser.close().await.expect("close");
+}

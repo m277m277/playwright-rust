@@ -9,10 +9,33 @@ use crate::protocol::{parse_result, serialize_argument, serialize_null};
 use crate::server::channel::Channel;
 use crate::server::channel_owner::{ChannelOwner, ChannelOwnerImpl, ParentOrConnection};
 use crate::server::connection::ConnectionExt;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::any::Any;
 use std::sync::{Arc, Mutex, RwLock};
+
+/// Options for [`Frame::content_with_options`] and
+/// [`Page::content_with_options`](crate::protocol::Page::content_with_options).
+///
+/// See: <https://playwright.dev/docs/api/class-page#page-content>
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[non_exhaustive]
+pub struct ContentOptions {
+    /// Serialize open shadow roots as declarative shadow DOM
+    /// (`<template shadowrootmode="open">`), which plain `content()` leaves
+    /// out. Closed shadow roots are never included.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub include_shadow: Option<bool>,
+}
+
+impl ContentOptions {
+    /// Include open shadow roots as declarative shadow DOM.
+    pub fn include_shadow(mut self, include_shadow: bool) -> Self {
+        self.include_shadow = Some(include_shadow);
+        self
+    }
+}
 
 /// Frame represents a frame within a page.
 ///
@@ -738,17 +761,22 @@ impl Frame {
     /// Returns the full HTML content of the frame, including the DOCTYPE.
     ///
     /// See: <https://playwright.dev/docs/api/class-frame#frame-content>
-    #[tracing::instrument(level = "debug", skip_all, fields(guid = %self.guid()))]
     pub async fn content(&self) -> Result<String> {
+        self.content_with_options(ContentOptions::default()).await
+    }
+
+    /// Returns the full HTML content of the frame, as [`content`](Self::content)
+    /// does, with options such as including shadow roots.
+    ///
+    /// See: <https://playwright.dev/docs/api/class-frame#frame-content>
+    #[tracing::instrument(level = "debug", skip_all, fields(guid = %self.guid()))]
+    pub async fn content_with_options(&self, options: ContentOptions) -> Result<String> {
         #[derive(Deserialize)]
         struct ContentResponse {
             value: String,
         }
 
-        let response: ContentResponse = self
-            .channel()
-            .send("content", serde_json::json!({}))
-            .await?;
+        let response: ContentResponse = self.channel().send("content", options).await?;
         Ok(response.value)
     }
 
@@ -2739,5 +2767,23 @@ impl ChannelOwner for Frame {
 impl std::fmt::Debug for Frame {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Frame").field("guid", &self.guid()).finish()
+    }
+}
+
+#[cfg(test)]
+mod content_options_tests {
+    use super::*;
+    use crate::protocol_spec::{FRAME, command_parameters, keys};
+    use serde_json::json;
+
+    #[test]
+    fn content_options_send_only_what_is_set_under_the_driver_spelling() {
+        assert_eq!(
+            serde_json::to_value(ContentOptions::default()).unwrap(),
+            json!({})
+        );
+        let sent = serde_json::to_value(ContentOptions::default().include_shadow(true)).unwrap();
+        assert_eq!(sent, json!({"includeShadow": true}));
+        assert!(keys(&sent).is_subset(&command_parameters(FRAME, "content")));
     }
 }

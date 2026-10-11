@@ -19,6 +19,7 @@ macro_rules! spec_file {
 const MIXINS: &str = spec_file!("mixins.yml");
 pub(crate) const BROWSER: &str = spec_file!("browser.yml");
 pub(crate) const BROWSER_TYPE: &str = spec_file!("browserType.yml");
+pub(crate) const FRAME: &str = spec_file!("frame.yml");
 
 /// The parameter names `command` declares in `spec`, its `$mixin` entries
 /// expanded from `mixins.yml`. Panics if the command or a mixin is missing,

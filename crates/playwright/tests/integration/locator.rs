@@ -2011,3 +2011,42 @@ async fn filter_selects_hidden_elements_too() {
 
     browser.close().await.expect("close browser");
 }
+
+#[tokio::test]
+async fn within_scopes_a_locator_to_each_parent() {
+    let (_playwright, browser, page) = crate::common::setup().await;
+    page.set_content(
+        "<table>\
+           <tr><td>a1</td><td>a2</td><td>a3</td></tr>\
+           <tr><td>b1</td><td>b2</td><td>b3</td></tr>\
+           <tr><td>c1</td><td>c2</td><td>c3</td></tr>\
+         </table><span>outside</span>",
+        None,
+    )
+    .await
+    .expect("set_content");
+    let cells = page.get_by_role(playwright_rs::AriaRole::Cell, None);
+    let rows = page.get_by_role(playwright_rs::AriaRole::Row, None);
+    let texts = |locator: playwright_rs::protocol::Locator| async move {
+        locator.all_text_contents().await.expect("texts")
+    };
+
+    assert_eq!(
+        texts(cells.within(&rows)).await,
+        ["a1", "a2", "a3", "b1", "b2", "b3", "c1", "c2", "c3"]
+    );
+    assert_eq!(texts(cells.nth(1).within(&rows)).await, ["a2", "b2", "c2"]);
+    assert_eq!(texts(cells.last().within(&rows)).await, ["a3", "b3", "c3"]);
+    assert_eq!(texts(cells.nth(1).within(&rows.nth(2))).await, ["c2"]);
+    assert_eq!(
+        page.locator("span")
+            .within(&rows)
+            .count()
+            .await
+            .expect("count"),
+        0
+    );
+    assert_eq!(texts(cells.nth(1).within(&rows).nth(1)).await, ["b2"]);
+
+    browser.close().await.expect("close");
+}

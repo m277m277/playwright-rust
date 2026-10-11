@@ -266,3 +266,28 @@ async fn aria_snapshot_json_options_reach_the_driver() {
 
     browser.close().await.expect("close browser");
 }
+
+#[tokio::test]
+async fn get_by_ref_finds_what_an_ai_snapshot_names() {
+    let (_playwright, browser, page) = crate::common::setup().await;
+    page.set_content("<button>One</button><button>Two</button>", None)
+        .await
+        .expect("set_content");
+
+    let snapshot = page
+        .aria_snapshot(AriaSnapshotOptions::default().mode(AriaSnapshotMode::Ai))
+        .await
+        .expect("ai snapshot");
+    assert!(snapshot.contains(r#"button "One" [ref=e2]"#), "{snapshot}");
+    assert!(snapshot.contains(r#"button "Two" [ref=e3]"#), "{snapshot}");
+    expect(page.get_by_ref("e2"))
+        .to_have_text("One")
+        .await
+        .expect("e2 is One");
+    expect(page.get_by_ref("e3"))
+        .to_have_text("Two")
+        .await
+        .expect("e3 is Two");
+
+    browser.close().await.expect("close");
+}

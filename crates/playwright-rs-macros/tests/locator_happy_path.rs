@@ -30,6 +30,7 @@ fn engine_prefixes_pass() {
     assert_eq!(locator!("id=username"), "id=username");
     assert_eq!(locator!("data-testid=login-form"), "data-testid=login-form");
     assert_eq!(locator!("nth=0"), "nth=0");
+    assert_eq!(locator!("aria-ref=e2"), "aria-ref=e2");
 }
 
 #[test]

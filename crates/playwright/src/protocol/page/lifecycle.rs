@@ -393,9 +393,21 @@ impl Page {
     /// See: <https://playwright.dev/docs/api/class-page#page-content>
     #[tracing::instrument(level = "debug", skip_all, fields(guid = %self.guid()))]
     pub async fn content(&self) -> Result<String> {
-        // Delegate to main frame
+        self.content_with_options(crate::protocol::ContentOptions::default())
+            .await
+    }
+
+    /// Returns the full HTML content of the page, as [`content`](Self::content)
+    /// does, with options such as including shadow roots.
+    ///
+    /// See: <https://playwright.dev/docs/api/class-page#page-content>
+    #[tracing::instrument(level = "debug", skip_all, fields(guid = %self.guid()))]
+    pub async fn content_with_options(
+        &self,
+        options: crate::protocol::ContentOptions,
+    ) -> Result<String> {
         let frame = self.main_frame().await?;
-        frame.content().await
+        frame.content_with_options(options).await
     }
 
     /// Sets the content of the page.
@@ -516,6 +528,21 @@ impl Page {
         self.locator(crate::protocol::locator::get_by_test_id_selector_with_attr(
             test_id, &attr,
         ))
+    }
+
+    /// Returns a locator for the element an `ai`-mode aria snapshot names by
+    /// `aria_ref`, such as `e2` in `button "Save" [ref=e2]`.
+    ///
+    /// Take the snapshot with
+    /// `aria_snapshot(AriaSnapshotOptions::default().mode(AriaSnapshotMode::Ai))`.
+    /// A ref belongs to the snapshot that reported it, and a ref for an element
+    /// in a child frame (`f1e3`) resolves into that frame, which is why this
+    /// exists on `Page` only.
+    ///
+    /// See: <https://playwright.dev/docs/api/class-page#page-get-by-ref>
+    #[tracing::instrument(level = "debug", skip_all, fields(guid = %self.guid()))]
+    pub fn get_by_ref(&self, aria_ref: &str) -> crate::protocol::Locator {
+        self.locator(format!("aria-ref={aria_ref}"))
     }
 
     /// Returns a locator that matches elements by their ARIA role.

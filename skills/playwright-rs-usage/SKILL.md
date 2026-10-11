@@ -3,7 +3,7 @@ name: playwright-rs-usage
 description: Procedural reference for using playwright-rs in Rust browser-automation code — object model (Browser/Context/Page/Locator), the `locator!()` macro, builder pattern for options, auto-wait semantics, adding the crate and installing its browsers, and how to capture / inspect traces for failure diagnosis. Use when writing tests or scripts with playwright-rs as a dependency. Loaded automatically when the current repo has playwright-rs in its Cargo.toml.
 license: Apache-2.0
 metadata:
-  version: "0.15.3"
+  version: "0.15.4"
 ---
 
 # Using playwright-rs
@@ -291,7 +291,11 @@ Concept-level pointers; the exact options live on docs.rs.
   `[box=..]` bounding boxes for visual/agent reasoning.
   `aria_snapshot_json` returns the same tree as `serde_json::Value`
   rather than YAML markup, which is what an agent walking the tree
-  wants; the YAML form is for a human reading a diff.
+  wants; the YAML form is for a human reading a diff. In
+  `AriaSnapshotMode::Ai` every element carries a ref (`button "Save"
+  [ref=e2]`), and `page.get_by_ref("e2")` turns a ref back into a
+  locator: snapshot, pick a ref, act. A ref belongs to the snapshot that
+  reported it, so take a fresh one after the page changes.
 - **Pages behind HTTP auth.** `BrowserContextOptions::builder()
   .http_credentials(vec![HttpCredentials::new("user", "pass")])` — do not
   hand-set an `Authorization` header. Give an entry an `origin` when the
@@ -308,6 +312,10 @@ Concept-level pointers; the exact options live on docs.rs.
   narrows to the visible matches (Playwright's replacement for
   `:visible`), and `filter(FilterOptions::default().visible(false))` is
   the hidden half.
+- **Scoping to each parent.** `cells.nth(1).within(&rows)` is the
+  second cell of every row: `nth`, `first`, and `last` resolve inside
+  each element the parent matches, which a chained `rows.locator(..)`
+  cannot express. Both locators must come from the same frame.
 - **Frames without naming the iframe.** `page.frame_locator(None)`
   searches every frame in the subtree, so no iframe selector is needed;
   `Frame::frame_locator` takes the same optional argument. The rest of

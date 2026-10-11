@@ -311,8 +311,8 @@ pub use assertions::{ScreenshotAssertionOptions, ScreenshotAssertionOptionsBuild
 
 // Re-export Playwright main entry point and browser API
 pub use protocol::{
-    Browser, BrowserContext, BrowserType, FrameLocator, HeaderEntry, Page, Playwright, Response,
-    Selectors,
+    Browser, BrowserContext, BrowserType, ContentOptions, FrameLocator, HeaderEntry, Page,
+    Playwright, Response, Selectors,
 };
 
 // Re-export input device types

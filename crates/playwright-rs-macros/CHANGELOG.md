@@ -10,6 +10,10 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+### Added
+
+- **`aria-ref=` is a known selector engine**, so `locator!("aria-ref=e2")` compiles. It is the engine `Page::get_by_ref` uses to find an element an `ai`-mode aria snapshot names, and the macro rejected it as unknown.
+
 ## [0.1.1] - 2026-08-02
 
 ### Changed

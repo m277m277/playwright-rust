@@ -26,7 +26,7 @@ use syn::{LitStr, parse_macro_input};
 /// - unbalanced `[]`, `()`, `{}` brackets
 /// - unknown engine prefixes (e.g. `foo=...` instead of one of
 ///   `css=`, `xpath=`, `text=`, `role=`, `id=`, `data-testid=`, `nth=`,
-///   `internal:*=...`)
+///   `aria-ref=`, `internal:*=...`)
 ///
 /// Anything else passes through. Selector engines have rich grammars
 /// of their own (CSS, XPath, role-name semantics, `>>` chaining); this
@@ -73,7 +73,7 @@ fn validate_selector(s: &str) -> Result<(), String> {
     {
         return Err(format!(
             "unknown selector engine `{engine}=...`; expected one of \
-             css, xpath, text, role, id, data-testid, nth, or an \
+             css, xpath, text, role, id, data-testid, nth, aria-ref, or an \
              `internal:*=` prefix"
         ));
     }
@@ -165,6 +165,6 @@ fn split_engine_prefix(s: &str) -> Option<(&str, &str)> {
 fn is_known_engine(engine: &str) -> bool {
     matches!(
         engine,
-        "css" | "xpath" | "text" | "role" | "id" | "data-testid" | "nth"
+        "css" | "xpath" | "text" | "role" | "id" | "data-testid" | "nth" | "aria-ref"
     ) || engine.starts_with("internal:")
 }
