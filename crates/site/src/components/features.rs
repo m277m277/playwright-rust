@@ -86,7 +86,8 @@ pub fn Features() -> impl IntoView {
                 // Web storage / WebAuthn / File System Access shipped in 0.15.0
                 // (Playwright 1.61 parity); wait-for-function, Rust closures in
                 // the page, and session save & replay shipped in 0.16.0 (1.62.1);
-                // in-process serving through route_service in 0.18.0 (1.63.0).
+                // in-process serving through route_service in 0.18.0 (1.63.0);
+                // WebMCP agent tools in 0.20.0 (1.64.0).
                 // To preview a not-yet-released feature, add a card with
                 // `unreleased=true` — it renders only on the dev build with an
                 // "Unreleased" badge, and the flag is dropped once it ships.
@@ -136,7 +137,6 @@ pub fn Features() -> impl IntoView {
                     id="feature-webmcp"
                     title="Agent tools (WebMCP)"
                     blurb="List and call the tools a page publishes for AI agents, as an agent would. This page publishes its own, and its deploy gate calls them."
-                    unreleased=true
                 >
                     <CodeBlock html=snippets::CARD_WEBMCP_RS/>
                 </FeatureCard>

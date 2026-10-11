@@ -4,7 +4,7 @@
 [![docs.rs](https://docs.rs/playwright-rs/badge.svg)](https://docs.rs/playwright-rs)
 [![CI](https://github.com/padamson/playwright-rust/actions/workflows/test.yml/badge.svg)](https://github.com/padamson/playwright-rust/actions/workflows/test.yml)
 [![License](https://img.shields.io/crates/l/playwright-rs)](LICENSE)
-[![Playwright](https://img.shields.io/badge/Playwright-1.63.0-45ba4b)](https://playwright.dev)
+[![Playwright](https://img.shields.io/badge/Playwright-1.64.0-45ba4b)](https://playwright.dev)
 [![skills.sh](https://skills.sh/b/padamson/playwright-rust)](https://skills.sh/padamson/playwright-rust)
 
 > Rust language bindings for [Microsoft Playwright](https://playwright.dev) — the industry standard for cross-browser end-to-end testing.
@@ -80,7 +80,9 @@ browser.close().await?;
 **Full Python API parity + agent integration.** All Playwright Python classes
 and methods are implemented, plus `Browser::bind()` / `Browser::unbind()`
 (Playwright 1.59) for exposing a Rust-launched browser to external clients
-like `@playwright/mcp`, the Playwright CLI, or third-party agent tooling.
+like `@playwright/mcp`, the Playwright CLI, or third-party agent tooling, and
+`page.webmcp()` (Playwright 1.64) for calling the tools a page publishes to
+agents (see the [`webmcp_agent`](crates/playwright/examples/webmcp_agent.rs) example).
 Chromium, Firefox, and WebKit are tested in CI on Linux, macOS, and Windows.
 
 The remaining path to v1.0 is multi-month dogfooding, API polish, and
@@ -130,7 +132,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-playwright-rs = "0.19"  # Auto-updates to latest 0.19.x
+playwright-rs = "0.20"  # Auto-updates to latest 0.20.x
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -143,7 +145,7 @@ backend for driver downloads (and rustls WebSocket connections). Use
 four, so list the others back:
 
 ```toml
-playwright-rs = { version = "0.19", default-features = false, features = [
+playwright-rs = { version = "0.20", default-features = false, features = [
     "aws-lc",
     "native-tls",
     "macros",

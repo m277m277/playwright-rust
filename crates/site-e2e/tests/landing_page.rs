@@ -342,7 +342,7 @@ async fn landing_page_works_as_advertised() {
         ("#feature-session-state", "storage_state", false),
         ("#feature-fake-fs", "fake_file_system", false),
         ("#feature-route-service", "route_service", false),
-        ("#feature-webmcp", "webmcp", true),
+        ("#feature-webmcp", "webmcp", false),
     ];
     let cards: Vec<(&str, &str)> = cards
         .into_iter()

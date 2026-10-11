@@ -9,6 +9,8 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-11
+
 ### Added
 
 - **Trace format v10 (Playwright 1.64) parses.** v10 drops the test runner's `stepId` and writes the call id the client sent (`abcd@7`) where v9 wrote `call@7`, so `BeforeEvent::step_id` is `None` on these traces and nothing else changes shape. The 1.63 recording stays in the test fixtures as the v9 case. A numeric `callId`, which a 1.64 driver writes for a client that sends integer request ids, reads as its decimal string, so that client's events still pair into actions rather than all surfacing as `Unknown`.
@@ -94,7 +96,8 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   the deterministic test fixture under `tests/fixtures/`. New
   `.cargo/config.toml` aliases `cargo xtask`.
 
-[Unreleased]: https://github.com/padamson/playwright-rust/compare/trace-v0.2.0...HEAD
+[Unreleased]: https://github.com/padamson/playwright-rust/compare/trace-v0.2.1...HEAD
+[0.2.1]: https://github.com/padamson/playwright-rust/compare/trace-v0.2.0...trace-v0.2.1
 [0.2.0]: https://github.com/padamson/playwright-rust/compare/trace-v0.1.3...trace-v0.2.0
 [0.1.3]: https://github.com/padamson/playwright-rust/compare/trace-v0.1.2...trace-v0.1.3
 [0.1.2]: https://github.com/padamson/playwright-rust/compare/trace-v0.1.1...trace-v0.1.2

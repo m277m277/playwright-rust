@@ -10,6 +10,8 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-11
+
 ### Added
 
 - **`aria-ref=` is a known selector engine**, so `locator!("aria-ref=e2")` compiles. It is the engine `Page::get_by_ref` uses to find an element an `ai`-mode aria snapshot names, and the macro rejected it as unknown.
@@ -44,6 +46,7 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
   Closes [#81](https://github.com/padamson/playwright-rust/issues/81).
 
-[Unreleased]: https://github.com/padamson/playwright-rust/compare/macros-v0.1.1...HEAD
+[Unreleased]: https://github.com/padamson/playwright-rust/compare/macros-v0.1.2...HEAD
+[0.1.2]: https://github.com/padamson/playwright-rust/compare/macros-v0.1.1...macros-v0.1.2
 [0.1.1]: https://github.com/padamson/playwright-rust/compare/macros-v0.1.0...macros-v0.1.1
 [0.1.0]: https://github.com/padamson/playwright-rust/releases/tag/macros-v0.1.0

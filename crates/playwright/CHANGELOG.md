@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-10-11
+
 ### Added
 
 - **WebMCP: `Page::webmcp` and `Frame::webmcp`**, which list the tools a page registers through the experimental WebMCP browser API (`tools`, as `WebMCPTool`s with their input schema and hints) and call them (`call_tool`, with the result deserialized as any serde type), so a test can exercise them as an agent would. Chromium needs `--enable-features=WebMCP` in `args` and Firefox two `dom.modelcontext` preferences; WebKit does not support it. The `webmcp_agent` example shows the agent loop it makes possible: hand a page's tools to a model (their name, description, and input schema are the fields a model's tool list takes), call the one it picks, and fall back to an `ai` snapshot and `get_by_ref` on a page that publishes none.
@@ -952,7 +954,8 @@ Public-API type-consistency sweep — within the crate, the same conceptual quan
   - Playwright returns null for data URLs and `about:blank` (valid behavior, not an error)
   - Migration: `page.goto("https://example.com").await?.expect("response")` or use `if let Some(response) = page.goto(...).await? { ... }`
 
-[Unreleased]: https://github.com/padamson/playwright-rust/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/padamson/playwright-rust/compare/v0.20.0...HEAD
+[0.20.0]: https://github.com/padamson/playwright-rust/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/padamson/playwright-rust/compare/v0.18.1...v0.19.0
 [0.18.1]: https://github.com/padamson/playwright-rust/compare/v0.18.0...v0.18.1
 [0.18.0]: https://github.com/padamson/playwright-rust/compare/v0.17.0...v0.18.0
