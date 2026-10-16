@@ -182,3 +182,149 @@ async fn test_page_unroute_all_clears_all() {
     browser.close().await.expect("Failed to close browser");
     server.shutdown();
 }
+
+#[tokio::test]
+async fn a_fulfill_after_a_fallback_reaches_the_page() {
+    let server = TestServer::start().await;
+    let (_pw, browser, page) = crate::common::setup().await;
+
+    let fulfilled = Arc::new(Mutex::new(None));
+    let sink = fulfilled.clone();
+    page.route("**/*", move |route| {
+        let sink = sink.clone();
+        async move {
+            let options = playwright_rs::protocol::FulfillOptions::builder()
+                .body_string("<p id=\"from\">handler</p>")
+                .content_type("text/html")
+                .build();
+            let result = route.fulfill(Some(options)).await;
+            *sink.lock().unwrap() = Some(result.as_ref().map_err(|e| e.to_string()).cloned());
+            result
+        }
+    })
+    .await
+    .expect("Failed to set up the fulfilling route");
+    page.route("**/*", |route| async move { route.fallback(None).await })
+        .await
+        .expect("Failed to set up the falling-back route");
+
+    page.goto(&format!("{}/", server.url()), None)
+        .await
+        .expect("Failed to navigate");
+    let delivered = page
+        .evaluate_value("document.getElementById('from')?.textContent ?? document.body.innerText")
+        .await
+        .expect("Failed to read the document");
+
+    browser.close().await.expect("Failed to close browser");
+    server.shutdown();
+    assert_eq!(
+        fulfilled.lock().unwrap().clone(),
+        Some(Ok(())),
+        "fulfill() after a fallback() succeeds"
+    );
+    assert_eq!(
+        delivered, "handler",
+        "the page shows the fulfilled body, not the server's"
+    );
+}
+
+#[tokio::test]
+async fn overrides_from_a_fallback_reach_the_server_once_every_handler_falls_back() {
+    let server = TestServer::start().await;
+    let (_pw, browser, page) = crate::common::setup().await;
+
+    page.route("**/echo-headers", |route| async move {
+        route.fallback(None).await
+    })
+    .await
+    .expect("Failed to set up the outer route");
+    page.route("**/echo-headers", |route| async move {
+        let headers =
+            std::collections::HashMap::from([("x-fallback".to_string(), "recorded".to_string())]);
+        let overrides = playwright_rs::protocol::ContinueOptions::builder()
+            .headers(headers)
+            .build();
+        route.fallback(Some(overrides)).await
+    })
+    .await
+    .expect("Failed to set up the inner route");
+
+    page.goto(&format!("{}/echo-headers", server.url()), None)
+        .await
+        .expect("Failed to navigate");
+    let received = page
+        .evaluate_value(
+            "JSON.parse(document.getElementById('headers').textContent)['x-fallback'] ?? 'missing'",
+        )
+        .await
+        .expect("Failed to read the echoed headers");
+
+    browser.close().await.expect("Failed to close browser");
+    server.shutdown();
+    assert_eq!(received, "recorded");
+}
+
+#[tokio::test]
+async fn a_page_fallback_hands_the_request_to_the_context_routes() {
+    let server = TestServer::start().await;
+    let (_pw, browser, context) = crate::common::setup_context().await;
+    let page = context.new_page().await.expect("Failed to create a page");
+
+    context
+        .route("**/*", |route| async move {
+            let options = playwright_rs::protocol::FulfillOptions::builder()
+                .body_string("<p id=\"from\">context</p>")
+                .content_type("text/html")
+                .build();
+            route.fulfill(Some(options)).await
+        })
+        .await
+        .expect("Failed to set up the context route");
+    page.route("**/*", |route| async move { route.fallback(None).await })
+        .await
+        .expect("Failed to set up the page route");
+
+    page.goto(&format!("{}/", server.url()), None)
+        .await
+        .expect("Failed to navigate");
+    let delivered = page
+        .evaluate_value("document.getElementById('from')?.textContent ?? document.body.innerText")
+        .await
+        .expect("Failed to read the document");
+
+    browser.close().await.expect("Failed to close browser");
+    server.shutdown();
+    assert_eq!(delivered, "context");
+}
+
+#[tokio::test]
+async fn fallback_on_a_handled_route_is_an_error() {
+    let server = TestServer::start().await;
+    let (_pw, browser, page) = crate::common::setup().await;
+
+    let late_fallback = Arc::new(Mutex::new(None));
+    let sink = late_fallback.clone();
+    page.route("**/*", move |route| {
+        let sink = sink.clone();
+        async move {
+            route.continue_(None).await?;
+            *sink.lock().unwrap() = Some(route.fallback(None).await.is_err());
+            Ok(())
+        }
+    })
+    .await
+    .expect("Failed to set up the route");
+
+    page.goto(&format!("{}/", server.url()), None)
+        .await
+        .expect("Failed to navigate");
+
+    browser.close().await.expect("Failed to close browser");
+    server.shutdown();
+    assert_eq!(
+        *late_fallback.lock().unwrap(),
+        Some(true),
+        "fallback() after continue_() is refused"
+    );
+}

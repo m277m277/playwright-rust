@@ -157,6 +157,35 @@ pub(crate) fn continue_params(overrides: Option<ContinueOptions>, is_fallback: b
     params
 }
 
+/// Lays `later` overrides over `earlier` ones, as each `fallback()` and the
+/// final `continue_()` apply theirs to the request upstream: a field the later
+/// call sets replaces the earlier value, and one it leaves unset keeps it. The
+/// string and bytes forms of the post data are one field.
+pub(crate) fn merge_overrides(
+    earlier: Option<ContinueOptions>,
+    later: Option<ContinueOptions>,
+) -> Option<ContinueOptions> {
+    let (mut merged, later) = match (earlier, later) {
+        (earlier, None) => return earlier,
+        (None, later) => return later,
+        (Some(earlier), Some(later)) => (earlier, later),
+    };
+    if later.headers.is_some() {
+        merged.headers = later.headers;
+    }
+    if later.method.is_some() {
+        merged.method = later.method;
+    }
+    if later.url.is_some() {
+        merged.url = later.url;
+    }
+    if later.post_data.is_some() || later.post_data_bytes.is_some() {
+        merged.post_data = later.post_data;
+        merged.post_data_bytes = later.post_data_bytes;
+    }
+    Some(merged)
+}
+
 /// Response headers from a HAR lookup as the map `FulfillOptions` takes:
 /// repeated `set-cookie` joined with a newline, other repeats last-wins.
 pub(crate) fn har_response_headers(raw: Option<&[Value]>) -> HashMap<String, String> {
@@ -291,6 +320,78 @@ mod tests {
             header_values(&fulfill_params(opts)),
             vec![("content-length".to_string(), "99".to_string())]
         );
+    }
+
+    #[test]
+    fn a_missing_side_leaves_the_other_overrides_as_they_are() {
+        let only = || Some(ContinueOptions::builder().method("PUT".to_string()).build());
+        let method = |o: Option<ContinueOptions>| o.and_then(|o| o.method);
+        assert_eq!(method(merge_overrides(only(), None)), Some("PUT".into()));
+        assert_eq!(method(merge_overrides(None, only())), Some("PUT".into()));
+        assert!(merge_overrides(None, None).is_none());
+    }
+
+    #[test]
+    fn later_overrides_replace_only_the_fields_they_set() {
+        let earlier = ContinueOptions::builder()
+            .headers(headers_of(&[("x-first", "1")]))
+            .method("PUT".to_string())
+            .url("https://a.test/first".to_string())
+            .post_data("first".to_string())
+            .build();
+        let later = ContinueOptions::builder()
+            .method("PATCH".to_string())
+            .build();
+
+        let merged = merge_overrides(Some(earlier), Some(later)).unwrap();
+
+        assert_eq!(merged.method.as_deref(), Some("PATCH"));
+        assert_eq!(merged.headers, Some(headers_of(&[("x-first", "1")])));
+        assert_eq!(merged.url.as_deref(), Some("https://a.test/first"));
+        assert_eq!(merged.post_data.as_deref(), Some("first"));
+    }
+
+    #[test]
+    fn later_headers_and_url_replace_the_earlier_ones_whole() {
+        let earlier = ContinueOptions::builder()
+            .headers(headers_of(&[("x-first", "1")]))
+            .url("https://a.test/first".to_string())
+            .build();
+        let later = ContinueOptions::builder()
+            .headers(headers_of(&[("x-second", "2")]))
+            .url("https://a.test/second".to_string())
+            .build();
+
+        let merged = merge_overrides(Some(earlier), Some(later)).unwrap();
+
+        assert_eq!(merged.headers, Some(headers_of(&[("x-second", "2")])));
+        assert_eq!(merged.url.as_deref(), Some("https://a.test/second"));
+    }
+
+    #[test]
+    fn either_post_data_form_replaces_both_earlier_forms() {
+        let earlier = || {
+            Some(
+                ContinueOptions::builder()
+                    .post_data("first".to_string())
+                    .build(),
+            )
+        };
+        let bytes = ContinueOptions::builder()
+            .post_data_bytes(b"second".to_vec())
+            .build();
+
+        let merged = merge_overrides(earlier(), Some(bytes)).unwrap();
+
+        assert_eq!(merged.post_data, None);
+        assert_eq!(merged.post_data_bytes.as_deref(), Some(&b"second"[..]));
+
+        let string = ContinueOptions::builder()
+            .post_data("third".to_string())
+            .build();
+        let merged = merge_overrides(Some(merged), Some(string)).unwrap();
+        assert_eq!(merged.post_data.as_deref(), Some("third"));
+        assert_eq!(merged.post_data_bytes, None);
     }
 
     #[test]

@@ -26,6 +26,9 @@ pub struct Route {
     /// Tracks whether the route has been fully handled (abort/continue/fulfill).
     /// Used by fallback() to signal that handler chaining should continue.
     handled: Arc<AtomicBool>,
+    /// The overrides `fallback()` calls have recorded, applied when the
+    /// request is finally continued.
+    fallback_overrides: Arc<Mutex<Option<ContinueOptions>>>,
     /// APIRequestContext for performing fetch operations.
     /// Set by the route event dispatcher (Page or BrowserContext).
     api_request_context: Arc<Mutex<Option<APIRequestContext>>>,
@@ -52,6 +55,7 @@ impl Route {
         Ok(Self {
             base,
             handled: Arc::new(AtomicBool::new(false)),
+            fallback_overrides: Arc::new(Mutex::new(None)),
             api_request_context: Arc::new(Mutex::new(None)),
         })
     }
@@ -151,29 +155,59 @@ impl Route {
     ///
     /// * `overrides` - Optional modifications to apply to the request
     ///
+    /// Overrides recorded by earlier `fallback()` calls apply too, with these
+    /// taking precedence field by field.
+    ///
     /// See: <https://playwright.dev/docs/api/class-route#route-continue>
     pub async fn continue_(&self, overrides: Option<ContinueOptions>) -> Result<()> {
         self.handled.store(true, Ordering::SeqCst);
+        let recorded = self.fallback_overrides.lock().unwrap().clone();
+        let overrides = super::route_params::merge_overrides(recorded, overrides);
         self.continue_internal(overrides, false).await
     }
 
-    /// Continues the route's request, allowing subsequent handlers to run.
+    /// Passes the request to the next matching handler, recording `overrides`
+    /// for it.
     ///
-    /// Unlike `continue_()`, `fallback()` yields to the next matching handler in the
-    /// chain before the request reaches the network. This enables middleware-like
-    /// handler composition where multiple handlers can inspect and modify a request.
+    /// Unlike `continue_()`, `fallback()` sends nothing to the browser. The
+    /// next matching handler sees the request (a page's handlers come before
+    /// its context's), and when none is left the request is continued once,
+    /// with every fallback's overrides applied (a later one wins field by
+    /// field). This enables middleware-like handler composition where several
+    /// handlers inspect and modify one request.
     ///
     /// # Arguments
     ///
     /// * `overrides` - Optional modifications to apply to the request
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the route has already been handled.
+    ///
     /// See: <https://playwright.dev/docs/api/class-route#route-fallback>
     pub async fn fallback(&self, overrides: Option<ContinueOptions>) -> Result<()> {
-        // Don't set handled — signals to the dispatcher to try the next handler
+        if self.was_handled() {
+            return Err(crate::error::Error::ProtocolError(
+                "Route is already handled!".to_string(),
+            ));
+        }
+        let mut recorded = self.fallback_overrides.lock().unwrap();
+        *recorded = super::route_params::merge_overrides(recorded.take(), overrides);
+        Ok(())
+    }
+
+    /// Continues a request no handler handled, with every fallback's
+    /// overrides applied. Called by the dispatcher once the page's and the
+    /// context's handlers have all fallen back; a no-op if one handled it.
+    pub(crate) async fn continue_unhandled(&self) -> Result<()> {
+        if self.handled.swap(true, Ordering::SeqCst) {
+            return Ok(());
+        }
+        let overrides = self.fallback_overrides.lock().unwrap().clone();
         self.continue_internal(overrides, true).await
     }
 
-    /// Internal implementation shared by continue_() and fallback()
+    /// Sends the driver's `continue` command.
     async fn continue_internal(
         &self,
         overrides: Option<ContinueOptions>,

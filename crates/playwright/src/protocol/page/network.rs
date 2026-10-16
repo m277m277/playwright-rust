@@ -358,7 +358,8 @@ impl Page {
     /// Called by on_event when a "route" event is received.
     /// Supports handler chaining via `route.fallback()` — if a handler calls
     /// `fallback()` instead of `continue_()`, `abort()`, or `fulfill()`, the
-    /// next matching handler in the chain is tried.
+    /// next matching handler in the chain is tried, then the context's
+    /// handlers, before the request is continued.
     pub(super) async fn on_route_event(&self, route: Route) {
         let handlers = self.route_handlers.lock().unwrap().clone();
         let url = route.request().url().to_string();
@@ -391,6 +392,20 @@ impl Page {
                     continue;
                 }
                 break;
+            }
+        }
+
+        if route.was_handled() {
+            return;
+        }
+        // Every page handler fell back: the context's handlers come next, and
+        // the context continues the request if they fall back too.
+        match crate::server::connection::downcast_parent::<crate::protocol::BrowserContext>(self) {
+            Some(context) => context.route_from_page(route).await,
+            None => {
+                if let Err(e) = route.continue_unhandled().await {
+                    tracing::debug!("continuing a route no handler handled failed: {}", e);
+                }
             }
         }
     }

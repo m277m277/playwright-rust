@@ -352,5 +352,17 @@ impl BrowserContext {
                 break;
             }
         }
+
+        // Every handler fell back, or none matched: send the request on with
+        // the overrides its fallbacks recorded. A no-op once it was handled.
+        if let Err(e) = route.continue_unhandled().await {
+            tracing::debug!("continuing a route no handler handled failed: {}", e);
+        }
+    }
+
+    /// Runs this context's route handlers on a request the page's handlers
+    /// all fell back on, as upstream's page hands it to its context.
+    pub(crate) async fn route_from_page(&self, route: Route) {
+        Self::on_route_event(self.route_handlers.clone(), route).await;
     }
 }
