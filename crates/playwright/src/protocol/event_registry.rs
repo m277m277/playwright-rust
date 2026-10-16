@@ -97,14 +97,19 @@ impl<T: Clone> EventRegistry<T> {
     ///
     /// A handler that returns `Err` is logged and does not stop the others: one
     /// bad observer must not swallow an event for everyone else.
-    pub(crate) async fn dispatch(&self, value: T) {
+    ///
+    /// Returns whether a handler or a live waiter received the event, which is
+    /// what upstream's `emit` reports and what decides whether an unheard
+    /// dialog is answered on the caller's behalf.
+    pub(crate) async fn dispatch(&self, value: T) -> bool {
         let handlers = self.handlers.lock().unwrap().clone();
+        let handled = !handlers.is_empty();
         for handler in handlers {
             if let Err(e) = handler(value.clone()).await {
                 tracing::warn!("{} handler error: {}", self.name, e);
             }
         }
-        self.notify_one_waiter(value);
+        self.notify_one_waiter(value) || handled
     }
 
     /// Deliver one event to every handler and *every* queued waiter.
@@ -132,15 +137,16 @@ impl<T: Clone> EventRegistry<T> {
     /// Skipping dead receivers matters: an `expect_*` that timed out or was
     /// cancelled leaves a sender whose receiver is gone, and the old
     /// pop-then-send would consume the event on it and starve the waiter behind
-    /// it.
-    fn notify_one_waiter(&self, value: T) {
+    /// it. Returns whether a waiter took the value.
+    fn notify_one_waiter(&self, value: T) -> bool {
         let mut waiters = self.waiters.lock().unwrap();
         while let Some(tx) = waiters.pop_front() {
             match tx.send(value.clone()) {
-                Ok(()) => return,
+                Ok(()) => return true,
                 Err(_) => continue,
             }
         }
+        false
     }
 }
 
@@ -351,8 +357,33 @@ mod tests {
     #[tokio::test]
     async fn dispatch_with_no_listeners_is_a_no_op() {
         let reg = EventRegistry::<u32>::new("test");
-        reg.dispatch(1).await;
+        assert!(!reg.dispatch(1).await, "nobody heard it");
         assert!(reg.is_idle());
+    }
+
+    #[tokio::test]
+    async fn dispatch_reports_an_event_a_handler_heard() {
+        let reg = EventRegistry::<u32>::new("test");
+        reg.add_handler(failing_handler());
+        assert!(
+            reg.dispatch(1).await,
+            "a handler heard it, even one that failed"
+        );
+    }
+
+    #[tokio::test]
+    async fn dispatch_reports_an_event_a_waiter_took() {
+        let reg = EventRegistry::<u32>::new("test");
+        let rx = reg.wait();
+        assert!(reg.dispatch(1).await);
+        already_received(rx);
+    }
+
+    #[tokio::test]
+    async fn an_abandoned_waiter_does_not_count_as_hearing_the_event() {
+        let reg = EventRegistry::<u32>::new("test");
+        drop(reg.wait());
+        assert!(!reg.dispatch(1).await);
     }
 
     #[test]

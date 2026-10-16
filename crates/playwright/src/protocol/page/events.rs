@@ -124,7 +124,10 @@ impl Page {
     /// Registers a dialog event handler.
     ///
     /// The handler will be called when a JavaScript dialog is triggered (alert, confirm, prompt, or beforeunload).
-    /// The dialog must be explicitly accepted or dismissed, otherwise the page will freeze.
+    /// With no `dialog` handler on the page or its context, a dialog is
+    /// dismissed automatically (a `beforeunload` dialog is accepted). Once a
+    /// handler is registered, the dialog waits until a handler accepts or
+    /// dismisses it, so a handler that does neither leaves the page blocked.
     ///
     /// # Arguments
     ///
@@ -138,7 +141,9 @@ impl Page {
         Fut: Future<Output = Result<()>> + Send + 'static,
     {
         let handler: Handler<Dialog> = Arc::new(move |dialog| Box::pin(handler(dialog)));
-        // Dialog events are auto-emitted (no subscription needed).
+        // The event arrives on the context, but the driver checks the page's
+        // subscription as well as the context's.
+        self.subscribe_if_idle(&self.dialog).await;
         self.dialog.add_handler(handler);
 
         Ok(())

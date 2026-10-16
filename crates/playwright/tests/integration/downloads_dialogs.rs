@@ -601,3 +601,81 @@ async fn context_dialog_closed_fires() -> Result<(), Box<dyn std::error::Error>>
     browser.close().await?;
     Ok(())
 }
+
+/// The types of the dialogs `page` has seen close. A `dialogclosed` listener
+/// does not count as a `dialog` handler, so it watches the unhandled path
+/// without changing it.
+async fn closed_dialog_types(
+    page: &playwright_rs::protocol::Page,
+) -> Result<Arc<Mutex<Vec<String>>>, Box<dyn std::error::Error>> {
+    let types = Arc::new(Mutex::new(Vec::new()));
+    let sink = types.clone();
+    page.on_dialog_closed(move |dialog| {
+        let sink = sink.clone();
+        async move {
+            sink.lock().unwrap().push(dialog.type_().to_string());
+            Ok(())
+        }
+    })
+    .await?;
+    Ok(types)
+}
+
+#[tokio::test]
+async fn an_unhandled_confirm_is_dismissed() -> Result<(), Box<dyn std::error::Error>> {
+    let (_pw, browser, page) = crate::common::setup().await;
+    page.goto("about:blank", None).await?;
+    let closed = closed_dialog_types(&page).await?;
+
+    let answer = tokio::time::timeout(
+        Duration::from_secs(10),
+        page.evaluate::<(), bool>("confirm('proceed?')", None),
+    )
+    .await;
+    crate::common::poll_until(Duration::from_secs(5), || {
+        !closed.lock().unwrap().is_empty()
+    })
+    .await;
+
+    browser.close().await?;
+    let answer = answer.expect("confirm() blocked: no dialog handler answered it")?;
+    assert_eq!(closed.lock().unwrap().as_slice(), ["confirm".to_string()]);
+    assert!(
+        !answer,
+        "an unhandled confirm() is dismissed, so it returns false"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_unhandled_beforeunload_is_accepted() -> Result<(), Box<dyn std::error::Error>> {
+    let (_pw, browser, page) = crate::common::setup().await;
+    page.set_content(
+        "<body>leave?<script>window.addEventListener('beforeunload', e => { \
+         e.preventDefault(); e.returnValue = ''; });</script></body>",
+        None,
+    )
+    .await?;
+    let closed = closed_dialog_types(&page).await?;
+    // Chromium shows a beforeunload prompt only after a user gesture.
+    page.locator("body").click(None).await?;
+
+    let navigated = tokio::time::timeout(
+        Duration::from_secs(10),
+        page.goto("data:text/html,<p>left</p>", None),
+    )
+    .await;
+    crate::common::poll_until(Duration::from_secs(5), || {
+        !closed.lock().unwrap().is_empty()
+    })
+    .await;
+
+    browser.close().await?;
+    assert_eq!(
+        closed.lock().unwrap().as_slice(),
+        ["beforeunload".to_string()],
+        "the navigation raised a beforeunload prompt"
+    );
+    navigated.expect("navigation blocked: no dialog handler answered beforeunload")?;
+    Ok(())
+}

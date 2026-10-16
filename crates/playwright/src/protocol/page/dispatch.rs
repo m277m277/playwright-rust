@@ -17,9 +17,10 @@ impl Page {
         self.download.dispatch(download).await;
     }
 
-    /// Handles a dialog event from the protocol
-    async fn on_dialog_event(&self, dialog: Dialog) {
-        self.dialog.dispatch(dialog).await;
+    /// Delivers a dialog to this page's handlers; returns whether any heard it.
+    #[tracing::instrument(level = "debug", skip_all, fields(guid = %self.guid()))]
+    pub(crate) async fn on_dialog_event(&self, dialog: Dialog) -> bool {
+        self.dialog.dispatch(dialog).await
     }
 
     async fn on_request_event(&self, request: Request) {
@@ -38,11 +39,9 @@ impl Page {
         self.response.dispatch(response).await;
     }
 
-    /// Triggers dialog event (called by BrowserContext when dialog events arrive)
-    ///
-    /// Dialog events are sent to BrowserContext and forwarded to the associated Page.
-    /// This method is public so BrowserContext can forward dialog events.
-    #[tracing::instrument(level = "debug", skip_all, fields(guid = %self.guid()))]
+    /// Delivers `dialog` to this page's dialog handlers. Unlike a dialog the
+    /// browser raises, one delivered here is not answered when no handler
+    /// hears it.
     pub async fn trigger_dialog_event(&self, dialog: Dialog) {
         self.on_dialog_event(dialog).await;
     }

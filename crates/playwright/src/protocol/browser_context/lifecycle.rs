@@ -104,12 +104,12 @@ impl BrowserContext {
             option_har: Arc::new(tokio::sync::Mutex::new(None)),
         };
 
-        // Enable dialog and console event subscriptions eagerly.
         // Console events must be subscribed to receive them without a registered handler,
         // enabling the console_messages() and page_errors() passive accumulators on Page.
+        // Dialogs are not: the driver answers a dialog nobody subscribed to, and an
+        // eager subscription would leave every unhandled dialog to the client.
         let channel = context.channel().clone();
         crate::task::spawn(async move {
-            _ = channel.update_subscription("dialog", true).await;
             _ = channel.update_subscription("console", true).await;
         });
 

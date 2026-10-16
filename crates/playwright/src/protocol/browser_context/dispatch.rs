@@ -64,9 +64,9 @@ impl BrowserContext {
 
                 // Dispatch to context-level handlers first (matching playwright-python behavior)
                 match method.as_str() {
-                    "request" => ctx_request.dispatch(request.clone()).await,
-                    "requestFinished" => ctx_request_finished.dispatch(request.clone()).await,
-                    "requestFailed" => ctx_request_failed.dispatch(request.clone()).await,
+                    "request" => _ = ctx_request.dispatch(request.clone()).await,
+                    "requestFinished" => _ = ctx_request_finished.dispatch(request.clone()).await,
+                    "requestFailed" => _ = ctx_request_failed.dispatch(request.clone()).await,
                     _ => {}
                 }
 
@@ -305,26 +305,47 @@ impl ChannelOwner for BrowserContext {
                     let ctx_dialog = self.dialog.clone();
 
                     crate::task::spawn(async move {
-                        // Get and downcast the Dialog object
-                        let dialog: crate::protocol::Dialog = match connection
+                        // We subscribed, so the driver is waiting on us to answer;
+                        // a dialog we cannot resolve stays open.
+                        let dialog = match connection
                             .get_typed::<crate::protocol::Dialog>(&dialog_guid_owned)
                             .await
                         {
                             Ok(d) => d,
-                            Err(_) => return,
+                            Err(e) => {
+                                tracing::warn!(
+                                    "dialog {dialog_guid_owned} could not be resolved and stays unanswered: {e}"
+                                );
+                                return;
+                            }
                         };
 
-                        // Dispatch to context-level dialog handlers first
-                        ctx_dialog.dispatch(dialog.clone()).await;
+                        // Context-level handlers first, then the page's.
+                        let heard_by_context = ctx_dialog.dispatch(dialog.clone()).await;
+                        let heard_by_page = match dialog.page() {
+                            Some(page) => page.on_dialog_event(dialog.clone()).await,
+                            None => false,
+                        };
 
-                        // Then forward to the Page's dialog handlers
-                        let page: Page =
-                            match crate::server::connection::downcast_parent::<Page>(&dialog) {
-                                Some(p) => p,
-                                None => return,
-                            };
-
-                        page.trigger_dialog_event(dialog).await;
+                        // A dialog can land after `on_dialog` subscribes but before
+                        // its handler is added, or belong to a page we cannot
+                        // resolve; answer it as the driver would have.
+                        let answered = match super::events::unheard_dialog_answer(
+                            heard_by_context,
+                            heard_by_page,
+                            dialog.type_(),
+                        ) {
+                            Some(super::events::UnheardDialogAnswer::Accept) => {
+                                dialog.accept(None).await
+                            }
+                            Some(super::events::UnheardDialogAnswer::Dismiss) => {
+                                dialog.dismiss().await
+                            }
+                            None => Ok(()),
+                        };
+                        if let Err(e) = answered {
+                            tracing::debug!("answering an unheard dialog failed: {e}");
+                        }
                     });
                 }
             }

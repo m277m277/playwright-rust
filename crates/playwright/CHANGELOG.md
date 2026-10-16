@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **The crate installs again: `zip` moves from 8 to 9.** The `zip` maintainers yanked every 8.x release, and the build script depends on `zip` to unpack the Windows Node archive, so a project without a lockfile could no longer resolve 0.20.0 at all. With the `trace` feature, `playwright_rs::trace::TraceError::Zip` now wraps `zip` 9's `ZipError`, through playwright-rs-trace 0.2.2.
+- **A dialog nobody handles no longer blocks the page.** With no `dialog` handler on the page or its context, `alert()`, `confirm()`, and `prompt()` dialogs are now dismissed and a `beforeunload` dialog accepted, as Playwright's other clients do. Before, the dialog stayed open, so a stray `confirm()` hung the `evaluate` that raised it and a page with a `beforeunload` listener could not be navigated away from. Registering a handler still leaves the answer to it. Reported in [#167](https://github.com/padamson/playwright-rust/issues/167).
 
 ### Security
 

@@ -15,9 +15,9 @@ use std::sync::Arc;
 
 /// Dialog represents a browser dialog (alert, confirm, prompt, or beforeunload).
 ///
-/// Dialogs are dispatched via the page.on('dialog') event. Dialogs must be
-/// explicitly accepted or dismissed, otherwise the page will freeze waiting
-/// for the dialog to be handled.
+/// Dialogs are dispatched via the page.on('dialog') event. A dialog no handler
+/// hears is dismissed automatically (a `beforeunload` dialog is accepted); a
+/// handler that hears one must accept or dismiss it, or the page stays blocked.
 ///
 /// See module-level documentation for usage examples.
 ///

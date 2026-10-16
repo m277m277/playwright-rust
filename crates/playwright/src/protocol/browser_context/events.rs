@@ -271,8 +271,10 @@ impl BrowserContext {
     /// or beforeunload) is triggered from **any** page in the context. Context-level
     /// handlers fire before page-level handlers.
     ///
-    /// The dialog must be explicitly accepted or dismissed; otherwise the page
-    /// will freeze waiting for a response.
+    /// With no `dialog` handler on the context or the page, a dialog is
+    /// dismissed automatically (a `beforeunload` dialog is accepted). Once a
+    /// handler is registered, the dialog waits until a handler accepts or
+    /// dismisses it, so a handler that does neither leaves the page blocked.
     ///
     /// # Arguments
     ///
@@ -292,6 +294,7 @@ impl BrowserContext {
     {
         let handler: Handler<crate::protocol::Dialog> =
             Arc::new(move |dialog| Box::pin(handler(dialog)));
+        self.subscribe_if_idle(&self.dialog).await;
         self.dialog.add_handler(handler);
         Ok(())
     }
@@ -612,10 +615,60 @@ async fn run_all<T: Clone>(handlers: &Forwarded<T>, value: T) {
     }
 }
 
+/// The answer the client gives a dialog that reached it but no handler heard.
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum UnheardDialogAnswer {
+    Accept,
+    Dismiss,
+}
+
+/// How to answer a delivered dialog: not at all if the context or the page
+/// heard it, otherwise the driver's own rule for a dialog nobody subscribed
+/// to, which accepts `beforeunload` and dismisses the rest.
+pub(super) fn unheard_dialog_answer(
+    heard_by_context: bool,
+    heard_by_page: bool,
+    dialog_type: &str,
+) -> Option<UnheardDialogAnswer> {
+    if heard_by_context || heard_by_page {
+        None
+    } else if dialog_type == "beforeunload" {
+        Some(UnheardDialogAnswer::Accept)
+    } else {
+        Some(UnheardDialogAnswer::Dismiss)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn a_dialog_the_context_or_the_page_heard_is_left_to_its_handler() {
+        assert_eq!(unheard_dialog_answer(true, false, "confirm"), None);
+        assert_eq!(unheard_dialog_answer(false, true, "confirm"), None);
+        assert_eq!(unheard_dialog_answer(true, true, "beforeunload"), None);
+    }
+
+    #[test]
+    fn an_unheard_beforeunload_is_accepted() {
+        assert_eq!(
+            unheard_dialog_answer(false, false, "beforeunload"),
+            Some(UnheardDialogAnswer::Accept)
+        );
+    }
+
+    #[test]
+    fn every_other_unheard_dialog_is_dismissed() {
+        for dialog_type in ["alert", "confirm", "prompt"] {
+            assert_eq!(
+                unheard_dialog_answer(false, false, dialog_type),
+                Some(UnheardDialogAnswer::Dismiss),
+                "{dialog_type}"
+            );
+        }
+    }
 
     #[tokio::test]
     async fn run_all_runs_every_handler_in_order_past_a_failure() {
