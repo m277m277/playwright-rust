@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Bumped transitive `rustls` 0.23.45 → 0.23.46 ([RUSTSEC-2026-0346](https://rustsec.org/advisories/RUSTSEC-2026-0346), [RUSTSEC-2026-0347](https://rustsec.org/advisories/RUSTSEC-2026-0347), [RUSTSEC-2026-0348](https://rustsec.org/advisories/RUSTSEC-2026-0348), [RUSTSEC-2026-0349](https://rustsec.org/advisories/RUSTSEC-2026-0349))** in the workspace lockfile and in the excluded site-e2e and fuzz lockfiles. The one that can reach this crate is RUSTSEC-2026-0349: a network attacker could answer one handshake with an unauthenticated ServerHello and push later connections to the same server name down to classical key exchange, losing post-quantum confidentiality but not authentication. The other three need a custom `ClientSessionStore`, `EchMode::Enable`, or rustls's `brotli` feature, none of which this crate uses. rustls reaches this crate through `ureq` (driver download) and the `rustls-tls` features. A downstream project picks up the fix with `cargo update -p rustls`.
+
 ## [0.20.0] - 2026-10-11
 
 ### Added
