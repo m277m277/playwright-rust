@@ -85,6 +85,26 @@ pub struct BindResult {
     pub endpoint: String,
 }
 
+/// Options for [`Browser::close_with_options`].
+///
+/// See: <https://playwright.dev/docs/api/class-browser#browser-close>
+#[derive(Debug, Default, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+#[non_exhaustive]
+pub struct BrowserCloseOptions {
+    /// The reason reported by operations the close interrupts.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+impl BrowserCloseOptions {
+    /// The reason interrupted operations report.
+    pub fn reason(mut self, reason: impl Into<String>) -> Self {
+        self.reason = Some(reason.into());
+        self
+    }
+}
+
 /// Options for `Browser::start_tracing()`.
 ///
 /// See: <https://playwright.dev/docs/api/class-browser#browser-start-tracing>
@@ -718,12 +738,26 @@ impl Browser {
     /// See: <https://playwright.dev/docs/api/class-browser#browser-close>
     #[tracing::instrument(level = "info", skip_all, fields(name = %self.name))]
     pub async fn close(&self) -> Result<()> {
-        // Send close RPC to server
-        // The protocol expects an empty object as params
-        let result = self
-            .channel()
-            .send_no_result("close", serde_json::json!({}))
-            .await;
+        self.close_with_options(BrowserCloseOptions::default())
+            .await
+    }
+
+    /// Closes the browser and all of its pages, recording why.
+    ///
+    /// Behaves as [`close`](Self::close), and the
+    /// [`reason`](BrowserCloseOptions::reason) is reported by any operation
+    /// the close interrupts.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - Browser has already been closed
+    /// - Communication with browser process fails
+    ///
+    /// See: <https://playwright.dev/docs/api/class-browser#browser-close>
+    #[tracing::instrument(level = "info", skip_all, fields(name = %self.name))]
+    pub async fn close_with_options(&self, options: BrowserCloseOptions) -> Result<()> {
+        let result = self.channel().send_no_result("close", &options).await;
 
         // Add delay on Windows CI to ensure browser process fully terminates
         // This prevents subsequent browser launches from hanging
@@ -863,3 +897,21 @@ impl std::fmt::Debug for Browser {
 // because it requires a real Connection with an object registry, protocol
 // messages from the server, and BrowserType::launch() to create the object.
 // See crates/playwright/tests/integration/browser.rs.
+
+#[cfg(test)]
+mod close_options_tests {
+    use super::*;
+    use crate::protocol_spec::{BROWSER, command_parameters, keys};
+    use serde_json::json;
+
+    #[test]
+    fn close_options_send_only_a_set_reason_under_the_driver_spelling() {
+        assert_eq!(
+            serde_json::to_value(BrowserCloseOptions::default()).unwrap(),
+            json!({})
+        );
+        let sent = serde_json::to_value(BrowserCloseOptions::default().reason("done")).unwrap();
+        assert_eq!(sent, json!({"reason": "done"}));
+        assert!(keys(&sent).is_subset(&command_parameters(BROWSER, "close")));
+    }
+}

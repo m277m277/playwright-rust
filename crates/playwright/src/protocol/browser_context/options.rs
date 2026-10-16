@@ -859,9 +859,42 @@ impl BrowserContextOptionsBuilder {
     }
 }
 
+/// Options for [`BrowserContext::close_with_options`](super::BrowserContext::close_with_options).
+///
+/// See: <https://playwright.dev/docs/api/class-browsercontext#browser-context-close>
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[non_exhaustive]
+pub struct BrowserContextCloseOptions {
+    /// The reason reported by operations the close interrupts.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+impl BrowserContextCloseOptions {
+    /// The reason interrupted operations report.
+    pub fn reason(mut self, reason: impl Into<String>) -> Self {
+        self.reason = Some(reason.into());
+        self
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn close_options_send_only_a_set_reason_under_the_driver_spelling() {
+        use crate::protocol_spec::{BROWSER_CONTEXT, command_parameters, keys};
+        assert_eq!(
+            serde_json::to_value(BrowserContextCloseOptions::default()).unwrap(),
+            serde_json::json!({})
+        );
+        let sent =
+            serde_json::to_value(BrowserContextCloseOptions::default().reason("done")).unwrap();
+        assert_eq!(sent, serde_json::json!({"reason": "done"}));
+        assert!(keys(&sent).is_subset(&command_parameters(BROWSER_CONTEXT, "close")));
+    }
 
     #[test]
     fn test_browser_context_options_ignore_default_args_bool_serialization() {

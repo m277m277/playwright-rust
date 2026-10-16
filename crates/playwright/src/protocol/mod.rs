@@ -104,12 +104,12 @@ pub use api_request_context::{
 };
 pub use aria_snapshot::{AriaSnapshotMode, AriaSnapshotOptions};
 pub use binding_call::BindingCall;
-pub use browser::{BindOptions, BindResult, Browser, StartTracingOptions};
+pub use browser::{BindOptions, BindResult, Browser, BrowserCloseOptions, StartTracingOptions};
 pub use browser_context::{
-    AcceptDownloads, BrowserContext, BrowserContextOptions, BrowserContextOptionsBuilder,
-    ClearCookiesOptions, Cookie, Geolocation, GrantPermissionsOptions, HttpCredentials,
-    HttpCredentialsSend, LocalStorageItem, Origin, RecordHar, RecordVideo, StorageState,
-    StorageStateOptions, Viewport,
+    AcceptDownloads, BrowserContext, BrowserContextCloseOptions, BrowserContextOptions,
+    BrowserContextOptionsBuilder, ClearCookiesOptions, Cookie, Geolocation,
+    GrantPermissionsOptions, HttpCredentials, HttpCredentialsSend, LocalStorageItem, Origin,
+    RecordHar, RecordVideo, StorageState, StorageStateOptions, Viewport,
 };
 pub use browser_type::BrowserType;
 pub use cdp_session::CDPSession;
@@ -149,8 +149,8 @@ pub use mouse::Mouse;
 pub use page::{
     AddLocatorHandlerOptions, AddScriptTagOptions, AddScriptTagOptionsBuilder, AddStyleTagOptions,
     AddStyleTagOptionsBuilder, ColorScheme, EmulateMediaOptions, EmulateMediaOptionsBuilder,
-    ForcedColors, GotoOptions, Media, Page, PdfMargin, PdfOptions, PdfOptionsBuilder,
-    ReducedMotion, Response, RouteFromHarOptions, WaitUntil,
+    ForcedColors, GotoOptions, Media, Page, PageCloseOptions, PdfMargin, PdfOptions,
+    PdfOptionsBuilder, ReducedMotion, Response, RouteFromHarOptions, WaitUntil,
 };
 pub use playwright::Playwright;
 pub use proxy::ProxySettings;

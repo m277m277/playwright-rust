@@ -227,6 +227,49 @@ struct Invocation {
     run: bool,
     remove: bool,
 }
+
+/// Options for [`Page::close_with_options`].
+///
+/// See: <https://playwright.dev/docs/api/class-page#page-close>
+#[derive(Debug, Clone, Default)]
+#[non_exhaustive]
+pub struct PageCloseOptions {
+    /// Run the page's `beforeunload` handlers instead of closing it outright.
+    /// The page may then raise a `beforeunload` dialog and stays open if the
+    /// dialog is dismissed. Defaults to `false`.
+    pub run_before_unload: Option<bool>,
+    /// The reason reported by operations the close interrupts. It is not sent
+    /// with `run_before_unload`, whose driver command takes no reason.
+    pub reason: Option<String>,
+}
+
+impl PageCloseOptions {
+    /// Run `beforeunload` handlers rather than closing the page outright.
+    pub fn run_before_unload(mut self, run_before_unload: bool) -> Self {
+        self.run_before_unload = Some(run_before_unload);
+        self
+    }
+
+    /// The reason interrupted operations report.
+    pub fn reason(mut self, reason: impl Into<String>) -> Self {
+        self.reason = Some(reason.into());
+        self
+    }
+}
+
+/// The driver command `close_with_options` sends, and its parameters. Running
+/// `beforeunload` handlers is a command of its own; plain `close` carries the
+/// reason.
+fn close_command(options: &PageCloseOptions) -> (&'static str, serde_json::Value) {
+    if options.run_before_unload == Some(true) {
+        return ("runBeforeUnload", serde_json::json!({}));
+    }
+    let mut params = serde_json::json!({});
+    if let Some(reason) = &options.reason {
+        params["reason"] = reason.as_str().into();
+    }
+    ("close", params)
+}
 // Each concern is its own `impl Page` block in a child module. Rustdoc lists
 // inherent impls in declaration order, so these follow the lifecycle block
 // above in the order a reader meets the API. One comment per line on purpose:
@@ -271,6 +314,42 @@ impl std::fmt::Debug for Page {
             .field("guid", &self.guid())
             .field("url", &self.url())
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod close_command_tests {
+    use super::*;
+    use crate::protocol_spec::{PAGE, command_parameters, keys};
+    use serde_json::json;
+
+    #[test]
+    fn a_plain_close_sends_close_with_nothing_set() {
+        assert_eq!(
+            close_command(&PageCloseOptions::default()),
+            ("close", json!({}))
+        );
+    }
+
+    #[test]
+    fn a_reason_rides_on_close_under_the_driver_spelling() {
+        let (method, params) = close_command(&PageCloseOptions::default().reason("done"));
+        assert_eq!((method, &params), ("close", &json!({"reason": "done"})));
+        assert!(keys(&params).is_subset(&command_parameters(PAGE, "close")));
+    }
+
+    #[test]
+    fn run_before_unload_sends_its_own_command() {
+        let options = PageCloseOptions::default()
+            .run_before_unload(true)
+            .reason("done");
+        assert_eq!(close_command(&options), ("runBeforeUnload", json!({})));
+    }
+
+    #[test]
+    fn run_before_unload_false_is_a_plain_close() {
+        let options = PageCloseOptions::default().run_before_unload(false);
+        assert_eq!(close_command(&options), ("close", json!({})));
     }
 }
 

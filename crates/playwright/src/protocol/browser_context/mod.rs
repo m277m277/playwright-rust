@@ -196,8 +196,8 @@ mod options;
 mod dispatch;
 
 pub use options::{
-    AcceptDownloads, BrowserContextOptions, BrowserContextOptionsBuilder, RecordHar, RecordVideo,
-    Viewport,
+    AcceptDownloads, BrowserContextCloseOptions, BrowserContextOptions,
+    BrowserContextOptionsBuilder, RecordHar, RecordVideo, Viewport,
 };
 pub use state::{
     ClearCookiesOptions, Cookie, Geolocation, GrantPermissionsOptions, HttpCredentials,

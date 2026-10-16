@@ -381,6 +381,28 @@ impl BrowserContext {
     /// See: <https://playwright.dev/docs/api/class-browsercontext#browser-context-close>
     #[tracing::instrument(level = "info", skip_all, fields(guid = %self.guid()))]
     pub async fn close(&self) -> Result<()> {
+        self.close_with_options(super::BrowserContextCloseOptions::default())
+            .await
+    }
+
+    /// Closes the browser context and all its pages, recording why.
+    ///
+    /// Behaves as [`close`](Self::close), and the
+    /// [`reason`](super::BrowserContextCloseOptions::reason) is reported by any
+    /// operation the close interrupts.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - Context has already been closed
+    /// - Communication with browser process fails
+    ///
+    /// See: <https://playwright.dev/docs/api/class-browsercontext#browser-context-close>
+    #[tracing::instrument(level = "info", skip_all, fields(guid = %self.guid()))]
+    pub async fn close_with_options(
+        &self,
+        options: super::BrowserContextCloseOptions,
+    ) -> Result<()> {
         // Write the HAR the `record_har` option started, while the context
         // can still export it. Any failure returns before the context
         // closes, as in the other language bindings. A failed export keeps
@@ -404,11 +426,7 @@ impl BrowserContext {
         let selectors = self.connection().selectors();
         selectors.remove_context(self.channel());
 
-        // Send close RPC to server
-        let result = self
-            .channel()
-            .send_no_result("close", serde_json::json!({}))
-            .await;
+        let result = self.channel().send_no_result("close", &options).await;
         // Mark as closed regardless of error (best-effort)
         self.is_closed.store(true, Ordering::Relaxed);
         result

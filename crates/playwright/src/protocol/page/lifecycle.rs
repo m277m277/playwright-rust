@@ -206,13 +206,37 @@ impl Page {
     /// See: <https://playwright.dev/docs/api/class-page#page-close>
     #[tracing::instrument(level = "info", skip_all, fields(guid = %self.guid()))]
     pub async fn close(&self) -> Result<()> {
-        // Send close RPC to server
-        let result = self
-            .channel()
-            .send_no_result("close", serde_json::json!({}))
-            .await;
-        // Mark as closed regardless of error (best-effort)
-        self.is_closed.store(true, Ordering::Relaxed);
+        self.close_with_options(super::PageCloseOptions::default())
+            .await
+    }
+
+    /// Closes the page, optionally running its `beforeunload` handlers first
+    /// or recording why it was closed.
+    ///
+    /// With [`run_before_unload`](super::PageCloseOptions::run_before_unload)
+    /// set, this returns once the handlers have been asked to run, not once
+    /// the page has closed: the page may raise a `beforeunload` dialog, and it
+    /// stays open if that dialog is dismissed. Wait for the page's `close`
+    /// event to know it closed. Without it, this behaves as [`close`](Self::close)
+    /// and the [`reason`](super::PageCloseOptions::reason) is reported by any
+    /// operation the close interrupts.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - Page has already been closed
+    /// - Communication with browser process fails
+    ///
+    /// See: <https://playwright.dev/docs/api/class-page#page-close>
+    #[tracing::instrument(level = "info", skip_all, fields(guid = %self.guid()))]
+    pub async fn close_with_options(&self, options: super::PageCloseOptions) -> Result<()> {
+        let (method, params) = super::close_command(&options);
+        let result = self.channel().send_no_result(method, params).await;
+        // Mark as closed regardless of error (best-effort). A page asked only
+        // to run its beforeunload handlers is marked by its `close` event.
+        if method == "close" {
+            self.is_closed.store(true, Ordering::Relaxed);
+        }
         result
     }
 

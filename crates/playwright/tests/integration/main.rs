@@ -26,6 +26,7 @@ mod checkbox;
 #[cfg(feature = "cli")]
 mod cli_bin;
 mod click_options;
+mod close_options;
 mod connection;
 mod console_message;
 mod context_events;

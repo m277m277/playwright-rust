@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Close options: `Page::close_with_options`, `BrowserContext::close_with_options`, and `Browser::close_with_options`.** Each takes a `reason` that operations the close interrupts report in their error, as Playwright's other clients allow. `PageCloseOptions::run_before_unload` runs the page's `beforeunload` handlers instead of closing it outright: the page may raise a `beforeunload` dialog and stays open if that dialog is dismissed, so the call returns before the page has closed. `close()` is unchanged on all three.
+
 ### Fixed
 
 - **The crate installs again: `zip` moves from 8 to 9.** The `zip` maintainers yanked every 8.x release, and the build script depends on `zip` to unpack the Windows Node archive, so a project without a lockfile could no longer resolve 0.20.0 at all. With the `trace` feature, `playwright_rs::trace::TraceError::Zip` now wraps `zip` 9's `ZipError`, through playwright-rs-trace 0.2.2.
