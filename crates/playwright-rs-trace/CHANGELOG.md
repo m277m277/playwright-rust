@@ -9,6 +9,10 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+### Fixed
+
+- **The crate installs again: `zip` moves from 8 to 9.** The `zip` maintainers yanked every 8.x release, so a project without a lockfile could no longer resolve 0.2.1 at all. `TraceError::Zip` now wraps `zip` 9's `ZipError`; code that only displays or matches the variant is unaffected, and code that names `zip` 8's `ZipError` itself needs the same bump.
+
 ## [0.2.1] - 2026-10-11
 
 ### Added

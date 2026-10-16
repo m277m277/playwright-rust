@@ -204,7 +204,10 @@ fn extract_node_binary(
             let mut file = archive
                 .by_index(i)
                 .map_err(|e| io::Error::other(format!("zip read failed: {e}")))?;
-            let name = file.name().to_string();
+            let name = file
+                .name()
+                .map_err(|e| io::Error::other(format!("zip entry name unreadable: {e}")))?
+                .into_owned();
             let out = if name == exe_inner {
                 found_exe = true;
                 dest.join("node.exe")

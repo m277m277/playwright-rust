@@ -70,7 +70,7 @@ ureq = { version = "3.3.0", optional = true, default-features = false, features 
     "rustls-webpki-roots",
 ] }
 rustls = { version = "0.23", optional = true, default-features = false }
-zip = { version = "8", optional = true, default-features = false, features = ["deflate"] }
+zip = { version = "9", optional = true, default-features = false, features = ["deflate"] }
 # .tar.gz handling for the assembled driver (npm playwright-core tarball +
 # the Node dist archive on non-Windows) — see ADR 0006.
 flate2 = { version = "1", optional = true }
@@ -118,7 +118,7 @@ rustls = { version = "0.23", default-features = false }
 # deflate only: the Windows Node dist archive is standard-deflate, so we
 # skip zip's default codec set (aes-crypto/bzip2/zstd/lzma/...) — smaller
 # tree and no pull on the encryption stack. Mirrors playwright-rs-trace.
-zip = { version = "8", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 # .tar.gz for the npm playwright-core tarball + the non-Windows Node dist
 # archive (the driver is assembled from those two artifacts — ADR 0006).
 flate2 = "1"

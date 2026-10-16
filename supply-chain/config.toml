@@ -221,6 +221,10 @@ criteria = "safe-to-deploy"
 version = "0.2.18"
 criteria = "safe-to-deploy"
 
+[[exemptions.nix]]
+version = "0.31.3"
+criteria = "safe-to-deploy"
+
 [[exemptions.once_cell]]
 version = "1.21.4"
 criteria = "safe-to-deploy"
@@ -526,7 +530,7 @@ version = "0.11.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.zip]]
-version = "8.6.0"
+version = "9.0.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.zopfli]]
