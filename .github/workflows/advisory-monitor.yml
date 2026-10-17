@@ -87,14 +87,24 @@ jobs:
       # the body and says whether the findings changed. The report reaches
       # it as a file, never through `${{ }}` interpolation: advisory text is
       # community-authored and could otherwise be evaluated by the shell.
+      # A partial report (one check broke) opens an issue when there is
+      # none, but never overwrites an open one: that would drop the broken
+      # tree's findings and comment twice, now and when it recovers. The
+      # failed job is the signal until then.
       - name: Open or update the tracking issue
         if: steps.check.outputs.has_new == 'true'
         env:
           EXISTING: ${{ steps.find.outputs.number }}
+          BROKEN: ${{ steps.check.outputs.broken }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         shell: bash
         run: |
           set -euo pipefail
-          status="$(scripts/advisory-issue-body.py "$RUNNER_TEMP/old.txt" "$RUNNER_TEMP/report.txt" "$RUNNER_TEMP/body.txt")"
+          if [ -n "$EXISTING" ] && [ "$BROKEN" = true ]; then
+            echo "Partial report; leaving tracking issue #$EXISTING as it is"
+            exit 0
+          fi
+          status="$(scripts/advisory-issue-body.py "$RUNNER_TEMP/old.txt" "$RUNNER_TEMP/report.txt" "$RUNNER_TEMP/body.txt" "$RUNNER_TEMP/comment.txt")"
           if [ -z "$EXISTING" ]; then
             echo "Opening tracking issue"
             gh label create "$ISSUE_LABEL" \
@@ -110,13 +120,6 @@ jobs:
             changed)
               echo "Findings changed; updating tracking issue #$EXISTING"
               gh issue edit "$EXISTING" --body-file "$RUNNER_TEMP/body.txt"
-              {
-                echo "The advisory report changed:"
-                echo
-                echo '```'
-                cat "$RUNNER_TEMP/report.txt"
-                echo '```'
-              } > "$RUNNER_TEMP/comment.txt"
               gh issue comment "$EXISTING" --body-file "$RUNNER_TEMP/comment.txt"
               ;;
             refreshed)

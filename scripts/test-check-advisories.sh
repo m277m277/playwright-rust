@@ -26,7 +26,13 @@ cat > "$work/bin/cargo" <<'STUB'
 echo "$*" >> "$STUB_DIR/calls"
 case "$1" in
     deny)  cat "$STUB_DIR/fx/$STUB_DENY.out";  exit "$(cat "$STUB_DIR/fx/$STUB_DENY.code")" ;;
-    audit) cat "$STUB_DIR/fx/$STUB_AUDIT.out"; exit "$(cat "$STUB_DIR/fx/$STUB_AUDIT.code")" ;;
+    audit)
+        # With STUB_AUDIT_LOCKS set, only the lockfiles it names have a hit.
+        if [ -n "${STUB_AUDIT_LOCKS:-}" ]; then
+            case " $STUB_AUDIT_LOCKS " in *" $3 "*) cat "$STUB_DIR/fx/audit-hit.out"; exit 1 ;; esac
+            exit 0
+        fi
+        cat "$STUB_DIR/fx/$STUB_AUDIT.out"; exit "$(cat "$STUB_DIR/fx/$STUB_AUDIT.code")" ;;
 esac
 echo "stub cargo: unexpected subcommand: $*" >&2
 exit 99
@@ -118,7 +124,7 @@ failures=0
 # fail NAME [CONTEXT_FILE]: report a failed check, indenting the context.
 fail() {
     echo "FAIL: $1"
-    if [ -n "${2:-}" ]; then sed 's/^/    /' "$2"; fi
+    if [ -f "${2:-}" ]; then sed 's/^/    /' "$2"; fi
     failures=$((failures + 1))
 }
 
@@ -127,7 +133,7 @@ fail() {
 run() {
     : > "$work/calls"
     status=0
-    PATH="$work/bin:$PATH" STUB_DIR="$work" STUB_DENY="$1" STUB_AUDIT="$2" \
+    PATH="$work/bin:$PATH" STUB_DIR="$work" STUB_DENY="$1" STUB_AUDIT="$2" STUB_AUDIT_LOCKS="${AUDIT_LOCKS:-}" \
         "$checker" > "$work/out" 2> "$work/stderr" || status=$?
 }
 
@@ -185,18 +191,74 @@ expect "a hit beside a broken check is still filed, and the job told" 3 "RUSTSEC
 # render OLD_BODY_FILE REPORT_FILE, then rendered NAME STATUS TEXT. TEXT
 # is a line the new body must contain.
 render() {
-    status_out=$("$renderer" "$1" "$2" "$work/body.txt")
+    rm -f "$work/comment.txt"
+    status_out=$(RUN_URL=https://example.test/run "$renderer" "$1" "$2" "$work/body.txt" "$work/comment.txt")
+}
+
+# contains NAME FILE TEXT
+contains() {
+    if grep -qF -- "$3" "$2" 2>/dev/null; then
+        echo "ok: $1"
+    else
+        fail "$1: $(basename "$2") did not contain '$3'" "$2"
+    fi
 }
 
 rendered() {
-    local name="$1" want="$2" text="$3"
-    if [ "$status_out" != "$want" ]; then
-        fail "$name: rendered as '$status_out', expected '$want'"
-    elif ! grep -qF -- "$text" "$work/body.txt"; then
-        fail "$name: body did not contain '$text'" "$work/body.txt"
+    if [ "$status_out" != "$2" ]; then
+        fail "$1: rendered as '$status_out', expected '$2'"
+    else
+        contains "$1" "$work/body.txt" "$3"
+    fi
+}
+
+commented() {
+    contains "$1" "$work/comment.txt" "$2"
+}
+
+# GitHub counts characters, not bytes, and the report's box drawing is
+# multibyte.
+chars() {
+    python3 -I -c 'import sys; print(len(open(sys.argv[1], encoding="utf-8").read()))' "$1"
+}
+
+# fits NAME: the body is under GitHub's limit, says it was cut, and cut
+# nothing mid-line.
+fits() {
+    local name="$1" size
+    size=$(chars "$work/body.txt")
+    if [ "$size" -gt 65536 ]; then
+        fail "$name: body is $size characters, over GitHub's 65536"
+    elif ! grep -qF "the run log has the full report" "$work/body.txt"; then
+        fail "$name: body does not say the report was cut" "$work/body.txt"
+    elif grep -E 'RUSTSEC-[0-9]|^error\[' "$work/body.txt" |
+        grep -qvE '^RUSTSEC-[0-9]{4}-[0-9]{4}$|^error\[unmaintained\]: Bincode [0-9]{4} is unmaintained$'; then
+        fail "$name: a kept line was cut short" "$work/body.txt"
     else
         echo "ok: $name"
     fi
+}
+
+# many N: a cargo deny report with N distinct advisories, inclusion graphs
+# and all.
+many() {
+    echo '## cargo deny check advisories (workspace)'
+    echo
+    awk -v n="$1" '{ a[NR] = $0 } END {
+        for (k = 1; k <= n; k++) for (i = 1; i <= NR; i++) {
+            l = a[i]
+            gsub(/RUSTSEC-2025-0141/, sprintf("RUSTSEC-2025-%04d", k), l)
+            gsub(/Bincode is/, sprintf("Bincode %04d is", k), l)
+            print l
+        }
+    }' "$work/fx/deny-hit.out"
+}
+
+# audit_report LOCK...: the checker's report when only the named lockfiles
+# carry the vulnerability.
+audit_report() {
+    AUDIT_LOCKS="$*" run deny-clean audit-clean
+    cat "$work/out"
 }
 
 : > "$work/empty.txt"
@@ -219,6 +281,11 @@ rendered "a finding whose lockfile line moved refreshes without a comment" refre
 cat "$work/fx/deny-hit.out" "$work/fx/audit-hit.out" > "$work/more.txt"
 render "$work/opened.txt" "$work/more.txt"
 rendered "a new finding is a change" changed "RUSTSEC-2021-0003"
+commented "and the comment names it" "RUSTSEC-2021-0003"
+commented "and links the run log" "(https://example.test/run)"
+cp "$work/body.txt" "$work/more-opened.txt"
+render "$work/more-opened.txt" "$work/report.txt"
+commented "a comment for a fixed finding lists it as resolved" "Resolved:"
 
 printf 'Triage: waiting on syntect.\n\n%s\n' "$(cat "$work/opened.txt")" > "$work/noted.txt"
 render "$work/noted.txt" "$work/more.txt"
@@ -227,6 +294,57 @@ rendered "triage notes outside the report survive an update" changed "Triage: wa
 printf 'Hand-written body with no markers.\n' > "$work/bare.txt"
 render "$work/bare.txt" "$work/report.txt"
 rendered "a body without markers keeps its text and gains the report" changed "Hand-written body with no markers."
+
+audit_report Cargo.lock > "$work/one-lock.txt"
+audit_report Cargo.lock crates/site/Cargo.lock > "$work/two-locks.txt"
+render "$work/empty.txt" "$work/one-lock.txt"
+cp "$work/body.txt" "$work/one-lock-opened.txt"
+render "$work/one-lock-opened.txt" "$work/two-locks.txt"
+rendered "an advisory reaching a second lockfile is a change" changed "crates/site/Cargo.lock"
+commented "and the comment names that lockfile" "cargo audit --file crates/site/Cargo.lock: RUSTSEC-2021-0003"
+
+printf 'Note: the report ends at <!-- /advisory-report -->.\n\n%s\n' "$(cat "$work/opened.txt")" > "$work/quoted.txt"
+render "$work/quoted.txt" "$work/report.txt"
+if [ "$status_out" = unchanged ] && [ "$(grep -c -- '<!-- advisory-report -->' "$work/body.txt")" -eq 1 ]; then
+    echo "ok: an end marker quoted above the report does not duplicate it"
+else
+    fail "an end marker quoted above the report duplicated it ($status_out)" "$work/body.txt"
+fi
+
+printf 'Note: <!-- advisory-report --> marks the report; keep this note.\n\n%s\n' "$(cat "$work/opened.txt")" > "$work/quoted-start.txt"
+render "$work/quoted-start.txt" "$work/more.txt"
+rendered "a start marker quoted above the report is not taken for it" changed "marks the report; keep this note."
+
+sed 's/^error\[unmaintained\]: Bincode is unmaintained$/error[unmaintained]: ``` @someone/' "$work/fx/deny-hit.out" > "$work/backticks.txt"
+render "$work/opened.txt" "$work/backticks.txt"
+if grep -qx '````' "$work/body.txt" && grep -qx '````' "$work/comment.txt"; then
+    echo "ok: a title holding a code fence cannot close the report's"
+else
+    fail "a title holding a code fence closes the report's" "$work/body.txt"
+fi
+
+many 300 > "$work/big.txt"
+render "$work/empty.txt" "$work/big.txt"
+fits "a report past GitHub's limit keeps only its findings"
+rendered "and keeps every one" changed "RUSTSEC-2025-0300"
+if [ "$(grep -c 'RUSTSEC-2025-0300' "$work/body.txt")" -eq 1 ]; then
+    echo "ok: once each, though the report names each id twice"
+else
+    fail "a kept finding is listed more than once" "$work/body.txt"
+fi
+cp "$work/body.txt" "$work/big-opened.txt"
+render "$work/big-opened.txt" "$work/big.txt"
+rendered "and the same report again leaves the issue alone" unchanged "RUSTSEC-2025-0300"
+
+{ awk 'BEGIN { for (i = 0; i < 3500; i++) printf "Triage note. "; print "" }'; cat "$work/opened.txt"; } > "$work/long-notes.txt"
+render "$work/long-notes.txt" "$work/big.txt"
+fits "triage notes count toward the limit"
+
+many 1000 > "$work/huge.txt"
+render "$work/empty.txt" "$work/huge.txt"
+fits "findings alone past the limit are cut at a line"
+render "$work/opened.txt" "$work/huge.txt"
+commented "a comment past the limit is cut and says so" "more not shown)"
 
 if [ "$failures" -ne 0 ]; then
     echo "$failures check(s) failed"
