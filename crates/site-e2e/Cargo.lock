@@ -879,7 +879,7 @@ checksum = "19f132c84eca552bf34cab8ec81f1c1dcc229b811638f9d283dceabe58c5569e"
 
 [[package]]
 name = "playwright-rs"
-version = "0.20.0"
+version = "0.20.1"
 dependencies = [
  "async-trait",
  "base64",
@@ -931,7 +931,7 @@ dependencies = [
 
 [[package]]
 name = "playwright-rs-trace"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "serde",
  "serde_json",
