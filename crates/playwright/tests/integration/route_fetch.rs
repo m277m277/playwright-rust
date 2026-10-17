@@ -128,3 +128,107 @@ async fn test_route_fetch_with_context_route() {
     browser.close().await.expect("Failed to close browser");
     server.shutdown();
 }
+
+async fn navigate_and_expect_an_abort(page: &playwright_rs::protocol::Page, url: &str) {
+    let navigation = page
+        .goto(
+            url,
+            Some(
+                playwright_rs::protocol::GotoOptions::new()
+                    .timeout(std::time::Duration::from_secs(5)),
+            ),
+        )
+        .await;
+    let error = navigation.expect_err("an aborted navigation fails");
+    assert!(
+        error.to_string().contains("net::ERR_FAILED"),
+        "the handler's error aborts the request instead of leaving it to time out: {error}"
+    );
+}
+
+fn handler_gave_up() -> playwright_rs::Error {
+    playwright_rs::Error::ProtocolError("the handler gave up".to_string())
+}
+
+#[tokio::test]
+async fn a_page_handler_that_fails_after_fetch_aborts_the_request() {
+    let server = TestServer::start().await;
+    let (_pw, browser, page) = crate::common::setup().await;
+
+    page.route("**/", |route| async move {
+        route.fetch(None).await?;
+        Err(handler_gave_up())
+    })
+    .await
+    .expect("Failed to set up route");
+
+    navigate_and_expect_an_abort(&page, &format!("{}/", server.url())).await;
+
+    browser.close().await.expect("Failed to close browser");
+    server.shutdown();
+}
+
+#[tokio::test]
+async fn a_context_handler_that_fails_after_fetch_aborts_the_request() {
+    let server = TestServer::start().await;
+    let (_pw, browser, context) = crate::common::setup_context().await;
+    let page = context.new_page().await.expect("Failed to create a page");
+
+    context
+        .route("**/", |route| async move {
+            route.fetch(None).await?;
+            Err(handler_gave_up())
+        })
+        .await
+        .expect("Failed to set up route");
+
+    navigate_and_expect_an_abort(&page, &format!("{}/", server.url())).await;
+
+    browser.close().await.expect("Failed to close browser");
+    server.shutdown();
+}
+
+#[tokio::test]
+async fn a_handler_that_fetches_takes_the_route_over() {
+    let server = TestServer::start().await;
+    let (_pw, browser, page) = crate::common::setup().await;
+
+    let later_ran = Arc::new(Mutex::new(false));
+    let sink = later_ran.clone();
+    page.route("**/", move |route| {
+        let sink = sink.clone();
+        async move {
+            *sink.lock().unwrap() = true;
+            route.continue_(None).await
+        }
+    })
+    .await
+    .expect("Failed to set up the later route");
+    page.route("**/", |route| async move {
+        route.fetch(None).await?;
+        Ok(())
+    })
+    .await
+    .expect("Failed to set up the fetching route");
+
+    let navigation = page
+        .goto(
+            &format!("{}/", server.url()),
+            Some(
+                playwright_rs::protocol::GotoOptions::new()
+                    .timeout(std::time::Duration::from_secs(2)),
+            ),
+        )
+        .await;
+
+    browser.close().await.expect("Failed to close browser");
+    server.shutdown();
+    assert!(
+        matches!(navigation, Err(playwright_rs::Error::Timeout(_))),
+        "a fetch the handler never answers leaves the request waiting: {navigation:?}"
+    );
+    assert!(
+        !*later_ran.lock().unwrap(),
+        "no later handler runs, so the request is not sent a second time"
+    );
+}

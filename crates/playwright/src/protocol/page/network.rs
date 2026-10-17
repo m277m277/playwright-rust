@@ -377,11 +377,10 @@ impl Page {
                     if !quiet {
                         tracing::warn!("Route handler error: {}", e);
                     }
-                    // A handler that failed before reaching a route command
-                    // leaves the request pending; abort it so the browser
-                    // sees a failed request instead of waiting out its timeout.
-                    if !route.was_handled()
-                        && let Err(abort_error) = route.abort(Some("failed")).await
+                    // A handler that failed before answering leaves the request
+                    // pending; abort it so the browser sees a failed request
+                    // instead of waiting out its timeout.
+                    if let Err(abort_error) = route.abort_unanswered().await
                         && !quiet
                     {
                         tracing::warn!("aborting the unhandled route failed too: {}", abort_error);

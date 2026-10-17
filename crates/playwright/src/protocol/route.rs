@@ -23,9 +23,13 @@ use std::sync::{Arc, Mutex};
 #[derive(Clone)]
 pub struct Route {
     base: ChannelOwnerImpl,
-    /// Tracks whether the route has been fully handled (abort/continue/fulfill).
-    /// Used by fallback() to signal that handler chaining should continue.
+    /// Whether a handler has taken the route over: called `abort()`,
+    /// `continue_()`, `fulfill()`, or `fetch()`. A handler that returns
+    /// without setting it falls back to the next one.
     handled: Arc<AtomicBool>,
+    /// Whether the driver has accepted an abort, continue, or fulfill, so the
+    /// request no longer waits on a handler.
+    answered: Arc<AtomicBool>,
     /// The overrides `fallback()` and `continue_()` calls have recorded,
     /// applied when the request is finally continued. The cell is the
     /// request's own, so `request()` reports them; holding it here keeps
@@ -62,17 +66,42 @@ impl Route {
         Ok(Self {
             base,
             handled: Arc::new(AtomicBool::new(false)),
+            answered: Arc::new(AtomicBool::new(false)),
             fallback_overrides,
             api_request_context: Arc::new(Mutex::new(None)),
         })
     }
 
-    /// Returns whether this route was fully handled by a handler.
+    /// Returns whether a handler took the route over.
     ///
-    /// Returns `false` if the handler called `fallback()`, indicating the next
-    /// matching handler should be tried.
+    /// Returns `false` if the handler called `fallback()`, or returned without
+    /// calling a route command, indicating the next matching handler should
+    /// be tried.
     pub(crate) fn was_handled(&self) -> bool {
         self.handled.load(Ordering::SeqCst)
+    }
+
+    /// Aborts the request of a handler that returned an error, unless the
+    /// driver had already accepted an answer to it.
+    ///
+    /// A `fetch()` sends no answer, nor does a command the driver's validator
+    /// rejects. One the route itself refuses still marks it handled upstream,
+    /// so this abort is refused too and the error says the request is stuck.
+    pub(crate) async fn abort_unanswered(&self) -> Result<()> {
+        if self.answered.load(Ordering::SeqCst) {
+            return Ok(());
+        }
+        self.abort(Some("failed")).await
+    }
+
+    /// Sends a command that answers the request, noting the answer once the
+    /// driver accepts it.
+    async fn answer(&self, method: &str, params: Value) -> Result<()> {
+        self.channel()
+            .send::<_, serde_json::Value>(method, params)
+            .await?;
+        self.answered.store(true, Ordering::SeqCst);
+        Ok(())
     }
 
     /// Sets the APIRequestContext for this route, enabling `fetch()`.
@@ -148,10 +177,7 @@ impl Route {
             "errorCode": error_code.unwrap_or("failed")
         });
 
-        self.channel()
-            .send::<_, serde_json::Value>("abort", params)
-            .await
-            .map(|_| ())
+        self.answer("abort", params).await
     }
 
     /// Continues the route's request with optional modifications.
@@ -233,10 +259,7 @@ impl Route {
     ) -> Result<()> {
         let params = super::route_params::continue_params(overrides, is_fallback);
 
-        self.channel()
-            .send::<_, serde_json::Value>("continue", params)
-            .await
-            .map(|_| ())
+        self.answer("continue", params).await
     }
 
     /// Fulfills the route's request with a custom response.
@@ -258,10 +281,7 @@ impl Route {
 
         let params = super::route_params::fulfill_params(opts);
 
-        self.channel()
-            .send::<_, serde_json::Value>("fulfill", params)
-            .await
-            .map(|_| ())
+        self.answer("fulfill", params).await
     }
 
     /// Performs the request and fetches result without fulfilling it, so that the
@@ -270,6 +290,11 @@ impl Route {
     /// Delegates to `APIRequestContext.inner_fetch()`. The URL, method, headers
     /// and post data each default to the request's, as earlier handlers'
     /// `fallback()` calls left it.
+    ///
+    /// Fetching takes the route over, as `fulfill()` does: no later handler
+    /// runs, so the handler must still answer the request with `fulfill()`,
+    /// `continue_()`, or `abort()`, or it waits. A handler that returns an
+    /// error before answering has its request aborted.
     ///
     /// # Arguments
     ///
