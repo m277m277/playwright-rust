@@ -9,6 +9,8 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-10-16
+
 ### Fixed
 
 - **The crate installs again: `zip` moves from 8 to 9.** The `zip` maintainers yanked every 8.x release, so a project without a lockfile could no longer resolve 0.2.1 at all. `TraceError::Zip` now wraps `zip` 9's `ZipError`; code that only displays or matches the variant is unaffected, and code that names `zip` 8's `ZipError` itself needs the same bump.
@@ -100,7 +102,8 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   the deterministic test fixture under `tests/fixtures/`. New
   `.cargo/config.toml` aliases `cargo xtask`.
 
-[Unreleased]: https://github.com/padamson/playwright-rust/compare/trace-v0.2.1...HEAD
+[Unreleased]: https://github.com/padamson/playwright-rust/compare/trace-v0.2.2...HEAD
+[0.2.2]: https://github.com/padamson/playwright-rust/compare/trace-v0.2.1...trace-v0.2.2
 [0.2.1]: https://github.com/padamson/playwright-rust/compare/trace-v0.2.0...trace-v0.2.1
 [0.2.0]: https://github.com/padamson/playwright-rust/compare/trace-v0.1.3...trace-v0.2.0
 [0.1.3]: https://github.com/padamson/playwright-rust/compare/trace-v0.1.2...trace-v0.1.3

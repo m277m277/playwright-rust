@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.1] - 2026-10-16
+
 ### Fixed
 
 - **The crate installs again: `zip` moves from 8 to 9.** The `zip` maintainers yanked every 8.x release, and the build script depends on `zip` to unpack the Windows Node archive, so a project without a lockfile could no longer resolve 0.20.0 at all. With the `trace` feature, `playwright_rs::trace::TraceError::Zip` now wraps `zip` 9's `ZipError`, through playwright-rs-trace 0.2.2.
@@ -962,7 +964,8 @@ Public-API type-consistency sweep — within the crate, the same conceptual quan
   - Playwright returns null for data URLs and `about:blank` (valid behavior, not an error)
   - Migration: `page.goto("https://example.com").await?.expect("response")` or use `if let Some(response) = page.goto(...).await? { ... }`
 
-[Unreleased]: https://github.com/padamson/playwright-rust/compare/v0.20.0...HEAD
+[Unreleased]: https://github.com/padamson/playwright-rust/compare/v0.20.1...HEAD
+[0.20.1]: https://github.com/padamson/playwright-rust/compare/v0.20.0...v0.20.1
 [0.20.0]: https://github.com/padamson/playwright-rust/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/padamson/playwright-rust/compare/v0.18.1...v0.19.0
 [0.18.1]: https://github.com/padamson/playwright-rust/compare/v0.18.0...v0.18.1
