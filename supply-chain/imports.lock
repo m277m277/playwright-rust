@@ -361,8 +361,8 @@ user-login = "dtolnay"
 user-name = "David Tolnay"
 
 [[publisher.serde_json]]
-version = "1.0.151"
-when = "2026-07-20"
+version = "1.0.154"
+when = "2026-10-11"
 user-id = 3618
 user-login = "dtolnay"
 user-name = "David Tolnay"
@@ -399,8 +399,8 @@ user-login = "dtolnay"
 user-name = "David Tolnay"
 
 [[publisher.syn]]
-version = "3.0.6"
-when = "2026-09-16"
+version = "3.0.9"
+when = "2026-10-12"
 user-id = 3618
 user-login = "dtolnay"
 user-name = "David Tolnay"
@@ -434,8 +434,8 @@ user-login = "dtolnay"
 user-name = "David Tolnay"
 
 [[publisher.tokio]]
-version = "1.53.2"
-when = "2026-10-03"
+version = "1.53.3"
+when = "2026-10-13"
 user-id = 6741
 user-login = "Darksonn"
 user-name = "Alice Ryhl"
@@ -504,8 +504,8 @@ user-login = "seanmonstar"
 user-name = "Sean McArthur"
 
 [[publisher.trybuild]]
-version = "1.0.121"
-when = "2026-09-08"
+version = "1.0.122"
+when = "2026-10-07"
 user-id = 3618
 user-login = "dtolnay"
 user-name = "David Tolnay"
