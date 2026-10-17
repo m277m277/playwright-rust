@@ -42,6 +42,13 @@ impl Page {
     /// Delivers `dialog` to this page's dialog handlers. Unlike a dialog the
     /// browser raises, one delivered here is not answered when no handler
     /// hears it.
+    ///
+    /// This was public only so the browser context could forward dialogs, and
+    /// nothing in the crate uses it now. No other Playwright binding has it.
+    #[deprecated(
+        since = "0.21.0",
+        note = "internal plumbing with no Playwright counterpart; register a handler with `on_dialog` instead"
+    )]
     pub async fn trigger_dialog_event(&self, dialog: Dialog) {
         self.on_dialog_event(dialog).await;
     }

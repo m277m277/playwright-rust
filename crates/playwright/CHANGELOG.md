@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Close options: `Page::close_with_options`, `BrowserContext::close_with_options`, and `Browser::close_with_options`.** Each takes a `reason` that operations the close interrupts report in their error, as Playwright's other clients allow. `PageCloseOptions::run_before_unload` runs the page's `beforeunload` handlers instead of closing it outright: the page may raise a `beforeunload` dialog and stays open if that dialog is dismissed, so the call returns before the page has closed. `close()` is unchanged on all three.
 
+### Deprecated
+
+- **`Page::trigger_dialog_event`.** It was public only so the browser context could forward dialogs to the page, no other Playwright binding has it, and the crate no longer uses it. Calling it hands a dialog to the page's handlers without answering one that none of them hear. Register a handler with `on_dialog` instead. It will be removed in a later breaking release.
+
 ### Fixed
 
 - **A dialog nobody handles no longer blocks the page.** With no `dialog` handler on the page or its context, `alert()`, `confirm()`, and `prompt()` dialogs are now dismissed and a `beforeunload` dialog accepted, as Playwright's other clients do. Before, the dialog stayed open, so a stray `confirm()` hung the `evaluate` that raised it and a page with a `beforeunload` listener could not be navigated away from. Registering a handler still leaves the answer to it. Reported in [#167](https://github.com/padamson/playwright-rust/issues/167).
