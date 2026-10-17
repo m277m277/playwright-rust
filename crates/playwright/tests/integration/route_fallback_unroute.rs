@@ -328,3 +328,188 @@ async fn fallback_on_a_handled_route_is_an_error() {
         "fallback() after continue_() is refused"
     );
 }
+
+fn rewrite_to(url: String) -> playwright_rs::protocol::ContinueOptions {
+    let headers =
+        std::collections::HashMap::from([("X-Fallback".to_string(), "recorded".to_string())]);
+    playwright_rs::protocol::ContinueOptions::builder()
+        .url(url)
+        .method("PUT".to_string())
+        .headers(headers)
+        .post_data("rewritten".to_string())
+        .build()
+}
+
+fn fulfill_html(body: &str) -> playwright_rs::protocol::FulfillOptions {
+    playwright_rs::protocol::FulfillOptions::builder()
+        .body_string(body)
+        .content_type("text/html")
+        .build()
+}
+
+#[tokio::test]
+async fn a_later_handler_sees_the_request_as_an_earlier_fallback_left_it() {
+    let server = TestServer::start().await;
+    let (_pw, browser, page) = crate::common::setup().await;
+
+    let seen = Arc::new(Mutex::new(None));
+    let sink = seen.clone();
+    page.route("**/*", move |route| {
+        let sink = sink.clone();
+        async move {
+            let request = route.request();
+            let headers = request.headers();
+            *sink.lock().unwrap() = Some((
+                request.url(),
+                request.method(),
+                headers.get("x-fallback").cloned(),
+                request.post_data(),
+                request.header_value("x-fallback").await?,
+            ));
+            route.fulfill(fulfill_html("<p>done</p>")).await
+        }
+    })
+    .await
+    .expect("Failed to set up the outer route");
+    let rewritten = format!("{}/rewritten", server.url());
+    let target = rewritten.clone();
+    page.route("**/original", move |route| {
+        let target = target.clone();
+        async move { route.fallback(Some(rewrite_to(target))).await }
+    })
+    .await
+    .expect("Failed to set up the inner route");
+
+    page.goto(&format!("{}/original", server.url()), None)
+        .await
+        .expect("Failed to navigate");
+
+    browser.close().await.expect("Failed to close browser");
+    server.shutdown();
+    assert_eq!(
+        seen.lock().unwrap().clone(),
+        Some((
+            rewritten,
+            "PUT".to_string(),
+            Some("recorded".to_string()),
+            Some("rewritten".to_string()),
+            Some("recorded".to_string()),
+        ))
+    );
+}
+
+#[tokio::test]
+async fn a_page_handler_is_matched_against_the_url_a_fallback_rewrote() {
+    let server = TestServer::start().await;
+    let (_pw, browser, page) = crate::common::setup().await;
+
+    page.route("**/rewritten", |route| async move {
+        route
+            .fulfill(fulfill_html("<p id=\"from\">rewritten</p>"))
+            .await
+    })
+    .await
+    .expect("Failed to set up the rewritten route");
+    let target = format!("{}/rewritten", server.url());
+    page.route("**/original", move |route| {
+        let target = target.clone();
+        async move { route.fallback(Some(rewrite_to(target))).await }
+    })
+    .await
+    .expect("Failed to set up the original route");
+
+    page.goto(&format!("{}/original", server.url()), None)
+        .await
+        .expect("Failed to navigate");
+    let delivered = page
+        .evaluate_value("document.getElementById('from')?.textContent ?? document.body.innerText")
+        .await
+        .expect("Failed to read the document");
+
+    browser.close().await.expect("Failed to close browser");
+    server.shutdown();
+    assert_eq!(delivered, "rewritten");
+}
+
+#[tokio::test]
+async fn a_context_handler_is_matched_against_the_url_a_page_fallback_rewrote() {
+    let server = TestServer::start().await;
+    let (_pw, browser, context) = crate::common::setup_context().await;
+    let page = context.new_page().await.expect("Failed to create a page");
+
+    context
+        .route("**/rewritten", |route| async move {
+            route
+                .fulfill(fulfill_html("<p id=\"from\">rewritten</p>"))
+                .await
+        })
+        .await
+        .expect("Failed to set up the context route");
+    let target = format!("{}/rewritten", server.url());
+    page.route("**/original", move |route| {
+        let target = target.clone();
+        async move { route.fallback(Some(rewrite_to(target))).await }
+    })
+    .await
+    .expect("Failed to set up the page route");
+
+    page.goto(&format!("{}/original", server.url()), None)
+        .await
+        .expect("Failed to navigate");
+    let delivered = page
+        .evaluate_value("document.getElementById('from')?.textContent ?? document.body.innerText")
+        .await
+        .expect("Failed to read the document");
+
+    browser.close().await.expect("Failed to close browser");
+    server.shutdown();
+    assert_eq!(delivered, "rewritten");
+}
+
+#[tokio::test]
+async fn fetch_sends_the_request_as_an_earlier_fallback_left_it() {
+    let server = TestServer::start().await;
+    let (_pw, browser, page) = crate::common::setup().await;
+
+    let echoed = Arc::new(Mutex::new(None));
+    let sink = echoed.clone();
+    page.route("**/*", move |route| {
+        let sink = sink.clone();
+        async move {
+            let response = route.fetch(None).await?;
+            *sink.lock().unwrap() = Some(response.json::<serde_json::Value>()?);
+            route.fulfill(fulfill_html("<p>done</p>")).await
+        }
+    })
+    .await
+    .expect("Failed to set up the fetching route");
+    let target = format!("{}/api/echo-request", server.url());
+    page.route("**/original", move |route| {
+        let target = target.clone();
+        async move { route.fallback(Some(rewrite_to(target))).await }
+    })
+    .await
+    .expect("Failed to set up the rewriting route");
+
+    page.goto(&format!("{}/original", server.url()), None)
+        .await
+        .expect("Failed to navigate");
+
+    browser.close().await.expect("Failed to close browser");
+    server.shutdown();
+    let echoed = echoed.lock().unwrap().clone().expect("fetch() ran");
+    assert_eq!(
+        (
+            &echoed["method"],
+            &echoed["path"],
+            &echoed["headers"]["x-fallback"],
+            &echoed["body"],
+        ),
+        (
+            &serde_json::json!("PUT"),
+            &serde_json::json!("/api/echo-request"),
+            &serde_json::json!("recorded"),
+            &serde_json::json!("rewritten"),
+        )
+    );
+}

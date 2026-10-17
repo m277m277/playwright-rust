@@ -245,6 +245,7 @@ async fn service_response<S: RouteService>(
         .and_then(BrowserContext::browser)
         .is_some_and(|browser| browser.name() == "webkit");
 
+    let url = request.url();
     let mut headers = request.header_pairs();
     if is_webkit
         && !headers.iter().any(|(name, _)| name == "cookie")
@@ -253,15 +254,15 @@ async fn service_response<S: RouteService>(
         // WebKit reports an intercepted request before its cookie header is
         // attached, so the service would see every request as logged out.
         // The context's jar has what the browser would have sent.
-        let cookies = context.cookies(Some(&[request.url()])).await?;
+        let cookies = context.cookies(Some(&[url.as_str()])).await?;
         if let Some(cookie) = cookie_header(&cookies) {
             headers.push(("cookie".to_string(), cookie));
         }
     }
 
     let http_request = request_from_parts(
-        request.method(),
-        request.url(),
+        &request.method(),
+        &url,
         headers
             .iter()
             .map(|(name, value)| (name.as_str(), value.as_str())),
@@ -271,7 +272,7 @@ async fn service_response<S: RouteService>(
     let response = service.oneshot(http_request).await.map_err(|error| {
         Error::ServerError(format!(
             "route_service: the service failed for {}: {}",
-            request.url(),
+            url,
             error.into()
         ))
     })?;
@@ -282,15 +283,14 @@ async fn service_response<S: RouteService>(
         // the fulfill starts, keeps the request abortable.
         return Err(Error::ServerError(format!(
             "route_service: WebKit cannot fulfill the {} redirect the service returned for {}",
-            parts.status,
-            request.url()
+            parts.status, url
         )));
     }
 
     let body = body.collect().await.map_err(|error| {
         Error::ServerError(format!(
             "route_service: the response body for {} failed: {}",
-            request.url(),
+            url,
             error.into()
         ))
     })?;

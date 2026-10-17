@@ -187,8 +187,8 @@ impl BrowserContext {
             let not_found = not_found_clone.clone();
             async move {
                 let request = route.request();
-                let req_url = request.url().to_string();
-                let req_method = request.method().to_string();
+                let req_url = request.url();
+                let req_method = request.method();
 
                 let headers = crate::protocol::route_params::header_array(request.header_pairs());
 
@@ -322,10 +322,11 @@ impl BrowserContext {
         route: Route,
     ) {
         let handlers = route_handlers.lock().unwrap().clone();
-        let url = route.request().url().to_string();
-
+        // Each read sees the overrides a fallback recorded, so a rewritten URL
+        // changes which handlers come after it.
+        let request = route.request();
         for entry in handlers.iter().rev() {
-            if crate::protocol::route::matches_pattern(&entry.pattern, &url) {
+            if crate::protocol::route::matches_pattern(&entry.pattern, &request.url()) {
                 let handler = entry.handler.clone();
                 let running = entry.in_flight.enter();
                 let outcome = handler(route.clone()).await;

@@ -26,8 +26,10 @@ pub struct Route {
     /// Tracks whether the route has been fully handled (abort/continue/fulfill).
     /// Used by fallback() to signal that handler chaining should continue.
     handled: Arc<AtomicBool>,
-    /// The overrides `fallback()` calls have recorded, applied when the
-    /// request is finally continued.
+    /// The overrides `fallback()` and `continue_()` calls have recorded,
+    /// applied when the request is finally continued. The cell is the
+    /// request's own, so `request()` reports them; holding it here keeps
+    /// them even when the request cannot be reached.
     fallback_overrides: Arc<Mutex<Option<ContinueOptions>>>,
     /// APIRequestContext for performing fetch operations.
     /// Set by the route event dispatcher (Page or BrowserContext).
@@ -45,8 +47,13 @@ impl Route {
         guid: Arc<str>,
         initializer: Value,
     ) -> Result<Self> {
+        let fallback_overrides = parent
+            .as_any()
+            .downcast_ref::<Request>()
+            .map(Request::fallback_overrides_cell)
+            .unwrap_or_default();
         let base = ChannelOwnerImpl::new(
-            ParentOrConnection::Parent(parent.clone()),
+            ParentOrConnection::Parent(parent),
             type_name,
             guid,
             initializer,
@@ -55,7 +62,7 @@ impl Route {
         Ok(Self {
             base,
             handled: Arc::new(AtomicBool::new(false)),
-            fallback_overrides: Arc::new(Mutex::new(None)),
+            fallback_overrides,
             api_request_context: Arc::new(Mutex::new(None)),
         })
     }
@@ -114,6 +121,7 @@ impl Route {
             request_data,
         )
         .expect("stub Request construction cannot fail")
+        .with_fallback_overrides(self.fallback_overrides.clone())
     }
 
     /// Aborts the route's request.
@@ -156,13 +164,14 @@ impl Route {
     /// * `overrides` - Optional modifications to apply to the request
     ///
     /// Overrides recorded by earlier `fallback()` calls apply too, with these
-    /// taking precedence field by field.
+    /// taking precedence field by field. [`request()`](Self::request) reports
+    /// the result.
     ///
     /// See: <https://playwright.dev/docs/api/class-route#route-continue>
     pub async fn continue_(&self, overrides: Option<ContinueOptions>) -> Result<()> {
         self.handled.store(true, Ordering::SeqCst);
-        let recorded = self.fallback_overrides.lock().unwrap().clone();
-        let overrides = super::route_params::merge_overrides(recorded, overrides);
+        self.record_overrides(overrides);
+        let overrides = self.fallback_overrides.lock().unwrap().clone();
         self.continue_internal(overrides, false).await
     }
 
@@ -175,6 +184,10 @@ impl Route {
     /// with every fallback's overrides applied (a later one wins field by
     /// field). This enables middleware-like handler composition where several
     /// handlers inspect and modify one request.
+    ///
+    /// The overrides land on [`request()`](Self::request) at once, so a later
+    /// handler reads the URL, method, headers and post data as overridden, and
+    /// is chosen by matching its pattern against the overridden URL.
     ///
     /// # Arguments
     ///
@@ -191,9 +204,14 @@ impl Route {
                 "Route is already handled!".to_string(),
             ));
         }
+        self.record_overrides(overrides);
+        Ok(())
+    }
+
+    /// Lays `overrides` over those recorded so far.
+    fn record_overrides(&self, overrides: Option<ContinueOptions>) {
         let mut recorded = self.fallback_overrides.lock().unwrap();
         *recorded = super::route_params::merge_overrides(recorded.take(), overrides);
-        Ok(())
     }
 
     /// Continues a request no handler handled, with every fallback's
@@ -249,8 +267,9 @@ impl Route {
     /// Performs the request and fetches result without fulfilling it, so that the
     /// response can be modified and then fulfilled.
     ///
-    /// Delegates to `APIRequestContext.inner_fetch()` using the request's URL and
-    /// any provided overrides.
+    /// Delegates to `APIRequestContext.inner_fetch()`. The URL, method, headers
+    /// and post data each default to the request's, as earlier handlers'
+    /// `fallback()` calls left it.
     ///
     /// # Arguments
     ///
@@ -277,15 +296,19 @@ impl Route {
 
         let request = self.request();
         let opts = options.unwrap_or_default();
-
-        // Use the original request URL unless overridden
-        let url = opts.url.unwrap_or_else(|| request.url().to_string());
+        let url = opts.url.unwrap_or_else(|| request.url());
+        let post_data = super::route_params::post_data_bytes(
+            opts.post_data.as_deref(),
+            opts.post_data_bytes.as_deref(),
+        )
+        .map(<[u8]>::to_vec)
+        .or_else(|| request.post_data_buffer());
 
         let inner_opts = InnerFetchOptions {
-            method: opts.method.or_else(|| Some(request.method().to_string())),
-            headers: opts.headers,
-            post_data: opts.post_data,
-            post_data_bytes: opts.post_data_bytes,
+            method: opts.method.or_else(|| Some(request.method())),
+            headers: opts.headers.or_else(|| Some(request.headers())),
+            post_data: None,
+            post_data_bytes: post_data,
             max_redirects: opts.max_redirects,
             max_retries: opts.max_retries,
             timeout: opts.timeout,

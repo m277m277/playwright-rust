@@ -6,6 +6,7 @@
 use crate::error::Result;
 use crate::protocol::resource_timing::ResourceTiming;
 use crate::protocol::response::HeaderEntry;
+use crate::protocol::route::ContinueOptions;
 use crate::server::channel_owner::{ChannelOwner, ChannelOwnerImpl, ParentOrConnection};
 use crate::server::connection::ConnectionExt;
 use serde::de::DeserializeOwned;
@@ -37,6 +38,10 @@ pub struct Request {
     /// The Response that has been received for this request, if any.
     /// Set when the `ResponseObject` for this request is constructed.
     response: Arc<Mutex<Option<crate::protocol::page::Response>>>,
+    /// The overrides route handlers' `fallback()` and `continue_()` calls
+    /// have applied. The accessors below report them in place of what the
+    /// browser sent, as upstream's request does.
+    fallback_overrides: Arc<Mutex<Option<ContinueOptions>>>,
 }
 
 impl Request {
@@ -65,6 +70,7 @@ impl Request {
             redirected_from: Arc::new(Mutex::new(None)),
             redirected_to: Arc::new(Mutex::new(None)),
             response: Arc::new(Mutex::new(None)),
+            fallback_overrides: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -244,34 +250,64 @@ impl Request {
         *self.frame.lock().unwrap() = Some(frame);
     }
 
+    /// The cell a route records this request's overrides in.
+    pub(crate) fn fallback_overrides_cell(&self) -> Arc<Mutex<Option<ContinueOptions>>> {
+        Arc::clone(&self.fallback_overrides)
+    }
+
+    /// This request reading its overrides from `cell`, for a stub built in
+    /// place of a route's real request.
+    pub(crate) fn with_fallback_overrides(
+        mut self,
+        cell: Arc<Mutex<Option<ContinueOptions>>>,
+    ) -> Self {
+        self.fallback_overrides = cell;
+        self
+    }
+
+    /// One field of the applied overrides, if any set it.
+    fn overridden<T>(&self, field: impl FnOnce(&ContinueOptions) -> Option<T>) -> Option<T> {
+        self.fallback_overrides
+            .lock()
+            .unwrap()
+            .as_ref()
+            .and_then(field)
+    }
+
     /// Returns the URL of the request.
     ///
+    /// A route handler's `fallback()` or `continue_()` that overrode the URL
+    /// changes what this returns, as it does in Playwright's other bindings.
+    ///
     /// See: <https://playwright.dev/docs/api/class-request#request-url>
-    pub fn url(&self) -> &str {
-        self.initializer()
-            .get("url")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
+    pub fn url(&self) -> String {
+        self.overridden(|o| o.url.clone())
+            .unwrap_or_else(|| self.initializer_str("url", "").to_string())
     }
 
     /// Returns the HTTP method of the request (GET, POST, etc.).
     ///
+    /// Reflects a route handler's override, as [`url()`](Self::url) does.
+    ///
     /// See: <https://playwright.dev/docs/api/class-request#request-method>
-    pub fn method(&self) -> &str {
+    pub fn method(&self) -> String {
+        self.overridden(|o| o.method.clone())
+            .unwrap_or_else(|| self.initializer_str("method", "GET").to_string())
+    }
+
+    /// A string field of the initializer, or `default` when it is absent.
+    fn initializer_str(&self, key: &str, default: &'static str) -> &str {
         self.initializer()
-            .get("method")
+            .get(key)
             .and_then(|v| v.as_str())
-            .unwrap_or("GET")
+            .unwrap_or(default)
     }
 
     /// Returns the resource type of the request (e.g., "document", "stylesheet", "image", "fetch", etc.).
     ///
     /// See: <https://playwright.dev/docs/api/class-request#request-resource-type>
     pub fn resource_type(&self) -> &str {
-        self.initializer()
-            .get("resourceType")
-            .and_then(|v| v.as_str())
-            .unwrap_or("other")
+        self.initializer_str("resourceType", "other")
     }
 
     /// Check if this request is for a navigation (main document).
@@ -294,14 +330,28 @@ impl Request {
     /// For the full set of raw headers (including duplicates), use
     /// [`headers_array()`](Self::headers_array) or [`all_headers()`](Self::all_headers).
     ///
+    /// Once a route handler overrides the headers, this returns the override
+    /// alone, names lowercased, since the override replaces them all.
+    ///
     /// See: <https://playwright.dev/docs/api/class-request#request-headers>
     pub fn headers(&self) -> HashMap<String, String> {
         self.header_pairs().into_iter().collect()
     }
 
-    /// The request headers from the initializer in wire order, names
-    /// lowercased, repeats kept. A local read; no RPC.
+    /// The request headers, names lowercased: an override's, or else the
+    /// initializer's in wire order with repeats kept. A local read; no RPC.
     pub(crate) fn header_pairs(&self) -> Vec<(String, String)> {
+        if let Some(pairs) = self.overridden(|o| {
+            let headers = o.headers.as_ref()?;
+            Some(
+                headers
+                    .iter()
+                    .map(|(name, value)| (name.to_lowercase(), value.clone()))
+                    .collect(),
+            )
+        }) {
+            return pairs;
+        }
         let raw = self.initializer().get("headers").and_then(|v| v.as_array());
         crate::protocol::route_params::name_value_pairs(raw.map(Vec::as_slice))
             .map(|(name, value)| (name.to_lowercase(), value.to_string()))
@@ -318,10 +368,20 @@ impl Request {
     /// The Playwright protocol sends `postData` as a base64-encoded string.
     /// This method decodes it to raw bytes.
     ///
-    /// This is a local read and does not require an RPC call.
+    /// This is a local read and does not require an RPC call. A route
+    /// handler's override of the post data replaces the browser's.
     ///
     /// See: <https://playwright.dev/docs/api/class-request#request-post-data-buffer>
     pub fn post_data_buffer(&self) -> Option<Vec<u8>> {
+        if let Some(bytes) = self.overridden(|o| {
+            crate::protocol::route_params::post_data_bytes(
+                o.post_data.as_deref(),
+                o.post_data_bytes.as_deref(),
+            )
+            .map(<[u8]>::to_vec)
+        }) {
+            return Some(bytes);
+        }
         crate::protocol::route_params::base64_decode(self.post_data_b64()?)
     }
 
@@ -383,6 +443,9 @@ impl Request {
     /// the complete list of headers as sent over the wire, including headers added by
     /// the browser (e.g., `accept-encoding`, `accept-language`).
     ///
+    /// Once a route handler overrides the headers, this returns the override
+    /// instead, names as given, without an RPC call.
+    ///
     /// # Errors
     ///
     /// Returns an error if the RPC call to the server fails.
@@ -391,6 +454,21 @@ impl Request {
     #[tracing::instrument(level = "debug", skip_all, fields(guid = %self.guid()))]
     pub async fn headers_array(&self) -> Result<Vec<HeaderEntry>> {
         use serde::Deserialize;
+
+        if let Some(entries) = self.overridden(|o| {
+            let headers = o.headers.as_ref()?;
+            Some(
+                headers
+                    .iter()
+                    .map(|(name, value)| HeaderEntry {
+                        name: name.clone(),
+                        value: value.clone(),
+                    })
+                    .collect(),
+            )
+        }) {
+            return Ok(entries);
+        }
 
         #[derive(Deserialize)]
         struct RawHeadersResponse {
@@ -424,7 +502,9 @@ impl Request {
     /// `, `, except `set-cookie`, joined with a newline, matching Playwright's
     /// other bindings.
     ///
-    /// Sends a `"rawRequestHeaders"` RPC call to the Playwright server.
+    /// Sends a `"rawRequestHeaders"` RPC call to the Playwright server, unless
+    /// a route handler has overridden the headers, as with
+    /// [`headers_array()`](Self::headers_array).
     ///
     /// # Errors
     ///
@@ -445,7 +525,8 @@ impl Request {
     /// Returns the value of the specified header (case-insensitive), or `None` if not found.
     ///
     /// Uses [`all_headers()`](Self::all_headers) internally, so it sends a
-    /// `"rawRequestHeaders"` RPC call to the Playwright server.
+    /// `"rawRequestHeaders"` RPC call to the Playwright server unless a route
+    /// handler has overridden the headers.
     ///
     /// # Errors
     ///

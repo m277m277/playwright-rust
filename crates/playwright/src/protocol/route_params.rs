@@ -45,13 +45,18 @@ pub(crate) fn base64_decode(encoded: &str) -> Option<Vec<u8>> {
         .ok()
 }
 
+/// The post data's bytes, from either form. The string form wins when both
+/// are given.
+pub(crate) fn post_data_bytes<'a>(
+    post_data: Option<&'a str>,
+    bytes: Option<&'a [u8]>,
+) -> Option<&'a [u8]> {
+    post_data.map(str::as_bytes).or(bytes)
+}
+
 /// The `postData` parameter: binary on the wire, so both forms are base64.
-/// The string form wins when both are given.
 pub(crate) fn post_data_param(post_data: Option<String>, bytes: Option<Vec<u8>>) -> Option<String> {
-    post_data
-        .map(String::into_bytes)
-        .or(bytes)
-        .map(|bytes| base64(&bytes))
+    post_data_bytes(post_data.as_deref(), bytes.as_deref()).map(base64)
 }
 
 /// Header `name`/`value` pairs merged into a single-valued map with
