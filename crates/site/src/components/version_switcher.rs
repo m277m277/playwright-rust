@@ -79,7 +79,20 @@ struct Banner {
     link: Option<(String, String)>,
 }
 
+/// Whether `a` is a later `X.Y.Z` release than `b`. Anything that does not
+/// parse as three numbers is never newer.
+fn newer(a: &str, b: &str) -> bool {
+    fn parse(v: &str) -> Option<(u64, u64, u64)> {
+        let mut parts = v.split('.').map(|p| p.parse::<u64>().ok());
+        let version = (parts.next()??, parts.next()??, parts.next()??);
+        parts.next().is_none().then_some(version)
+    }
+    matches!((parse(a), parse(b)), (Some(a), Some(b)) if a > b)
+}
+
 /// The banner (if any) for the given build and the manifest's `latest` release.
+/// A release build is nudged only toward a later one: a cached manifest can be
+/// older than the snapshot it is read from.
 fn banner_for(is_dev: bool, current: &str, latest: &str) -> Option<Banner> {
     if is_dev {
         // Link to the latest release only if one exists — with no release the
@@ -90,7 +103,7 @@ fn banner_for(is_dev: bool, current: &str, latest: &str) -> Option<Banner> {
             message: "Unreleased dev build (main) — APIs may change.".to_string(),
             link,
         })
-    } else if !latest.is_empty() && current != latest {
+    } else if newer(latest, current) {
         Some(Banner {
             message: format!("You're viewing v{current} — a newer release is available."),
             link: Some((format!("Go to v{latest} →"), format!("/v{latest}/"))),
@@ -101,8 +114,8 @@ fn banner_for(is_dev: bool, current: &str, latest: &str) -> Option<Banner> {
 }
 
 /// Top bar showing the current docs version, a dropdown to switch between the
-/// `dev` (main HEAD) build and every published release, and a banner when the
-/// viewer is not on the latest stable version.
+/// `dev` (main HEAD) build and every published release, and a banner on the
+/// dev build or when a later release than the one being viewed exists.
 #[component]
 pub fn VersionSwitcher() -> impl IntoView {
     let manifest = RwSignal::new(None::<Manifest>);
@@ -257,6 +270,27 @@ mod tests {
     fn no_banner_on_the_latest_release() {
         assert!(banner_for(false, "0.14.0", "0.14.0").is_none());
         assert!(banner_for(false, "0.14.0", "").is_none());
+    }
+
+    #[test]
+    fn a_snapshot_newer_than_the_manifest_s_latest_is_not_sent_back() {
+        assert!(banner_for(false, "0.2.0", "0.1.0").is_none());
+    }
+
+    #[test]
+    fn versions_compare_by_number_not_by_text() {
+        assert!(banner_for(false, "0.10.0", "0.9.0").is_none());
+        assert!(banner_for(false, "0.9.0", "0.10.0").is_some());
+    }
+
+    #[test]
+    fn a_latest_that_is_not_three_numbers_never_counts_as_newer() {
+        for latest in ["0.15.0-rc.1", "0.15", "0.15.0.1", "v0.15.0", "garbage"] {
+            assert!(
+                banner_for(false, "0.14.0", latest).is_none(),
+                "latest {latest:?} must not nudge"
+            );
+        }
     }
 
     // Guards the versions.json contract across the language boundary: the deploy
