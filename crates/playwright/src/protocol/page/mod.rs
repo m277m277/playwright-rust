@@ -5,7 +5,7 @@
 
 use crate::error::Result;
 use crate::protocol::browser_context::Viewport;
-use crate::protocol::{Dialog, Download, Request, ResponseObject, Route, WebSocket, Worker};
+use crate::protocol::{Dialog, Download, Request, ResponseObject, WebSocket, Worker};
 use crate::server::channel_owner::{ChannelOwner, ChannelOwnerImpl};
 use std::collections::HashMap;
 use std::future::Future;
@@ -53,7 +53,7 @@ pub struct Page {
     /// guarantees the Frame object exists before the Page that references it)
     main_frame: crate::protocol::Frame,
     /// Route handlers for network interception
-    route_handlers: Arc<Mutex<Vec<RouteHandlerEntry>>>,
+    route_handlers: Arc<Mutex<Vec<crate::protocol::route::RouteHandlerEntry>>>,
     /// Download event handlers and one-shot `expect_download` waiters.
     download: Arc<EventRegistry<Download>>,
     /// Dialog event handlers (no `expect_*`; waiter queue stays empty).
@@ -130,9 +130,6 @@ pub struct Page {
     locator_handlers: Arc<Mutex<Vec<LocatorHandlerEntry>>>,
 }
 
-/// Type alias for boxed route handler future
-type RouteHandlerFuture = Pin<Box<dyn Future<Output = Result<()>> + Send>>;
-
 /// Type alias for boxed websocket handler future
 type WebSocketHandlerFuture = Pin<Box<dyn Future<Output = Result<()>> + Send>>;
 
@@ -145,15 +142,6 @@ struct WsRouteHandlerEntry {
     pattern: String,
     handler:
         Arc<dyn Fn(crate::protocol::WebSocketRoute) -> WebSocketRouteHandlerFuture + Send + Sync>,
-}
-
-/// Storage for a single route handler
-#[derive(Clone)]
-struct RouteHandlerEntry {
-    pattern: String,
-    handler: Arc<dyn Fn(Route) -> RouteHandlerFuture + Send + Sync>,
-    /// Invocations of `handler` still running, for `unroute_all`.
-    in_flight: Arc<crate::protocol::in_flight::InFlight>,
 }
 
 /// WebSocket event handler

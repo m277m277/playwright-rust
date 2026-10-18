@@ -5,7 +5,7 @@
 // cache, and local storage.
 
 use crate::error::Result;
-use crate::protocol::{Browser, Page, Request, ResponseObject, Route};
+use crate::protocol::{Browser, Page, Request, ResponseObject};
 use crate::server::channel_owner::{ChannelOwner, ChannelOwnerImpl};
 use std::collections::HashMap;
 use std::future::Future;
@@ -15,9 +15,6 @@ use std::sync::{Arc, Mutex};
 
 use crate::protocol::event_registry::EventRegistry;
 use tokio::sync::oneshot;
-
-/// Type alias for boxed route handler future
-type RouteHandlerFuture = Pin<Box<dyn Future<Output = Result<()>> + Send>>;
 
 /// Type alias for boxed binding callback future
 type BindingCallbackFuture = Pin<Box<dyn Future<Output = serde_json::Value> + Send>>;
@@ -37,15 +34,6 @@ type BindingCallback = Arc<dyn Fn(Vec<serde_json::Value>) -> BindingCallbackFutu
 
 /// Type alias for boxed WebSocketRoute handler future
 type WsRouteHandlerFuture = Pin<Box<dyn Future<Output = Result<()>> + Send>>;
-
-/// Storage for a single route handler
-#[derive(Clone)]
-struct RouteHandlerEntry {
-    pattern: String,
-    handler: Arc<dyn Fn(Route) -> RouteHandlerFuture + Send + Sync>,
-    /// Invocations of `handler` still running, for `unroute_all`.
-    in_flight: Arc<crate::protocol::in_flight::InFlight>,
-}
 
 /// Storage for a single WebSocket route handler entry
 #[derive(Clone)]
@@ -123,7 +111,7 @@ pub struct BrowserContext {
     /// All open pages in this context
     pages: Arc<Mutex<Vec<Page>>>,
     /// Route handlers for context-level network interception
-    route_handlers: Arc<Mutex<Vec<RouteHandlerEntry>>>,
+    route_handlers: Arc<Mutex<Vec<crate::protocol::route::RouteHandlerEntry>>>,
     /// APIRequestContext GUID from initializer (resolved lazily)
     request_context_guid: Option<String>,
     /// Tracing GUID from initializer (resolved lazily)

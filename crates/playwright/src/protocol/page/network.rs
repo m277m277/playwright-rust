@@ -1,10 +1,8 @@
-use super::{
-    Page, RouteHandlerEntry, RouteHandlerFuture, WebSocketRouteHandlerFuture, WsRouteHandlerEntry,
-};
+use super::{Page, WebSocketRouteHandlerFuture, WsRouteHandlerEntry};
 use crate::error::{Error, Result};
 use crate::protocol::Route;
 use crate::protocol::in_flight::settle_removed;
-use crate::protocol::route::UnrouteBehavior;
+use crate::protocol::route::{RouteHandlerEntry, UnrouteBehavior};
 use crate::server::channel_owner::ChannelOwner;
 use std::future::Future;
 use std::sync::Arc;
@@ -46,21 +44,12 @@ impl Page {
         F: Fn(Route) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<()>> + Send + 'static,
     {
-        // 1. Wrap handler in Arc with type erasure
-        let handler =
-            Arc::new(move |route: Route| -> RouteHandlerFuture { Box::pin(handler(route)) });
+        self.route_handlers
+            .lock()
+            .unwrap()
+            .push(RouteHandlerEntry::new(pattern, handler));
 
-        // 2. Store in handlers list
-        self.route_handlers.lock().unwrap().push(RouteHandlerEntry {
-            pattern: pattern.to_string(),
-            handler,
-            in_flight: Arc::default(),
-        });
-
-        // 3. Enable network interception via protocol
-        self.enable_network_interception().await?;
-
-        Ok(())
+        self.enable_network_interception().await
     }
 
     /// Fulfills matching requests from an in-process tower `Service`, such as
@@ -362,51 +351,14 @@ impl Page {
     /// handlers, before the request is continued.
     pub(super) async fn on_route_event(&self, route: Route) {
         let handlers = self.route_handlers.lock().unwrap().clone();
-        // Each read sees the overrides a fallback recorded, so a rewritten URL
-        // changes which handlers come after it.
-        let request = route.request();
-        // Find matching handler (last registered wins, with fallback chaining)
-        for entry in handlers.iter().rev() {
-            if crate::protocol::route::matches_pattern(&entry.pattern, &request.url()) {
-                let handler = entry.handler.clone();
-                let running = entry.in_flight.enter();
-                let outcome = handler(route.clone()).await;
-                drop(running);
-                if let Err(e) = outcome {
-                    let quiet = entry.in_flight.ignores_errors();
-                    if !quiet {
-                        tracing::warn!("Route handler error: {}", e);
-                    }
-                    // A handler that failed before answering leaves the request
-                    // pending; abort it so the browser sees a failed request
-                    // instead of waiting out its timeout.
-                    if let Err(abort_error) = route.abort_unanswered().await
-                        && !quiet
-                    {
-                        tracing::warn!("aborting the unhandled route failed too: {}", abort_error);
-                    }
-                    break;
-                }
-                // If handler fell back, try the next matching handler
-                if !route.settle_handler() {
-                    continue;
-                }
-                break;
-            }
-        }
-
-        if route.was_handled() {
+        if route.run_handlers(&handlers, "Page").await {
             return;
         }
         // Every page handler fell back: the context's handlers come next, and
         // the context continues the request if they fall back too.
         match crate::server::connection::downcast_parent::<crate::protocol::BrowserContext>(self) {
-            Some(context) => context.route_from_page(route).await,
-            None => {
-                if let Err(e) = route.continue_unhandled().await {
-                    tracing::debug!("continuing a route no handler handled failed: {}", e);
-                }
-            }
+            Some(context) => context.on_route_event(route).await,
+            None => route.continue_unhandled().await,
         }
     }
 

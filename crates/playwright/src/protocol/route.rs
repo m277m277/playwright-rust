@@ -5,6 +5,7 @@
 //
 // See: https://playwright.dev/docs/api/class-route
 
+use super::event_registry::{Handler, HandlerFuture};
 use super::route_params::RouteState;
 use crate::error::Result;
 use crate::protocol::Request;
@@ -13,6 +14,7 @@ use crate::server::channel_owner::{ChannelOwner, ChannelOwnerImpl, ParentOrConne
 use crate::server::connection::downcast_parent;
 use serde_json::{Value, json};
 use std::any::Any;
+use std::future::Future;
 use std::sync::{Arc, Mutex};
 
 /// Route represents a network route handler.
@@ -73,15 +75,60 @@ impl Route {
     /// Returns `false` while every handler so far fell back, explicitly or by
     /// returning without answering or fetching, indicating the next matching
     /// handler should be tried.
-    pub(crate) fn was_handled(&self) -> bool {
+    fn was_handled(&self) -> bool {
         self.state.lock().unwrap().handled()
     }
 
     /// Settles the handler that just returned `Ok`: marks the route handled
     /// if the handler kept it, and returns whether it did. `false` means the
     /// next handler is tried, and it starts with what this one did cleared.
-    pub(crate) fn settle_handler(&self) -> bool {
+    fn settle_handler(&self) -> bool {
         self.state.lock().unwrap().settle()
+    }
+
+    /// Runs the handlers whose pattern matches the request, last registered
+    /// first, until one keeps the route: answers it, or fetches without
+    /// falling back. A handler that returns an error has the request aborted
+    /// unless it was answered, and no later handler runs. Returns whether a
+    /// handler kept the route; `false` means every match fell back, and the
+    /// caller passes the request on. `scope` names the page or context in
+    /// the log.
+    #[must_use]
+    pub(crate) async fn run_handlers(&self, handlers: &[RouteHandlerEntry], scope: &str) -> bool {
+        // Each read sees the overrides a fallback recorded, so a rewritten URL
+        // changes which handlers come after it.
+        let request = self.request();
+        for entry in handlers.iter().rev() {
+            if !matches_pattern(&entry.pattern, &request.url()) {
+                continue;
+            }
+            let running = entry.in_flight.enter();
+            let outcome = (entry.handler)(self.clone()).await;
+            drop(running);
+            if let Err(e) = outcome {
+                let quiet = entry.in_flight.ignores_errors();
+                if !quiet {
+                    tracing::warn!(scope, "Route handler error: {}", e);
+                }
+                // A handler that failed before answering leaves the request
+                // pending; abort it so the browser sees a failed request
+                // instead of waiting out its timeout.
+                if let Err(abort_error) = self.abort_unanswered().await
+                    && !quiet
+                {
+                    tracing::warn!(
+                        scope,
+                        "aborting the unhandled route failed too: {}",
+                        abort_error
+                    );
+                }
+                break;
+            }
+            if self.settle_handler() {
+                break;
+            }
+        }
+        self.was_handled()
     }
 
     /// Aborts the request of a handler that returned an error, unless the
@@ -91,7 +138,7 @@ impl Route {
     /// rejects. The abort is sent even if the handler fell back. One the
     /// route itself refuses still marks it handled upstream, so this abort is
     /// refused too and the error says the request is stuck.
-    pub(crate) async fn abort_unanswered(&self) -> Result<()> {
+    async fn abort_unanswered(&self) -> Result<()> {
         if !self.state.lock().unwrap().take_over_unanswered() {
             return Ok(());
         }
@@ -261,12 +308,15 @@ impl Route {
     /// Continues a request no handler handled, with every fallback's
     /// overrides applied. Called by the dispatcher once the page's and the
     /// context's handlers have all fallen back; a no-op if one handled it.
-    pub(crate) async fn continue_unhandled(&self) -> Result<()> {
+    /// No caller can act on a failure, so it is logged here.
+    pub(crate) async fn continue_unhandled(&self) {
         if !self.state.lock().unwrap().take_over_unhandled() {
-            return Ok(());
+            return;
         }
         let overrides = self.fallback_overrides.lock().unwrap().clone();
-        self.continue_internal(overrides, true).await
+        if let Err(e) = self.continue_internal(overrides, true).await {
+            tracing::debug!("continuing a route no handler handled failed: {}", e);
+        }
     }
 
     /// Sends the driver's `continue` command.
@@ -364,6 +414,29 @@ impl Route {
         // fails, so the handler keeps the route unless it falls back.
         self.state.lock().unwrap().fetch();
         api_ctx.inner_fetch(&url, Some(inner_opts)).await
+    }
+}
+
+/// A route handler a page or context registered.
+#[derive(Clone)]
+pub(crate) struct RouteHandlerEntry {
+    pub(crate) pattern: String,
+    handler: Handler<Route>,
+    /// Invocations of `handler` still running, for `unroute_all`.
+    pub(crate) in_flight: Arc<crate::protocol::in_flight::InFlight>,
+}
+
+impl RouteHandlerEntry {
+    pub(crate) fn new<F, Fut>(pattern: &str, handler: F) -> Self
+    where
+        F: Fn(Route) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<()>> + Send + 'static,
+    {
+        Self {
+            pattern: pattern.to_string(),
+            handler: Arc::new(move |route: Route| -> HandlerFuture { Box::pin(handler(route)) }),
+            in_flight: Arc::default(),
+        }
     }
 }
 

@@ -1,14 +1,11 @@
-use super::{
-    BrowserContext, ContextWsRouteHandlerEntry, RouteHandlerEntry, RouteHandlerFuture,
-    WsRouteHandlerFuture,
-};
+use super::{BrowserContext, ContextWsRouteHandlerEntry, WsRouteHandlerFuture};
 use crate::error::{Error, Result};
 use crate::protocol::Route;
 use crate::protocol::in_flight::settle_removed;
-use crate::protocol::route::UnrouteBehavior;
+use crate::protocol::route::{RouteHandlerEntry, UnrouteBehavior};
 use crate::server::channel_owner::ChannelOwner;
 use std::future::Future;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 /// Routes, network and WebSocket interception, HAR replay.
 impl BrowserContext {
@@ -29,14 +26,10 @@ impl BrowserContext {
         F: Fn(Route) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<()>> + Send + 'static,
     {
-        let handler =
-            Arc::new(move |route: Route| -> RouteHandlerFuture { Box::pin(handler(route)) });
-
-        self.route_handlers.lock().unwrap().push(RouteHandlerEntry {
-            pattern: pattern.to_string(),
-            handler,
-            in_flight: Arc::default(),
-        });
+        self.route_handlers
+            .lock()
+            .unwrap()
+            .push(RouteHandlerEntry::new(pattern, handler));
 
         self.enable_network_interception().await
     }
@@ -316,53 +309,17 @@ impl BrowserContext {
             .await
     }
 
-    /// Handles a route event from the protocol
-    pub(super) async fn on_route_event(
-        route_handlers: Arc<Mutex<Vec<RouteHandlerEntry>>>,
-        route: Route,
-    ) {
-        let handlers = route_handlers.lock().unwrap().clone();
-        // Each read sees the overrides a fallback recorded, so a rewritten URL
-        // changes which handlers come after it.
-        let request = route.request();
-        for entry in handlers.iter().rev() {
-            if crate::protocol::route::matches_pattern(&entry.pattern, &request.url()) {
-                let handler = entry.handler.clone();
-                let running = entry.in_flight.enter();
-                let outcome = handler(route.clone()).await;
-                drop(running);
-                if let Err(e) = outcome {
-                    let quiet = entry.in_flight.ignores_errors();
-                    if !quiet {
-                        tracing::warn!("Context route handler error: {}", e);
-                    }
-                    // A handler that failed before answering leaves the request
-                    // pending; abort it so the browser sees a failed request
-                    // instead of waiting out its timeout.
-                    if let Err(abort_error) = route.abort_unanswered().await
-                        && !quiet
-                    {
-                        tracing::warn!("aborting the unhandled route failed too: {}", abort_error);
-                    }
-                    break;
-                }
-                if !route.settle_handler() {
-                    continue;
-                }
-                break;
-            }
+    /// Runs this context's route handlers on a request: one the driver
+    /// reported to the context, or one its page's handlers all fell back on,
+    /// as upstream's page hands it to its context. Continues the request if
+    /// these fall back too.
+    pub(crate) async fn on_route_event(&self, route: Route) {
+        let handlers = self.route_handlers.lock().unwrap().clone();
+        if route.run_handlers(&handlers, "Context").await {
+            return;
         }
-
         // Every handler fell back, or none matched: send the request on with
-        // the overrides its fallbacks recorded. A no-op once it was handled.
-        if let Err(e) = route.continue_unhandled().await {
-            tracing::debug!("continuing a route no handler handled failed: {}", e);
-        }
-    }
-
-    /// Runs this context's route handlers on a request the page's handlers
-    /// all fell back on, as upstream's page hands it to its context.
-    pub(crate) async fn route_from_page(&self, route: Route) {
-        Self::on_route_event(self.route_handlers.clone(), route).await;
+        // the overrides its fallbacks recorded.
+        route.continue_unhandled().await;
     }
 }

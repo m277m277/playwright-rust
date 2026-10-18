@@ -444,7 +444,7 @@ impl ChannelOwner for BrowserContext {
                 {
                     let connection = self.connection();
                     let route_guid_owned = route_guid.to_string();
-                    let route_handlers = self.route_handlers.clone();
+                    let context = self.clone();
                     let request_context_guid = self.request_context_guid.clone();
 
                     crate::task::spawn(async move {
@@ -465,7 +465,7 @@ impl ChannelOwner for BrowserContext {
                             route.set_api_request_context(api_ctx);
                         }
 
-                        BrowserContext::on_route_event(route_handlers, route).await;
+                        context.on_route_event(route).await;
                     });
                 }
             }
