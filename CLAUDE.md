@@ -116,6 +116,10 @@ Load these when the task touches their domain:
 - **release-process** — end-to-end release runbook including the
   push-commit-then-wait-for-CI-then-tag pattern. Read before driving
   a release manually.
+- **driver-bump** — moving the pinned Playwright driver: establishing
+  the delta the release notes leave out, porting upstream regression
+  tests, the files and trace fixture that move. Read before touching
+  `PLAYWRIGHT_VERSION`.
 - **playwright-rs-usage** — procedural reference for using
   playwright-rs as a downstream Rust dependency (object model,
   `locator!()` macro, builder pattern, auto-wait semantics, trace
