@@ -211,10 +211,7 @@ async fn a_fulfill_after_a_fallback_reaches_the_page() {
     page.goto(&format!("{}/", server.url()), None)
         .await
         .expect("Failed to navigate");
-    let delivered = page
-        .evaluate_value("document.getElementById('from')?.textContent ?? document.body.innerText")
-        .await
-        .expect("Failed to read the document");
+    let delivered = read_from(&page).await;
 
     browser.close().await.expect("Failed to close browser");
     server.shutdown();
@@ -288,10 +285,7 @@ async fn a_page_fallback_hands_the_request_to_the_context_routes() {
     page.goto(&format!("{}/", server.url()), None)
         .await
         .expect("Failed to navigate");
-    let delivered = page
-        .evaluate_value("document.getElementById('from')?.textContent ?? document.body.innerText")
-        .await
-        .expect("Failed to read the document");
+    let delivered = read_from(&page).await;
 
     browser.close().await.expect("Failed to close browser");
     server.shutdown();
@@ -421,10 +415,7 @@ async fn a_page_handler_is_matched_against_the_url_a_fallback_rewrote() {
     page.goto(&format!("{}/original", server.url()), None)
         .await
         .expect("Failed to navigate");
-    let delivered = page
-        .evaluate_value("document.getElementById('from')?.textContent ?? document.body.innerText")
-        .await
-        .expect("Failed to read the document");
+    let delivered = read_from(&page).await;
 
     browser.close().await.expect("Failed to close browser");
     server.shutdown();
@@ -456,10 +447,7 @@ async fn a_context_handler_is_matched_against_the_url_a_page_fallback_rewrote() 
     page.goto(&format!("{}/original", server.url()), None)
         .await
         .expect("Failed to navigate");
-    let delivered = page
-        .evaluate_value("document.getElementById('from')?.textContent ?? document.body.innerText")
-        .await
-        .expect("Failed to read the document");
+    let delivered = read_from(&page).await;
 
     browser.close().await.expect("Failed to close browser");
     server.shutdown();
@@ -512,4 +500,96 @@ async fn fetch_sends_the_request_as_an_earlier_fallback_left_it() {
             &serde_json::json!("rewritten"),
         )
     );
+}
+
+async fn read_from(page: &playwright_rs::protocol::Page) -> String {
+    page.evaluate_value("document.getElementById('from')?.textContent ?? document.body.innerText")
+        .await
+        .expect("Failed to read the document")
+}
+
+/// Runs `late` in a handler right after its `fallback()`, asserts that the
+/// next handler still answered the request, and returns what `late` returned.
+async fn after_a_fallback<F, Fut>(late: F) -> Result<(), String>
+where
+    F: Fn(playwright_rs::protocol::Route) -> Fut + Send + Sync + Copy + 'static,
+    Fut: std::future::Future<Output = playwright_rs::Result<()>> + Send + 'static,
+{
+    let server = TestServer::start().await;
+    let (_pw, browser, page) = crate::common::setup().await;
+
+    let recorded = Arc::new(Mutex::new(None));
+    let sink = recorded.clone();
+    page.route("**/*", |route| async move {
+        route
+            .fulfill(fulfill_html(r#"<p id="from">next</p>"#))
+            .await
+    })
+    .await
+    .expect("Failed to set up the next route");
+    page.route("**/*", move |route| {
+        let sink = sink.clone();
+        async move {
+            route.fallback(None).await?;
+            let result = late(route).await;
+            *sink.lock().unwrap() = Some(result.map_err(|e| e.to_string()));
+            Ok(())
+        }
+    })
+    .await
+    .expect("Failed to set up the falling-back route");
+
+    page.goto(&format!("{}/", server.url()), None)
+        .await
+        .expect("Failed to navigate");
+    let delivered = read_from(&page).await;
+
+    browser.close().await.expect("Failed to close browser");
+    server.shutdown();
+    assert_eq!(
+        delivered, "next",
+        "the fallback still reaches the next handler"
+    );
+    recorded.lock().unwrap().clone().expect("the handler ran")
+}
+
+#[tokio::test]
+async fn an_answer_after_a_fallback_in_the_same_handler_is_refused() {
+    let late = after_a_fallback(|route| async move {
+        route
+            .fulfill(fulfill_html(r#"<p id="from">same</p>"#))
+            .await
+    })
+    .await;
+    assert!(
+        matches!(&late, Err(m) if m.contains("Route is already handled!")),
+        "fulfill() after fallback() in one handler is refused: {late:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_second_fallback_in_the_same_handler_is_refused() {
+    let again = after_a_fallback(|route| async move { route.fallback(None).await }).await;
+    assert!(
+        matches!(&again, Err(m) if m.contains("Route is already handled!")),
+        "a second fallback() in one handler is refused: {again:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_handler_that_fails_after_a_fallback_has_its_request_aborted() {
+    let server = TestServer::start().await;
+    let (_pw, browser, page) = crate::common::setup().await;
+
+    page.route("**/*", |route| async move {
+        route.fallback(None).await?;
+        route.fulfill(fulfill_html("<p>same</p>")).await
+    })
+    .await
+    .expect("Failed to set up the route");
+
+    crate::common::navigate_and_expect_an_abort(&page, &format!("{}/", server.url())).await;
+
+    browser.close().await.expect("Failed to close browser");
+    server.shutdown();
 }

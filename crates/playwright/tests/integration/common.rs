@@ -169,6 +169,32 @@ pub async fn poll_until<F: FnMut() -> bool>(timeout: std::time::Duration, mut co
     }
 }
 
+/// Navigates with a navigation timeout of `secs`, for a test that expects the
+/// navigation to fail or wait.
+pub async fn goto_within(
+    page: &Page,
+    url: &str,
+    secs: u64,
+) -> playwright_rs::Result<Option<playwright_rs::protocol::Response>> {
+    page.goto(
+        url,
+        Some(GotoOptions::new().timeout(std::time::Duration::from_secs(secs))),
+    )
+    .await
+}
+
+/// Navigates and asserts that a route handler's failure aborted the request,
+/// rather than leaving it to time out.
+pub async fn navigate_and_expect_an_abort(page: &Page, url: &str) {
+    let error = goto_within(page, url, 5)
+        .await
+        .expect_err("an aborted navigation fails");
+    assert!(
+        error.to_string().contains("net::ERR_FAILED"),
+        "the handler's error aborts the request instead of leaving it to time out: {error}"
+    );
+}
+
 /// What the test server's `/api/echo-request` endpoint saw, read from the
 /// page that navigated to it: method, path, headers, and body.
 pub async fn echoed_request(page: &Page) -> serde_json::Value {

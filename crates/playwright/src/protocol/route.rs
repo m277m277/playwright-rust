@@ -5,6 +5,7 @@
 //
 // See: https://playwright.dev/docs/api/class-route
 
+use super::route_params::RouteState;
 use crate::error::Result;
 use crate::protocol::Request;
 use crate::protocol::api_request_context::{APIRequestContext, InnerFetchOptions};
@@ -12,7 +13,6 @@ use crate::server::channel_owner::{ChannelOwner, ChannelOwnerImpl, ParentOrConne
 use crate::server::connection::downcast_parent;
 use serde_json::{Value, json};
 use std::any::Any;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 /// Route represents a network route handler.
@@ -23,18 +23,10 @@ use std::sync::{Arc, Mutex};
 #[derive(Clone)]
 pub struct Route {
     base: ChannelOwnerImpl,
-    /// Whether a handler has taken the route over: called `abort()`,
-    /// `continue_()`, or `fulfill()`, or, once it returned, had fetched
-    /// without falling back. A handler that is still running after a
-    /// `fetch()` has not taken it over yet, so it may still fall back.
-    handled: Arc<AtomicBool>,
-    /// Whether the running handler called `fallback()`.
-    fell_back: Arc<AtomicBool>,
-    /// Whether the running handler called `fetch()`.
-    fetched: Arc<AtomicBool>,
-    /// Whether the driver has accepted an abort, continue, or fulfill, so the
-    /// request no longer waits on a handler.
-    answered: Arc<AtomicBool>,
+    /// Whether a handler has taken the route over, whether the driver has
+    /// accepted an answer, and what the running handler has done short of
+    /// answering.
+    state: Arc<Mutex<RouteState>>,
     /// The overrides `fallback()` and `continue_()` calls have recorded,
     /// applied when the request is finally continued. The cell is the
     /// request's own, so `request()` reports them; holding it here keeps
@@ -70,10 +62,7 @@ impl Route {
 
         Ok(Self {
             base,
-            handled: Arc::new(AtomicBool::new(false)),
-            fell_back: Arc::new(AtomicBool::new(false)),
-            fetched: Arc::new(AtomicBool::new(false)),
-            answered: Arc::new(AtomicBool::new(false)),
+            state: Arc::default(),
             fallback_overrides,
             api_request_context: Arc::new(Mutex::new(None)),
         })
@@ -85,35 +74,28 @@ impl Route {
     /// returning without answering or fetching, indicating the next matching
     /// handler should be tried.
     pub(crate) fn was_handled(&self) -> bool {
-        self.handled.load(Ordering::SeqCst)
+        self.state.lock().unwrap().handled()
     }
 
     /// Settles the handler that just returned `Ok`: marks the route handled
     /// if the handler kept it, and returns whether it did. `false` means the
     /// next handler is tried, and it starts with what this one did cleared.
     pub(crate) fn settle_handler(&self) -> bool {
-        let kept = super::route_params::handler_kept_route(
-            self.was_handled(),
-            self.fell_back.swap(false, Ordering::SeqCst),
-            self.fetched.swap(false, Ordering::SeqCst),
-        );
-        if kept {
-            self.handled.store(true, Ordering::SeqCst);
-        }
-        kept
+        self.state.lock().unwrap().settle()
     }
 
     /// Aborts the request of a handler that returned an error, unless the
     /// driver had already accepted an answer to it.
     ///
     /// A `fetch()` sends no answer, nor does a command the driver's validator
-    /// rejects. One the route itself refuses still marks it handled upstream,
-    /// so this abort is refused too and the error says the request is stuck.
+    /// rejects. The abort is sent even if the handler fell back. One the
+    /// route itself refuses still marks it handled upstream, so this abort is
+    /// refused too and the error says the request is stuck.
     pub(crate) async fn abort_unanswered(&self) -> Result<()> {
-        if self.answered.load(Ordering::SeqCst) {
+        if !self.state.lock().unwrap().take_over_unanswered() {
             return Ok(());
         }
-        self.abort(Some("failed")).await
+        self.send_abort(Some("failed")).await
     }
 
     /// Sends a command that answers the request, noting the answer once the
@@ -122,7 +104,7 @@ impl Route {
         self.channel()
             .send::<_, serde_json::Value>(method, params)
             .await?;
-        self.answered.store(true, Ordering::SeqCst);
+        self.state.lock().unwrap().answer_accepted();
         Ok(())
     }
 
@@ -192,9 +174,20 @@ impl Route {
     /// - "timedout"
     /// - "failed" - Generic error (default)
     ///
+    /// # Errors
+    ///
+    /// Returns an error if this handler already called `fallback()`, if the
+    /// driver already accepted an answer, or if the driver rejects the
+    /// command.
+    ///
     /// See: <https://playwright.dev/docs/api/class-route#route-abort>
     pub async fn abort(&self, error_code: Option<&str>) -> Result<()> {
-        self.handled.store(true, Ordering::SeqCst);
+        self.state.lock().unwrap().begin_answer()?;
+        self.send_abort(error_code).await
+    }
+
+    /// Sends the driver's `abort` command.
+    async fn send_abort(&self, error_code: Option<&str>) -> Result<()> {
         let params = json!({
             "errorCode": error_code.unwrap_or("failed")
         });
@@ -211,13 +204,19 @@ impl Route {
     ///
     /// * `overrides` - Optional modifications to apply to the request
     ///
-    /// Overrides recorded by earlier `fallback()` calls apply too, with these
-    /// taking precedence field by field. [`request()`](Self::request) reports
-    /// the result.
+    /// Overrides recorded by earlier handlers' `fallback()` calls apply too,
+    /// with these taking precedence field by field.
+    /// [`request()`](Self::request) reports the result.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if this handler already called `fallback()`, if the
+    /// driver already accepted an answer, or if the driver rejects the
+    /// command.
     ///
     /// See: <https://playwright.dev/docs/api/class-route#route-continue>
     pub async fn continue_(&self, overrides: Option<ContinueOptions>) -> Result<()> {
-        self.handled.store(true, Ordering::SeqCst);
+        self.state.lock().unwrap().begin_answer()?;
         self.record_overrides(overrides);
         let overrides = self.fallback_overrides.lock().unwrap().clone();
         self.continue_internal(overrides, false).await
@@ -243,17 +242,13 @@ impl Route {
     ///
     /// # Errors
     ///
-    /// Returns an error if the route has already been handled.
+    /// Returns an error if the route has already been handled, or if this
+    /// handler already called `fallback()`.
     ///
     /// See: <https://playwright.dev/docs/api/class-route#route-fallback>
     pub async fn fallback(&self, overrides: Option<ContinueOptions>) -> Result<()> {
-        if self.was_handled() {
-            return Err(crate::error::Error::ProtocolError(
-                "Route is already handled!".to_string(),
-            ));
-        }
+        self.state.lock().unwrap().fall_back()?;
         self.record_overrides(overrides);
-        self.fell_back.store(true, Ordering::SeqCst);
         Ok(())
     }
 
@@ -267,7 +262,7 @@ impl Route {
     /// overrides applied. Called by the dispatcher once the page's and the
     /// context's handlers have all fallen back; a no-op if one handled it.
     pub(crate) async fn continue_unhandled(&self) -> Result<()> {
-        if self.handled.swap(true, Ordering::SeqCst) {
+        if !self.state.lock().unwrap().take_over_unhandled() {
             return Ok(());
         }
         let overrides = self.fallback_overrides.lock().unwrap().clone();
@@ -293,16 +288,14 @@ impl Route {
     ///
     /// # Errors
     ///
-    /// Returns an error if the driver rejects the command, for example when
-    /// the route has already been handled or the page has closed.
+    /// Returns an error if this handler already called `fallback()`, if the
+    /// driver already accepted an answer, or if the driver rejects the
+    /// command, for example when the page has closed.
     ///
     /// See: <https://playwright.dev/docs/api/class-route#route-fulfill>
     pub async fn fulfill(&self, options: impl Into<Option<FulfillOptions>>) -> Result<()> {
-        let options = options.into();
-        self.handled.store(true, Ordering::SeqCst);
-        let opts = options.unwrap_or_default();
-
-        let params = super::route_params::fulfill_params(opts);
+        self.state.lock().unwrap().begin_answer()?;
+        let params = super::route_params::fulfill_params(options.into().unwrap_or_default());
 
         self.answer("fulfill", params).await
     }
@@ -369,7 +362,7 @@ impl Route {
 
         // From here the request may reach the server, even if the fetch then
         // fails, so the handler keeps the route unless it falls back.
-        self.fetched.store(true, Ordering::SeqCst);
+        self.state.lock().unwrap().fetch();
         api_ctx.inner_fetch(&url, Some(inner_opts)).await
     }
 }

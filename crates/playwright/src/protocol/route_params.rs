@@ -8,6 +8,7 @@
 //! base64.
 
 use super::route::{ContinueOptions, FulfillOptions};
+use crate::error::Result;
 use base64::Engine as _;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap};
@@ -192,14 +193,102 @@ pub(crate) fn merge_overrides(
     Some(merged)
 }
 
-/// Whether a route handler that returned `Ok` kept its request, so no later
-/// handler sees it. `handled` is whether any handler called `abort()`,
-/// `continue_()`, or `fulfill()`, accepted by the driver or not, and that
-/// keeps it. Short of one, an explicit `fallback()` passes it on, even after
-/// a `fetch()`; a `fetch()` alone keeps it, so the browser does not send the
-/// request a second time; and a handler that did neither falls back.
-pub(crate) fn handler_kept_route(handled: bool, fell_back: bool, fetched: bool) -> bool {
-    handled || (fetched && !fell_back)
+/// What the running route handler has done short of answering.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum HandlerTurn {
+    #[default]
+    Untouched,
+    Fetched,
+    FellBack,
+}
+
+/// The decisions made on a route, under one lock so each check and the change
+/// it allows are one step. A handler makes one decision: an answer
+/// (`abort()`, `continue_()`, `fulfill()`), which marks the route handled
+/// whether or not the driver accepts it, or a `fallback()`. A `fetch()` is not
+/// a decision, so either may follow it.
+#[derive(Debug, Default)]
+pub(crate) struct RouteState {
+    handled: bool,
+    answered: bool,
+    turn: HandlerTurn,
+}
+
+impl RouteState {
+    /// Whether a handler took the route over.
+    pub(crate) fn handled(&self) -> bool {
+        self.handled
+    }
+
+    /// Starts an answer from the running handler, marking the route handled.
+    /// Refused after the handler fell back, and once the driver accepted an
+    /// answer; one the driver rejected may be tried again.
+    pub(crate) fn begin_answer(&mut self) -> Result<()> {
+        if self.turn == HandlerTurn::FellBack || self.answered {
+            return Err(already_handled());
+        }
+        self.handled = true;
+        Ok(())
+    }
+
+    /// Notes that the driver accepted an answer, so the request no longer
+    /// waits on a handler.
+    pub(crate) fn answer_accepted(&mut self) {
+        self.answered = true;
+    }
+
+    /// Takes the route over for the abort the dispatcher sends when a handler
+    /// fails, whatever the handler did, and returns whether to send it: not
+    /// once the driver accepted an answer.
+    pub(crate) fn take_over_unanswered(&mut self) -> bool {
+        if self.answered {
+            return false;
+        }
+        self.handled = true;
+        true
+    }
+
+    /// Takes the route over for the continue the dispatcher sends once every
+    /// handler fell back, and returns whether to send it: not once a handler
+    /// took it over.
+    pub(crate) fn take_over_unhandled(&mut self) -> bool {
+        !std::mem::replace(&mut self.handled, true)
+    }
+
+    /// Records a `fallback()`. Refused after an answer or an earlier
+    /// fallback.
+    pub(crate) fn fall_back(&mut self) -> Result<()> {
+        if self.handled || self.turn == HandlerTurn::FellBack {
+            return Err(already_handled());
+        }
+        self.turn = HandlerTurn::FellBack;
+        Ok(())
+    }
+
+    /// Records a `fetch()`. A fallback already made stands.
+    pub(crate) fn fetch(&mut self) {
+        if self.turn == HandlerTurn::Untouched {
+            self.turn = HandlerTurn::Fetched;
+        }
+    }
+
+    /// Settles a handler that returned `Ok` and readies the route for the
+    /// next one, returning whether this one kept it. An answer keeps it, and
+    /// so does a `fetch()` with no fallback after it, so the browser does not
+    /// send the request a second time; a kept route is handled from then on.
+    /// A fallback passes it on, and so does a handler that did nothing.
+    pub(crate) fn settle(&mut self) -> bool {
+        let kept = self.handled || self.turn == HandlerTurn::Fetched;
+        self.handled = kept;
+        self.turn = HandlerTurn::Untouched;
+        kept
+    }
+}
+
+/// The error a route command gets once its handler has decided, as upstream
+/// words it.
+fn already_handled() -> crate::error::Error {
+    crate::error::Error::ProtocolError("Route is already handled!".to_string())
 }
 
 /// Response headers from a HAR lookup as the map `FulfillOptions` takes:
@@ -510,21 +599,120 @@ mod tests {
 
     #[test]
     fn a_fetch_alone_keeps_the_route() {
-        assert!(handler_kept_route(false, false, true));
+        let mut state = RouteState::default();
+        state.fetch();
+        assert!(state.settle());
+    }
+
+    #[test]
+    fn a_kept_route_stays_handled() {
+        let mut state = RouteState::default();
+        state.fetch();
+        state.settle();
+        assert!(state.handled());
     }
 
     #[test]
     fn a_fallback_after_a_fetch_passes_the_route_on() {
-        assert!(!handler_kept_route(false, true, true));
+        let mut state = RouteState::default();
+        state.fetch();
+        assert!(state.fall_back().is_ok());
+        assert!(!state.settle());
+    }
+
+    #[test]
+    fn a_fetch_after_a_fallback_leaves_it_standing() {
+        let mut state = RouteState::default();
+        state.fall_back().unwrap();
+        state.fetch();
+        assert!(!state.settle());
     }
 
     #[test]
     fn a_handler_that_did_nothing_falls_back() {
-        assert!(!handler_kept_route(false, false, false));
+        assert!(!RouteState::default().settle());
     }
 
     #[test]
     fn an_answer_keeps_the_route() {
-        assert!(handler_kept_route(true, false, false));
+        let mut state = RouteState::default();
+        assert!(state.begin_answer().is_ok());
+        assert!(state.settle());
+    }
+
+    #[test]
+    fn a_handler_may_answer_after_a_fetch() {
+        let mut state = RouteState::default();
+        state.fetch();
+        assert!(state.begin_answer().is_ok());
+    }
+
+    #[test]
+    fn an_answer_after_a_fallback_is_refused_and_leaves_the_route_unhandled() {
+        let mut state = RouteState::default();
+        state.fall_back().unwrap();
+        assert!(state.begin_answer().is_err());
+        assert!(!state.handled());
+    }
+
+    #[test]
+    fn an_answer_after_an_accepted_one_is_refused() {
+        let mut state = RouteState::default();
+        state.begin_answer().unwrap();
+        state.answer_accepted();
+        assert!(state.begin_answer().is_err());
+    }
+
+    #[test]
+    fn a_rejected_answer_may_be_tried_again() {
+        let mut state = RouteState::default();
+        state.begin_answer().unwrap();
+        assert!(state.begin_answer().is_ok());
+    }
+
+    #[test]
+    fn a_fallback_after_an_answer_is_refused() {
+        let mut state = RouteState::default();
+        state.begin_answer().unwrap();
+        assert!(state.fall_back().is_err());
+    }
+
+    #[test]
+    fn a_second_fallback_is_refused() {
+        let mut state = RouteState::default();
+        state.fall_back().unwrap();
+        assert!(state.fall_back().is_err());
+    }
+
+    #[test]
+    fn the_next_handler_starts_fresh() {
+        let mut state = RouteState::default();
+        state.fall_back().unwrap();
+        state.settle();
+        assert!(state.begin_answer().is_ok());
+    }
+
+    #[test]
+    fn the_dispatcher_continues_a_route_once() {
+        let mut state = RouteState::default();
+        state.fall_back().unwrap();
+        assert!(state.take_over_unhandled());
+        assert!(!state.take_over_unhandled());
+    }
+
+    #[test]
+    fn the_dispatcher_aborts_a_failed_handlers_unanswered_route() {
+        let mut state = RouteState::default();
+        state.fall_back().unwrap();
+        assert!(state.take_over_unanswered());
+        assert!(state.handled());
+    }
+
+    #[test]
+    fn the_dispatcher_leaves_an_answered_route_alone() {
+        let mut state = RouteState::default();
+        state.begin_answer().unwrap();
+        state.answer_accepted();
+        assert!(!state.take_over_unanswered());
     }
 }

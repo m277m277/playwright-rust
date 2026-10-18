@@ -129,31 +129,6 @@ async fn test_route_fetch_with_context_route() {
     server.shutdown();
 }
 
-async fn goto_within(
-    page: &playwright_rs::protocol::Page,
-    url: &str,
-    secs: u64,
-) -> playwright_rs::Result<Option<playwright_rs::protocol::Response>> {
-    page.goto(
-        url,
-        Some(
-            playwright_rs::protocol::GotoOptions::new()
-                .timeout(std::time::Duration::from_secs(secs)),
-        ),
-    )
-    .await
-}
-
-async fn navigate_and_expect_an_abort(page: &playwright_rs::protocol::Page, url: &str) {
-    let error = goto_within(page, url, 5)
-        .await
-        .expect_err("an aborted navigation fails");
-    assert!(
-        error.to_string().contains("net::ERR_FAILED"),
-        "the handler's error aborts the request instead of leaving it to time out: {error}"
-    );
-}
-
 fn handler_gave_up() -> playwright_rs::Error {
     playwright_rs::Error::ProtocolError("the handler gave up".to_string())
 }
@@ -170,7 +145,7 @@ async fn a_page_handler_that_fails_after_fetch_aborts_the_request() {
     .await
     .expect("Failed to set up route");
 
-    navigate_and_expect_an_abort(&page, &format!("{}/", server.url())).await;
+    crate::common::navigate_and_expect_an_abort(&page, &format!("{}/", server.url())).await;
 
     browser.close().await.expect("Failed to close browser");
     server.shutdown();
@@ -190,7 +165,7 @@ async fn a_context_handler_that_fails_after_fetch_aborts_the_request() {
         .await
         .expect("Failed to set up route");
 
-    navigate_and_expect_an_abort(&page, &format!("{}/", server.url())).await;
+    crate::common::navigate_and_expect_an_abort(&page, &format!("{}/", server.url())).await;
 
     browser.close().await.expect("Failed to close browser");
     server.shutdown();
@@ -215,7 +190,7 @@ async fn answer_from_the_next_handler(
 }
 
 async fn navigate_and_expect_the_next_handler(page: &playwright_rs::protocol::Page, url: &str) {
-    let response = goto_within(page, url, 5)
+    let response = crate::common::goto_within(page, url, 5)
         .await
         .expect("the next handler answers the request")
         .expect("a navigation has a response");
@@ -285,7 +260,7 @@ async fn a_handler_that_fetches_takes_the_route_over_after_an_earlier_fallback()
         .await
         .expect("Failed to set up the falling-back route");
 
-    let navigation = goto_within(&page, &format!("{}/", server.url()), 2).await;
+    let navigation = crate::common::goto_within(&page, &format!("{}/", server.url()), 2).await;
 
     browser.close().await.expect("Failed to close browser");
     server.shutdown();
