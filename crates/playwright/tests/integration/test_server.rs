@@ -59,6 +59,11 @@ impl TestServer {
             .route("/api/echo", post(echo_post_endpoint))
             .route("/api/echo-request", any(echo_request_endpoint))
             .route("/redirect", get(redirect_handler))
+            .route(
+                "/cors-redirect",
+                get(cors_redirect_handler).options(cors_preflight),
+            )
+            .route("/cors-file", get(cors_file_handler).options(cors_preflight))
             .route("/iframe-test.html", get(iframe_test_page))
             .route("/iframe-content.html", get(iframe_content_page))
             .route("/iframe-content2.html", get(iframe_content2_page))
@@ -1060,6 +1065,49 @@ async fn redirect_handler() -> Response<Body> {
         .status(StatusCode::FOUND)
         .header("Location", "/")
         .body(Body::empty())
+        .unwrap()
+}
+
+fn request_origin(headers: &HeaderMap) -> &str {
+    headers
+        .get("origin")
+        .and_then(|value| value.to_str().ok())
+        .expect("a cross-origin request carries Origin")
+}
+
+/// Allows a credentialed request from the caller's origin carrying
+/// `x-app-version`, a header that makes the browser preflight it.
+fn cors_builder(headers: &HeaderMap) -> axum::http::response::Builder {
+    Response::builder()
+        .header("Access-Control-Allow-Origin", request_origin(headers))
+        .header("Access-Control-Allow-Credentials", "true")
+        .header("Access-Control-Allow-Headers", "x-app-version")
+}
+
+async fn cors_preflight(headers: HeaderMap) -> Response<Body> {
+    cors_builder(&headers)
+        .status(StatusCode::NO_CONTENT)
+        .body(Body::empty())
+        .unwrap()
+}
+
+/// Redirects a preflighted cross-origin request to `/cors-file` on the
+/// requesting page's origin.
+async fn cors_redirect_handler(headers: HeaderMap) -> Response<Body> {
+    cors_builder(&headers)
+        .status(StatusCode::FOUND)
+        .header(
+            "Location",
+            format!("{}/cors-file", request_origin(&headers)),
+        )
+        .body(Body::empty())
+        .unwrap()
+}
+
+async fn cors_file_handler(headers: HeaderMap) -> Response<Body> {
+    cors_builder(&headers)
+        .status(StatusCode::OK)
+        .body(Body::from("file contents"))
         .unwrap()
 }
 

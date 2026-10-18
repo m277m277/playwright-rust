@@ -70,6 +70,38 @@ async fn test_route_continue_allows_fetch() {
 }
 
 #[tokio::test]
+async fn test_route_keeps_preflighted_cross_origin_redirect() {
+    let server = TestServer::start().await;
+    let (_pw, browser, page) = crate::common::setup().await;
+
+    page.goto(&server.url().replace("127.0.0.1", "localhost"), None)
+        .await
+        .expect("Failed to navigate");
+    page.route("**/never-matches", |route| async move {
+        route.continue_(None).await
+    })
+    .await
+    .expect("Failed to set up route");
+
+    let result = page
+        .evaluate_value(&format!(
+            r#"
+        fetch('{}/cors-redirect', {{ credentials: 'include', headers: {{ 'X-App-Version': '1.2.3' }} }})
+            .then(async response => `${{response.status}} ${{await response.text()}}`)
+            .catch(error => `failed: ${{error}}`)
+        "#,
+            server.url()
+        ))
+        .await
+        .expect("Failed to evaluate");
+
+    assert_eq!(result, "200 file contents");
+
+    browser.close().await.expect("Failed to close browser");
+    server.shutdown();
+}
+
+#[tokio::test]
 async fn test_route_conditional_abort() {
     let server = TestServer::start().await;
     let (_pw, browser, page) = crate::common::setup().await;
