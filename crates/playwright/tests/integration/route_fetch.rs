@@ -129,17 +129,25 @@ async fn test_route_fetch_with_context_route() {
     server.shutdown();
 }
 
+async fn goto_within(
+    page: &playwright_rs::protocol::Page,
+    url: &str,
+    secs: u64,
+) -> playwright_rs::Result<Option<playwright_rs::protocol::Response>> {
+    page.goto(
+        url,
+        Some(
+            playwright_rs::protocol::GotoOptions::new()
+                .timeout(std::time::Duration::from_secs(secs)),
+        ),
+    )
+    .await
+}
+
 async fn navigate_and_expect_an_abort(page: &playwright_rs::protocol::Page, url: &str) {
-    let navigation = page
-        .goto(
-            url,
-            Some(
-                playwright_rs::protocol::GotoOptions::new()
-                    .timeout(std::time::Duration::from_secs(5)),
-            ),
-        )
-        .await;
-    let error = navigation.expect_err("an aborted navigation fails");
+    let error = goto_within(page, url, 5)
+        .await
+        .expect_err("an aborted navigation fails");
     assert!(
         error.to_string().contains("net::ERR_FAILED"),
         "the handler's error aborts the request instead of leaving it to time out: {error}"
@@ -188,13 +196,79 @@ async fn a_context_handler_that_fails_after_fetch_aborts_the_request() {
     server.shutdown();
 }
 
+async fn fetch_and_keep(route: playwright_rs::protocol::Route) -> playwright_rs::Result<()> {
+    route.fetch(None).await?;
+    Ok(())
+}
+
+async fn fetch_then_fall_back(route: playwright_rs::protocol::Route) -> playwright_rs::Result<()> {
+    route.fetch(None).await?;
+    route.fallback(None).await
+}
+
+async fn answer_from_the_next_handler(
+    route: playwright_rs::protocol::Route,
+) -> playwright_rs::Result<()> {
+    route
+        .fulfill(playwright_rs::FulfillOptions::builder().status(203).build())
+        .await
+}
+
+async fn navigate_and_expect_the_next_handler(page: &playwright_rs::protocol::Page, url: &str) {
+    let response = goto_within(page, url, 5)
+        .await
+        .expect("the next handler answers the request")
+        .expect("a navigation has a response");
+    assert_eq!(response.status(), 203);
+}
+
 #[tokio::test]
-async fn a_handler_that_fetches_takes_the_route_over() {
+async fn a_handler_can_fetch_then_fall_back_to_the_next_page_handler() {
     let server = TestServer::start().await;
     let (_pw, browser, page) = crate::common::setup().await;
 
-    let later_ran = Arc::new(Mutex::new(false));
-    let sink = later_ran.clone();
+    page.route("**/", answer_from_the_next_handler)
+        .await
+        .expect("Failed to set up the later route");
+    page.route("**/", fetch_then_fall_back)
+        .await
+        .expect("Failed to set up the fetching route");
+
+    navigate_and_expect_the_next_handler(&page, &format!("{}/", server.url())).await;
+
+    browser.close().await.expect("Failed to close browser");
+    server.shutdown();
+}
+
+#[tokio::test]
+async fn a_page_handler_can_fetch_then_fall_back_to_the_context() {
+    let server = TestServer::start().await;
+    let (_pw, browser, context) = crate::common::setup_context().await;
+    let page = context.new_page().await.expect("Failed to create a page");
+
+    context
+        .route("**/", answer_from_the_next_handler)
+        .await
+        .expect("Failed to set up the context route");
+    page.route("**/", fetch_then_fall_back)
+        .await
+        .expect("Failed to set up the fetching route");
+
+    navigate_and_expect_the_next_handler(&page, &format!("{}/", server.url())).await;
+
+    browser.close().await.expect("Failed to close browser");
+    server.shutdown();
+}
+
+// The first handler's fallback must not carry over to the second, whose
+// fetch keeps the route so the browser does not send the request twice.
+#[tokio::test]
+async fn a_handler_that_fetches_takes_the_route_over_after_an_earlier_fallback() {
+    let server = TestServer::start().await;
+    let (_pw, browser, page) = crate::common::setup().await;
+
+    let last_ran = Arc::new(Mutex::new(false));
+    let sink = last_ran.clone();
     page.route("**/", move |route| {
         let sink = sink.clone();
         async move {
@@ -203,23 +277,15 @@ async fn a_handler_that_fetches_takes_the_route_over() {
         }
     })
     .await
-    .expect("Failed to set up the later route");
-    page.route("**/", |route| async move {
-        route.fetch(None).await?;
-        Ok(())
-    })
-    .await
-    .expect("Failed to set up the fetching route");
+    .expect("Failed to set up the last route");
+    page.route("**/", fetch_and_keep)
+        .await
+        .expect("Failed to set up the fetching route");
+    page.route("**/", fetch_then_fall_back)
+        .await
+        .expect("Failed to set up the falling-back route");
 
-    let navigation = page
-        .goto(
-            &format!("{}/", server.url()),
-            Some(
-                playwright_rs::protocol::GotoOptions::new()
-                    .timeout(std::time::Duration::from_secs(2)),
-            ),
-        )
-        .await;
+    let navigation = goto_within(&page, &format!("{}/", server.url()), 2).await;
 
     browser.close().await.expect("Failed to close browser");
     server.shutdown();
@@ -228,7 +294,7 @@ async fn a_handler_that_fetches_takes_the_route_over() {
         "a fetch the handler never answers leaves the request waiting: {navigation:?}"
     );
     assert!(
-        !*later_ran.lock().unwrap(),
+        !*last_ran.lock().unwrap(),
         "no later handler runs, so the request is not sent a second time"
     );
 }

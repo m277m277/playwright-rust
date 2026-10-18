@@ -346,7 +346,7 @@ impl BrowserContext {
                     }
                     break;
                 }
-                if !route.was_handled() {
+                if !route.settle_handler() {
                     continue;
                 }
                 break;

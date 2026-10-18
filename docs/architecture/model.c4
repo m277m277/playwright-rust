@@ -559,8 +559,9 @@ them to keep quiet about errors.'
         link ../../crates/playwright/src/protocol/route.rs
       }
       route_params = component 'route_params' {
-        description 'Wire-format builders for `Route` commands, kept pure so they can be unit
-tested and mutation tested without a driver.'
+        description 'Wire-format builders for `Route` commands, and the rule for whether a
+handler kept its route, kept pure so they can be unit tested and mutation
+tested without a driver.'
         metadata {
           path 'crates/playwright/src/protocol/route_params.rs'
         }
@@ -1493,7 +1494,7 @@ contents lazily.'
   playwright_rs.protocol.route -[constructs]-> playwright_rs.protocol.api_request_context 'APIRequestContext, InnerFetchOptions'
   playwright_rs.protocol.route -[calls]-> playwright_rs.protocol.glob 'glob_match'
   playwright_rs.protocol.route -[constructs]-> playwright_rs.protocol.request 'Request'
-  playwright_rs.protocol.route -[calls]-> playwright_rs.protocol.route_params 'continue_params, fulfill_params, merge_overrides, post_data_bytes'
+  playwright_rs.protocol.route -[calls]-> playwright_rs.protocol.route_params 'continue_params, fulfill_params, handler_kept_route, merge_overrides, post_data_bytes'
   playwright_rs.protocol.route -[names]-> playwright_rs.server.channel 'Channel'
   playwright_rs.protocol.route -[implements]-> playwright_rs.server.channel_owner 'ChannelOwner, ChannelOwnerImpl, DisposeReason, ParentOrConnection'
   playwright_rs.protocol.route -[calls]-> playwright_rs.server.connection 'ConnectionLike, downcast_parent'
@@ -1636,6 +1637,7 @@ contents lazily.'
   playwright_rs.tests -[constructs]-> playwright_rs.protocol.page.emulation 'AddScriptTagOptions, AddStyleTagOptions, ColorScheme, EmulateMediaOptions, Media'
   playwright_rs.tests -[constructs]-> playwright_rs.protocol.page.navigation 'GotoOptions, WaitUntil'
   playwright_rs.tests -[constructs]-> playwright_rs.protocol.page.network 'RouteFromHarOptions'
+  playwright_rs.tests -[names]-> playwright_rs.protocol.page.response 'Response'
   playwright_rs.tests -[calls]-> playwright_rs.protocol.playwright 'Playwright'
   playwright_rs.tests -[constructs]-> playwright_rs.protocol.proxy 'ProxySettings'
   playwright_rs.tests -[names]-> playwright_rs.protocol.request 'Request'

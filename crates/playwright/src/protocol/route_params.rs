@@ -1,5 +1,6 @@
-//! Wire-format builders for `Route` commands, kept pure so they can be unit
-//! tested and mutation tested without a driver.
+//! Wire-format builders for `Route` commands, and the rule for whether a
+//! handler kept its route, kept pure so they can be unit tested and mutation
+//! tested without a driver.
 //!
 //! The parameter shapes come from `packages/protocol/spec/network.yml` at the
 //! bundled driver's tag. Both commands take their fields as top-level command
@@ -189,6 +190,16 @@ pub(crate) fn merge_overrides(
         merged.post_data_bytes = later.post_data_bytes;
     }
     Some(merged)
+}
+
+/// Whether a route handler that returned `Ok` kept its request, so no later
+/// handler sees it. `handled` is whether any handler called `abort()`,
+/// `continue_()`, or `fulfill()`, accepted by the driver or not, and that
+/// keeps it. Short of one, an explicit `fallback()` passes it on, even after
+/// a `fetch()`; a `fetch()` alone keeps it, so the browser does not send the
+/// request a second time; and a handler that did neither falls back.
+pub(crate) fn handler_kept_route(handled: bool, fell_back: bool, fetched: bool) -> bool {
+    handled || (fetched && !fell_back)
 }
 
 /// Response headers from a HAR lookup as the map `FulfillOptions` takes:
@@ -495,5 +506,25 @@ mod tests {
         assert_eq!(map["x-dup"], "second");
         assert_eq!(map["content-type"], "text/html");
         assert_eq!(map.len(), 3);
+    }
+
+    #[test]
+    fn a_fetch_alone_keeps_the_route() {
+        assert!(handler_kept_route(false, false, true));
+    }
+
+    #[test]
+    fn a_fallback_after_a_fetch_passes_the_route_on() {
+        assert!(!handler_kept_route(false, true, true));
+    }
+
+    #[test]
+    fn a_handler_that_did_nothing_falls_back() {
+        assert!(!handler_kept_route(false, false, false));
+    }
+
+    #[test]
+    fn an_answer_keeps_the_route() {
+        assert!(handler_kept_route(true, false, false));
     }
 }

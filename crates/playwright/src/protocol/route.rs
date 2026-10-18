@@ -24,9 +24,14 @@ use std::sync::{Arc, Mutex};
 pub struct Route {
     base: ChannelOwnerImpl,
     /// Whether a handler has taken the route over: called `abort()`,
-    /// `continue_()`, `fulfill()`, or `fetch()`. A handler that returns
-    /// without setting it falls back to the next one.
+    /// `continue_()`, or `fulfill()`, or, once it returned, had fetched
+    /// without falling back. A handler that is still running after a
+    /// `fetch()` has not taken it over yet, so it may still fall back.
     handled: Arc<AtomicBool>,
+    /// Whether the running handler called `fallback()`.
+    fell_back: Arc<AtomicBool>,
+    /// Whether the running handler called `fetch()`.
+    fetched: Arc<AtomicBool>,
     /// Whether the driver has accepted an abort, continue, or fulfill, so the
     /// request no longer waits on a handler.
     answered: Arc<AtomicBool>,
@@ -66,6 +71,8 @@ impl Route {
         Ok(Self {
             base,
             handled: Arc::new(AtomicBool::new(false)),
+            fell_back: Arc::new(AtomicBool::new(false)),
+            fetched: Arc::new(AtomicBool::new(false)),
             answered: Arc::new(AtomicBool::new(false)),
             fallback_overrides,
             api_request_context: Arc::new(Mutex::new(None)),
@@ -74,11 +81,26 @@ impl Route {
 
     /// Returns whether a handler took the route over.
     ///
-    /// Returns `false` if the handler called `fallback()`, or returned without
-    /// calling a route command, indicating the next matching handler should
-    /// be tried.
+    /// Returns `false` while every handler so far fell back, explicitly or by
+    /// returning without answering or fetching, indicating the next matching
+    /// handler should be tried.
     pub(crate) fn was_handled(&self) -> bool {
         self.handled.load(Ordering::SeqCst)
+    }
+
+    /// Settles the handler that just returned `Ok`: marks the route handled
+    /// if the handler kept it, and returns whether it did. `false` means the
+    /// next handler is tried, and it starts with what this one did cleared.
+    pub(crate) fn settle_handler(&self) -> bool {
+        let kept = super::route_params::handler_kept_route(
+            self.was_handled(),
+            self.fell_back.swap(false, Ordering::SeqCst),
+            self.fetched.swap(false, Ordering::SeqCst),
+        );
+        if kept {
+            self.handled.store(true, Ordering::SeqCst);
+        }
+        kept
     }
 
     /// Aborts the request of a handler that returned an error, unless the
@@ -231,6 +253,7 @@ impl Route {
             ));
         }
         self.record_overrides(overrides);
+        self.fell_back.store(true, Ordering::SeqCst);
         Ok(())
     }
 
@@ -291,19 +314,24 @@ impl Route {
     /// and post data each default to the request's, as earlier handlers'
     /// `fallback()` calls left it.
     ///
-    /// Fetching takes the route over, as `fulfill()` does: no later handler
-    /// runs, so the handler must still answer the request with `fulfill()`,
-    /// `continue_()`, or `abort()`, or it waits. A handler that returns an
-    /// error before answering has its request aborted.
+    /// The handler then answers the request with `fulfill()`, `continue_()`,
+    /// or `abort()`, or passes it on with `fallback()`. One that returns
+    /// without doing either keeps the route, so no later handler runs and the
+    /// request waits; one that returns an error before answering has its
+    /// request aborted.
     ///
     /// # Arguments
     ///
     /// * `options` - Optional overrides for the fetch request
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the route was not dispatched through a context
+    /// with a request context, or if the fetch itself fails.
+    ///
     /// See: <https://playwright.dev/docs/api/class-route#route-fetch>
     pub async fn fetch(&self, options: impl Into<Option<FetchOptions>>) -> Result<FetchResponse> {
         let options = options.into();
-        self.handled.store(true, Ordering::SeqCst);
 
         let api_ctx = self
             .api_request_context
@@ -339,6 +367,9 @@ impl Route {
             timeout: opts.timeout,
         };
 
+        // From here the request may reach the server, even if the fetch then
+        // fails, so the handler keeps the route unless it falls back.
+        self.fetched.store(true, Ordering::SeqCst);
         api_ctx.inner_fetch(&url, Some(inner_opts)).await
     }
 }

@@ -387,8 +387,8 @@ impl Page {
                     }
                     break;
                 }
-                // If handler called fallback(), try the next matching handler
-                if !route.was_handled() {
+                // If handler fell back, try the next matching handler
+                if !route.settle_handler() {
                     continue;
                 }
                 break;
