@@ -86,7 +86,7 @@ async fn test_route_keeps_preflighted_cross_origin_redirect() {
     let result = page
         .evaluate_value(&format!(
             r#"
-        fetch('{}/cors-redirect', {{ credentials: 'include', headers: {{ 'X-App-Version': '1.2.3' }} }})
+        fetch(`{}/cors-redirect?to=${{encodeURIComponent(location.origin)}}`, {{ credentials: 'include', headers: {{ 'X-App-Version': '1.2.3' }} }})
             .then(async response => `${{response.status}} ${{await response.text()}}`)
             .catch(error => `failed: ${{error}}`)
         "#,

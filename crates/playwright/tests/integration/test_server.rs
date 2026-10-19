@@ -10,10 +10,12 @@
 use axum::{
     Router,
     body::Body,
+    extract::Query,
     extract::ws::{Message, WebSocket, WebSocketUpgrade},
     http::{HeaderMap, Response, StatusCode},
     routing::{any, get, post},
 };
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use tokio::task::JoinHandle;
 
@@ -1068,11 +1070,13 @@ async fn redirect_handler() -> Response<Body> {
         .unwrap()
 }
 
+/// Windows Chromium sends the cross-origin request without `Origin`, so fall
+/// back as upstream's test server does.
 fn request_origin(headers: &HeaderMap) -> &str {
     headers
         .get("origin")
         .and_then(|value| value.to_str().ok())
-        .expect("a cross-origin request carries Origin")
+        .unwrap_or("*")
 }
 
 /// Allows a credentialed request from the caller's origin carrying
@@ -1091,15 +1095,16 @@ async fn cors_preflight(headers: HeaderMap) -> Response<Body> {
         .unwrap()
 }
 
-/// Redirects a preflighted cross-origin request to `/cors-file` on the
-/// requesting page's origin.
-async fn cors_redirect_handler(headers: HeaderMap) -> Response<Body> {
+/// Redirects a preflighted cross-origin request to `/cors-file` on the origin
+/// named by `?to=`, the page's own.
+async fn cors_redirect_handler(
+    headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
+) -> Response<Body> {
+    let to = query.get("to").map(String::as_str).unwrap_or_default();
     cors_builder(&headers)
         .status(StatusCode::FOUND)
-        .header(
-            "Location",
-            format!("{}/cors-file", request_origin(&headers)),
-        )
+        .header("Location", format!("{to}/cors-file"))
         .body(Body::empty())
         .unwrap()
 }
