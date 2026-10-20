@@ -400,15 +400,26 @@ impl Request {
 
     /// Parses the POST data as JSON and deserializes into the target type `T`.
     ///
-    /// Returns `None` if the request has no POST data, or `Some(Err(...))` if the
-    /// JSON parsing fails.
+    /// A body sent as `application/x-www-form-urlencoded` is read as an object
+    /// of its fields, each value a string, as in Playwright's other clients.
+    ///
+    /// Returns `None` if the request has no POST data or an empty body, or
+    /// `Some(Err(...))` if the body does not parse or does not deserialize
+    /// into `T`.
     ///
     /// See: <https://playwright.dev/docs/api/class-request#request-post-data-json>
     pub fn post_data_json<T: DeserializeOwned>(&self) -> Option<Result<T>> {
         let data = self.post_data()?;
-        Some(serde_json::from_str(&data).map_err(|e| {
+        let content_type = self
+            .header_pairs()
+            .into_iter()
+            .rev()
+            .find_map(|(name, value)| (name == "content-type").then_some(value));
+        let value =
+            crate::protocol::route_params::post_data_json_value(&data, content_type.as_deref())?;
+        Some(value.and_then(serde_json::from_value).map_err(|e| {
             crate::error::Error::ProtocolError(format!(
-                "Failed to parse request post data as JSON: {}",
+                "Request post data is not JSON, or does not fit the requested type: {}",
                 e
             ))
         }))

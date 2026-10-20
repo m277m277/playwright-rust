@@ -279,6 +279,64 @@ async fn test_request_post_data_methods() {
     server.shutdown();
 }
 
+#[tokio::test]
+async fn test_post_data_json_parses_a_form_body() {
+    let server = TestServer::start().await;
+    let (_pw, browser, page) = crate::common::setup().await;
+    page.goto(&server.url(), None)
+        .await
+        .expect("Failed to navigate");
+
+    let captured: Arc<Mutex<Option<playwright_rs::protocol::Request>>> = Arc::new(Mutex::new(None));
+    let captured2 = captured.clone();
+    let notify = Arc::new(Notify::new());
+    let notify2 = notify.clone();
+    page.on_request(move |request| {
+        let captured = captured2.clone();
+        let n = notify2.clone();
+        async move {
+            if request.method() == "POST" {
+                *captured.lock().await = Some(request);
+                n.notify_one();
+            }
+            Ok(())
+        }
+    })
+    .await
+    .expect("Failed to set request handler");
+
+    let _: serde_json::Value = page
+        .evaluate::<(), serde_json::Value>(
+            &format!(
+                r#"fetch('{}/echo-headers', {{
+                    method: 'POST',
+                    headers: {{'content-type': 'application/x-www-form-urlencoded; charset=UTF-8'}},
+                    body: 'foo=bar&baz=123&empty='
+                }}).then(r => r.text())"#,
+                server.url()
+            ),
+            None,
+        )
+        .await
+        .expect("fetch should succeed");
+    notified_or_timeout(&notify, 5000, "form POST request handler").await;
+
+    let guard = captured.lock().await;
+    let request = guard.as_ref().expect("Should have captured a POST request");
+    let value = request
+        .post_data_json::<serde_json::Value>()
+        .expect("Should have post data")
+        .expect("form body should parse");
+    assert_eq!(
+        value,
+        serde_json::json!({"foo": "bar", "baz": "123", "empty": ""})
+    );
+    drop(guard);
+
+    browser.close().await.expect("Failed to close browser");
+    server.shutdown();
+}
+
 /// Test that request.existing_response() returns None initially and Some after the response event.
 #[tokio::test]
 async fn test_request_existing_response() {

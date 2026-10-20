@@ -56,6 +56,26 @@ pub(crate) fn post_data_bytes<'a>(
     post_data.map(str::as_bytes).or(bytes)
 }
 
+/// Post data read as JSON, the way upstream's `postDataJSON` reads it: no
+/// value for an empty body, a form-urlencoded body as an object of its
+/// fields (blank values kept, the last value winning for a repeated name),
+/// and any other body parsed as JSON.
+pub(crate) fn post_data_json_value(
+    post_data: &str,
+    content_type: Option<&str>,
+) -> Option<serde_json::Result<Value>> {
+    if post_data.is_empty() {
+        return None;
+    }
+    if content_type.is_some_and(|c| c.contains("application/x-www-form-urlencoded")) {
+        let fields = url::form_urlencoded::parse(post_data.as_bytes())
+            .map(|(name, value)| (name.into_owned(), Value::String(value.into_owned())))
+            .collect();
+        return Some(Ok(Value::Object(fields)));
+    }
+    Some(serde_json::from_str(post_data))
+}
+
 /// The `postData` parameter: binary on the wire, so both forms are base64.
 pub(crate) fn post_data_param(post_data: Option<String>, bytes: Option<Vec<u8>>) -> Option<String> {
     post_data_bytes(post_data.as_deref(), bytes.as_deref()).map(base64)
@@ -541,6 +561,44 @@ mod tests {
             post_data_param(Some("text".to_string()), Some(vec![0x01])).as_deref(),
             Some("dGV4dA==")
         );
+    }
+
+    #[test]
+    fn post_data_json_reads_a_form_body_as_its_fields() {
+        let form = Some("application/x-www-form-urlencoded; charset=UTF-8");
+        assert_eq!(
+            post_data_json_value("foo=bar&baz=1+2%26&empty=&foo=last", form)
+                .unwrap()
+                .unwrap(),
+            json!({"foo": "last", "baz": "1 2&", "empty": ""})
+        );
+    }
+
+    #[test]
+    fn post_data_json_parses_any_other_body_as_json() {
+        let body = r#"{"a": [1, "x=y"]}"#;
+        assert_eq!(
+            post_data_json_value(body, Some("application/json"))
+                .unwrap()
+                .unwrap(),
+            json!({"a": [1, "x=y"]})
+        );
+        assert_eq!(
+            post_data_json_value(body, None).unwrap().unwrap(),
+            json!({"a": [1, "x=y"]})
+        );
+        assert!(
+            post_data_json_value("foo=bar", Some("text/plain"))
+                .unwrap()
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn post_data_json_has_no_value_for_an_empty_body() {
+        let form = Some("application/x-www-form-urlencoded");
+        assert!(post_data_json_value("", form).is_none());
+        assert!(post_data_json_value("", None).is_none());
     }
 
     #[test]
