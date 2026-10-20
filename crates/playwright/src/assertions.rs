@@ -99,6 +99,17 @@ pub fn expect(locator: Locator) -> Expectation {
     Expectation::new(locator)
 }
 
+/// The `getComputedStyle` argument for a pseudo-element. Upstream takes the
+/// bare name and adds `::`; the CSSOM ignores an argument without a colon,
+/// and every engine but Chromium then reads the element's own style.
+fn pseudo_element(pseudo: &str) -> String {
+    if pseudo.starts_with(':') {
+        pseudo.to_string()
+    } else {
+        format!("::{pseudo}")
+    }
+}
+
 /// Collapses runs of whitespace (spaces, tabs, newlines) to single spaces and
 /// trims the ends, matching upstream Playwright's whitespace normalization for
 /// the string-argument text assertions. The regex assertion variants match the
@@ -862,8 +873,9 @@ impl Expectation {
         self.to_have_css_inner(name, value, None).await
     }
 
-    /// Asserts the computed CSS of a **pseudo-element** (e.g. `"::before"`,
-    /// `"::after"`) matches `value`. Otherwise like
+    /// Asserts the computed CSS of a **pseudo-element** matches `value`.
+    /// `pseudo` is `"before"` or `"after"` as in Playwright's other clients;
+    /// the CSS spelling `"::before"` works too. Otherwise like
     /// [`to_have_css`](Self::to_have_css).
     ///
     /// See: <https://playwright.dev/docs/api/class-locatorassertions#locator-assertions-to-have-css>
@@ -877,7 +889,7 @@ impl Expectation {
         let getter = match pseudo {
             Some(p) => format!(
                 "getComputedStyle(el, {})",
-                serde_json::to_string(p).unwrap()
+                serde_json::to_string(&pseudo_element(p)).unwrap()
             ),
             None => "getComputedStyle(el)".to_string(),
         };
@@ -1805,5 +1817,12 @@ mod tests {
         assert_eq!(normalize_whitespace("already normal"), "already normal");
         assert_eq!(normalize_whitespace("   "), "");
         assert_eq!(normalize_whitespace(""), "");
+    }
+
+    #[test]
+    fn pseudo_element_takes_the_bare_name_or_the_css_spelling() {
+        assert_eq!(pseudo_element("before"), "::before");
+        assert_eq!(pseudo_element("::after"), "::after");
+        assert_eq!(pseudo_element(":before"), ":before");
     }
 }

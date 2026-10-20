@@ -1365,5 +1365,40 @@ async fn test_to_have_css_pseudo() {
         .to_have_css_pseudo("color", "rgb(1, 2, 3)", "::before")
         .await
         .expect("pseudo-element CSS should match");
+    expect(page.locator("#x"))
+        .to_have_css_pseudo("color", "rgb(1, 2, 3)", "before")
+        .await
+        .expect("the bare name Playwright's docs use should match too");
+    assert!(
+        expect(page.locator("#x"))
+            .not()
+            .with_timeout(std::time::Duration::from_millis(100))
+            .to_have_css_pseudo("color", "rgb(1, 2, 3)", "before")
+            .await
+            .is_err()
+    );
     browser.close().await.expect("close");
+}
+
+#[tokio::test]
+#[ignore = "launches Firefox and WebKit; runs in CI's --run-ignored lane"]
+async fn test_to_have_css_pseudo_bare_name_in_firefox_and_webkit() {
+    let playwright = Playwright::launch()
+        .await
+        .expect("Failed to launch Playwright");
+    for browser_type in [playwright.firefox(), playwright.webkit()] {
+        let browser = browser_type.launch().await.expect("launch");
+        let page = browser.new_page().await.expect("new page");
+        page.set_content(
+            "<style>#x::before { content: 'x'; color: rgb(1, 2, 3); }</style><div id='x'>d</div>",
+            None,
+        )
+        .await
+        .expect("set content");
+        expect(page.locator("#x"))
+            .to_have_css_pseudo("color", "rgb(1, 2, 3)", "before")
+            .await
+            .unwrap_or_else(|e| panic!("{}: {e}", browser_type.name()));
+        browser.close().await.expect("close");
+    }
 }
