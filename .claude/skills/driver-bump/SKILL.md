@@ -12,16 +12,14 @@ The crate pins one Playwright driver (`PLAYWRIGHT_VERSION` in
 small in the diff and large in what it can break, because the driver
 **drops parameters it does not recognize instead of rejecting them**. A
 renamed parameter therefore turns a feature off with the whole suite
-green. That is not hypothetical:
+green. Past releases have done exactly that:
 
-- 1.58 removed the `devtools` launch option; it did nothing from 0.8.7 until
-  `14de43f` noticed.
+- 1.58 removed the `devtools` launch option, which then did nothing.
 - 1.63 renamed every `tracingStart` capture parameter, and traces came out
   empty.
-- 1.64 took a request's `id` verbatim as the trace call id, so the crate's
-  integer ids made every trace action `Unknown` in `playwright-rs-trace`
-  (`afb350a`), and it moved the trace format to v10. Neither was in the
-  release notes.
+- 1.64 took a request's `id` verbatim as the trace call id, which turned
+  the crate's integer ids into `Unknown` trace actions, and moved the trace
+  format to v10. Neither was in the release notes.
 
 So the job is to establish the delta first, then move the version.
 
@@ -44,7 +42,7 @@ the others miss.
 4. **playwright-python.** Its roll commit and the fixes around it on the
    matching `release-X.Y` branch (and `main` for a minor). Its new tests are
    the behavior spec for ours. It also pins the Node version the driver
-   expects (`52fa68b`); match it.
+   expects; match it.
 
 For a patch release, `gh api repos/microsoft/playwright/compare/vA...vB`
 lists the cherry-picks and files in one call, and is usually the whole
@@ -62,7 +60,12 @@ Then sort what you found:
   the new one. The red run on the old pin is the evidence the bump fixes
   something for Rust callers; without it the CHANGELOG line is a guess.
   Check reach first: the crate has an `Electron` protocol object but no
-  launch API, so Electron fixes do not reach it.
+  launch API, so Electron fixes do not reach it. Port the upstream test
+  server's behavior as it is, fallbacks and fixed URLs included, even
+  where one looks unreachable on macOS: upstream's tests run on every
+  platform, and Windows Chromium can omit request headers that macOS sends.
+  A test that may differ on Windows can be proved before it reaches `main`
+  with `gh workflow run test.yml --ref <branch>`.
 - **New public API**: a minor bump's new surface goes into a just-in-time
   plan (`docs/implementation-plans/vX.Y-playwright-A.B.md`), one slice per
   feature, landed after the bump. The 1.64 plan is the worked example.
