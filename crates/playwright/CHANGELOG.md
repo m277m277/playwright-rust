@@ -31,6 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A route handler that fails after `route.fetch()` no longer leaves its request hanging.** A handler that returns an error before it fulfills, continues, or aborts its request has the request aborted, but a `fetch()` counted as one of those, so the page waited until its navigation timed out. A handler that fetches and returns without answering or falling back still keeps the route: no later handler runs and the request waits, as before.
 - **A route handler can fall back after `route.fetch()`.** `fallback()` failed with "Route is already handled!" once the handler had fetched, so a handler could not inspect the real response and then leave the request to the next one. It now passes the request on, as in playwright-python.
 
+### Security
+
+- **Bumped transitive `rustls-webpki` 0.103.15 → 0.103.16 ([RUSTSEC-2026-0382](https://rustsec.org/advisories/RUSTSEC-2026-0382)) and `webpki-roots` 1.0.6 → 1.0.10 ([RUSTSEC-2026-0381](https://rustsec.org/advisories/RUSTSEC-2026-0381))** in the workspace lockfile and in the excluded site-e2e and fuzz lockfiles. Both let a certificate chain through emSign intermediates whose private keys are now public: the bundled roots included `emSign ECC Root CA - G3`, and verification did not reject the distrusted intermediates. `webpki-roots` is the trust store for the build script's driver download and, with the `rustls-tls-webpki-roots` feature, for `connect()` over `wss://`; `rustls-webpki` verifies every rustls connection. 1.0.10 also drops 19 other roots Mozilla no longer trusts; the driver still downloads from `nodejs.org` and `registry.npmjs.org` with it. A downstream project picks up the fix with `cargo update -p rustls-webpki -p webpki-roots@1`.
+
 ## [0.20.1] - 2026-10-16
 
 ### Fixed

@@ -85,6 +85,12 @@ criteria = "safe-to-deploy"
 delta = "0.6.2 -> 0.6.4"
 notes = "No unsafe, no build script, no new deps. Redirect Location joining gains the RFC 3986 network-path case: a Location starting with // takes the base's scheme and its own authority, failing with BadLocationHeader when the base has no scheme or the result does not parse, so a scheme-relative redirect no longer resolves as a root-relative path on the old host. ArrayVec gains Clone, PartialEq/Eq over the active prefix, Default, and a try_push that returns CapacityError instead of indexing past the array; push itself is unchanged and now documents its panic. CapacityError is exported doc(hidden). Everything else is unit tests."
 
+[[audits.webpki-roots]]
+who = "Paul Adamson <paul.adamson.01@gmail.com>"
+criteria = "safe-to-deploy"
+delta = "1.0.6 -> 1.0.10"
+notes = "Data-only: src/lib.rs trust-anchor constants follow Mozilla's store (20 roots removed including emSign ECC Root CA - G3 for RUSTSEC-2026-0381, 4 added: SECOM TLS ECC/RSA 2024, Telia EC/RSA TLS v3). No code lines changed; #![forbid(unsafe_code)] kept; no build script. MSRV 1.64 -> 1.71; dev-dep yasna 0.5 -> 0.6."
+
 [[trusted.aho-corasick]]
 criteria = "safe-to-deploy"
 user-id = 189 # Andrew Gallant (BurntSushi)
