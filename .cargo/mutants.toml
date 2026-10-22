@@ -33,6 +33,7 @@ examine_globs = [
     "crates/playwright/src/protocol/page/mod.rs",
     "crates/playwright/src/protocol/browser_context/events.rs",
     "crates/playwright/src/protocol/in_flight.rs",
+    "crates/playwright/src/protocol/route_handlers.rs",
 ]
 
 # The unit tests plus every test binary that runs without a browser. The
@@ -88,6 +89,11 @@ exclude_re = [
     # tested; the fulfiller, its inner step, and the engine lookup drive a
     # live Route and need the integration suite.
     "fulfill_from_service|service_response|request_context",
+
+    # route_handlers.rs: the list bookkeeping and the WebSocket handler
+    # lookup are unit tested; syncing and running either list needs a live
+    # channel, Route or WebSocketRoute, so the integration suite covers them.
+    "(WebSocket)?RouteHandlers::(sync|run|dispatch)",
 
     # Builder constructors — trivially correct, integration-test-only
     "Options::builder",

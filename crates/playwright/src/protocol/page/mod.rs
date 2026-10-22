@@ -53,7 +53,7 @@ pub struct Page {
     /// guarantees the Frame object exists before the Page that references it)
     main_frame: crate::protocol::Frame,
     /// Route handlers for network interception
-    route_handlers: Arc<Mutex<Vec<crate::protocol::route::RouteHandlerEntry>>>,
+    route_handlers: Arc<crate::protocol::route_handlers::RouteHandlers>,
     /// Download event handlers and one-shot `expect_download` waiters.
     download: Arc<EventRegistry<Download>>,
     /// Dialog event handlers (no `expect_*`; waiter queue stays empty).
@@ -71,7 +71,7 @@ pub struct Page {
     /// WebSocket event handlers
     websocket_handlers: Arc<Mutex<Vec<WebSocketHandler>>>,
     /// WebSocketRoute handlers for route_web_socket()
-    ws_route_handlers: Arc<Mutex<Vec<WsRouteHandlerEntry>>>,
+    ws_route_handlers: Arc<crate::protocol::route_handlers::WebSocketRouteHandlers>,
     /// Current viewport size (None when no_viewport is set).
     /// Updated by set_viewport_size().
     viewport: Arc<RwLock<Option<Viewport>>>,
@@ -132,17 +132,6 @@ pub struct Page {
 
 /// Type alias for boxed websocket handler future
 type WebSocketHandlerFuture = Pin<Box<dyn Future<Output = Result<()>> + Send>>;
-
-/// Type alias for boxed WebSocketRoute handler future
-type WebSocketRouteHandlerFuture = Pin<Box<dyn Future<Output = Result<()>> + Send>>;
-
-/// Storage for a single WebSocket route handler entry
-#[derive(Clone)]
-struct WsRouteHandlerEntry {
-    pattern: String,
-    handler:
-        Arc<dyn Fn(crate::protocol::WebSocketRoute) -> WebSocketRouteHandlerFuture + Send + Sync>,
-}
 
 /// WebSocket event handler
 type WebSocketHandler = Arc<dyn Fn(WebSocket) -> WebSocketHandlerFuture + Send + Sync>;

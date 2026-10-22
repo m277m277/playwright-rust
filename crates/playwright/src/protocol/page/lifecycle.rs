@@ -59,12 +59,8 @@ impl Page {
 
         // Initialize URL to about:blank
 
-        // Initialize empty route handlers
-        let route_handlers = Arc::new(Mutex::new(Vec::new()));
-
         // Initialize empty event handlers
         let websocket_handlers = Arc::new(Mutex::new(Vec::new()));
-        let ws_route_handlers = Arc::new(Mutex::new(Vec::new()));
 
         // Initialize cached main frame as empty (will be populated on first access)
 
@@ -104,7 +100,7 @@ impl Page {
         Ok(Self {
             base,
             main_frame,
-            route_handlers,
+            route_handlers: Arc::default(),
             download: EventRegistry::new("download"),
             dialog: EventRegistry::new("dialog"),
             dialog_closed: EventRegistry::new("dialogClosed"),
@@ -113,7 +109,7 @@ impl Page {
             request_failed: EventRegistry::new("requestFailed"),
             response: EventRegistry::new("response"),
             websocket_handlers,
-            ws_route_handlers,
+            ws_route_handlers: Arc::default(),
             viewport,
             is_closed: Arc::new(AtomicBool::new(false)),
             default_timeout_ms: Arc::new(AtomicU64::new(crate::DEFAULT_TIMEOUT_MS.to_bits())),

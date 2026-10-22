@@ -121,10 +121,10 @@ pub(crate) fn glob_to_regex_pattern(glob: &str) -> Option<String> {
 /// Returns whether `text` matches the glob `pattern`.
 ///
 /// Returns `false` for a malformed pattern, matching the driver's behavior
-/// of treating it as matching nothing rather than panicking.
-///
-/// Callers that match repeatedly against one pattern should compile it once
-/// with [`GlobMatcher::new`] instead.
+/// of treating it as matching nothing rather than panicking. Callers compile
+/// with [`GlobMatcher::new`] instead, once per pattern; this one-shot form is
+/// what the port's tests check against the driver's cases.
+#[cfg(test)]
 pub(crate) fn glob_match(pattern: &str, text: &str) -> bool {
     GlobMatcher::new(pattern).is_some_and(|m| m.matches(text))
 }
@@ -133,6 +133,7 @@ pub(crate) fn glob_match(pattern: &str, text: &str) -> bool {
 ///
 /// `Frame::wait_for_url` polls every 50ms, so compiling per call meant
 /// hundreds of identical regex compilations for a single wait.
+#[derive(Clone)]
 pub(crate) struct GlobMatcher {
     regex: regex::Regex,
 }

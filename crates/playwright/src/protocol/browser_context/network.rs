@@ -1,11 +1,9 @@
-use super::{BrowserContext, ContextWsRouteHandlerEntry, WsRouteHandlerFuture};
+use super::BrowserContext;
 use crate::error::{Error, Result};
 use crate::protocol::Route;
-use crate::protocol::in_flight::settle_removed;
-use crate::protocol::route::{RouteHandlerEntry, UnrouteBehavior};
+use crate::protocol::route::UnrouteBehavior;
 use crate::server::channel_owner::ChannelOwner;
 use std::future::Future;
-use std::sync::Arc;
 
 /// Routes, network and WebSocket interception, HAR replay.
 impl BrowserContext {
@@ -26,12 +24,8 @@ impl BrowserContext {
         F: Fn(Route) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<()>> + Send + 'static,
     {
-        self.route_handlers
-            .lock()
-            .unwrap()
-            .push(RouteHandlerEntry::new(pattern, handler));
-
-        self.enable_network_interception().await
+        self.route_handlers.add(pattern, handler);
+        self.route_handlers.sync(self.channel()).await
     }
 
     /// Fulfills matching requests from every page in this context using an
@@ -87,11 +81,8 @@ impl BrowserContext {
     /// See: <https://playwright.dev/docs/api/class-browsercontext#browser-context-unroute>
     #[tracing::instrument(level = "debug", skip_all, fields(guid = %self.guid(), url = %pattern))]
     pub async fn unroute(&self, pattern: &str) -> Result<()> {
-        self.route_handlers
-            .lock()
-            .unwrap()
-            .retain(|entry| entry.pattern != pattern);
-        self.enable_network_interception().await
+        self.route_handlers.remove(pattern);
+        self.route_handlers.sync(self.channel()).await
     }
 
     /// Removes all registered route handlers.
@@ -106,9 +97,8 @@ impl BrowserContext {
     /// See: <https://playwright.dev/docs/api/class-browsercontext#browser-context-unroute-all>
     #[tracing::instrument(level = "debug", skip_all, fields(guid = %self.guid()))]
     pub async fn unroute_all(&self, behavior: Option<UnrouteBehavior>) -> Result<()> {
-        let removed = std::mem::take(&mut *self.route_handlers.lock().unwrap());
-        settle_removed(removed.iter().map(|entry| &entry.in_flight), behavior).await;
-        self.enable_network_interception().await
+        self.route_handlers.remove_all(behavior).await;
+        self.route_handlers.sync(self.channel()).await
     }
 
     /// Replays network requests from a HAR file recorded previously.
@@ -256,57 +246,8 @@ impl BrowserContext {
         F: Fn(crate::protocol::WebSocketRoute) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<()>> + Send + 'static,
     {
-        let handler = Arc::new(
-            move |route: crate::protocol::WebSocketRoute| -> WsRouteHandlerFuture {
-                Box::pin(handler(route))
-            },
-        );
-
-        self.ws_route_handlers
-            .lock()
-            .unwrap()
-            .push(ContextWsRouteHandlerEntry {
-                pattern: url.to_string(),
-                handler,
-            });
-
-        self.enable_ws_interception().await
-    }
-
-    /// Updates WebSocket interception patterns for this context.
-    async fn enable_ws_interception(&self) -> Result<()> {
-        let patterns: Vec<serde_json::Value> = self
-            .ws_route_handlers
-            .lock()
-            .unwrap()
-            .iter()
-            .map(|entry| serde_json::json!({ "glob": entry.pattern }))
-            .collect();
-
-        self.channel()
-            .send_no_result(
-                "setWebSocketInterceptionPatterns",
-                serde_json::json!({ "patterns": patterns }),
-            )
-            .await
-    }
-
-    /// Updates network interception patterns for this context
-    async fn enable_network_interception(&self) -> Result<()> {
-        let patterns: Vec<serde_json::Value> = self
-            .route_handlers
-            .lock()
-            .unwrap()
-            .iter()
-            .map(|entry| serde_json::json!({ "glob": entry.pattern }))
-            .collect();
-
-        self.channel()
-            .send_no_result(
-                "setNetworkInterceptionPatterns",
-                serde_json::json!({ "patterns": patterns }),
-            )
-            .await
+        self.ws_route_handlers.add(url, handler);
+        self.ws_route_handlers.sync(self.channel()).await
     }
 
     /// Runs this context's route handlers on a request: one the driver
@@ -314,8 +255,7 @@ impl BrowserContext {
     /// as upstream's page hands it to its context. Continues the request if
     /// these fall back too.
     pub(crate) async fn on_route_event(&self, route: Route) {
-        let handlers = self.route_handlers.lock().unwrap().clone();
-        if route.run_handlers(&handlers, "Context").await {
+        if self.route_handlers.run(&route, "Context").await {
             return;
         }
         // Every handler fell back, or none matched: send the request on with

@@ -74,7 +74,7 @@ impl BrowserContext {
             base,
             browser,
             pages: Arc::new(Mutex::new(Vec::new())),
-            route_handlers: Arc::new(Mutex::new(Vec::new())),
+            route_handlers: Arc::default(),
             request_context_guid,
             tracing_guid,
             debugger_guid,
@@ -99,7 +99,7 @@ impl BrowserContext {
             forwarders: super::events::Forwarders::default(),
             serviceworker_waiters: Arc::new(Mutex::new(Vec::new())),
             service_workers_list: Arc::new(Mutex::new(Vec::new())),
-            ws_route_handlers: Arc::new(Mutex::new(Vec::new())),
+            ws_route_handlers: Arc::default(),
             is_closed: Arc::new(AtomicBool::new(false)),
             option_har: Arc::new(tokio::sync::Mutex::new(None)),
         };

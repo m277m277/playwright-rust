@@ -32,16 +32,6 @@ type CtxHandlerFuture = Pin<Box<dyn Future<Output = Result<()>> + Send>>;
 /// Binding callback: receives deserialized JS args, returns a JSON value
 type BindingCallback = Arc<dyn Fn(Vec<serde_json::Value>) -> BindingCallbackFuture + Send + Sync>;
 
-/// Type alias for boxed WebSocketRoute handler future
-type WsRouteHandlerFuture = Pin<Box<dyn Future<Output = Result<()>> + Send>>;
-
-/// Storage for a single WebSocket route handler entry
-#[derive(Clone)]
-struct ContextWsRouteHandlerEntry {
-    pattern: String,
-    handler: Arc<dyn Fn(crate::protocol::WebSocketRoute) -> WsRouteHandlerFuture + Send + Sync>,
-}
-
 /// BrowserContext represents an isolated browser session.
 ///
 /// Contexts are isolated environments within a browser instance. Each context
@@ -111,7 +101,7 @@ pub struct BrowserContext {
     /// All open pages in this context
     pages: Arc<Mutex<Vec<Page>>>,
     /// Route handlers for context-level network interception
-    route_handlers: Arc<Mutex<Vec<crate::protocol::route::RouteHandlerEntry>>>,
+    route_handlers: Arc<crate::protocol::route_handlers::RouteHandlers>,
     /// APIRequestContext GUID from initializer (resolved lazily)
     request_context_guid: Option<String>,
     /// Tracing GUID from initializer (resolved lazily)
@@ -154,7 +144,7 @@ pub struct BrowserContext {
     /// Active service workers tracked via "serviceWorker" events
     service_workers_list: Arc<Mutex<Vec<crate::protocol::Worker>>>,
     /// WebSocketRoute handlers for route_web_socket()
-    ws_route_handlers: Arc<Mutex<Vec<ContextWsRouteHandlerEntry>>>,
+    ws_route_handlers: Arc<crate::protocol::route_handlers::WebSocketRouteHandlers>,
     /// Whether this context has been closed.
     /// Set to true when close() is called or a "close" event is received.
     is_closed: Arc<AtomicBool>,

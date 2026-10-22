@@ -328,39 +328,8 @@ impl ChannelOwner for Page {
                     .and_then(|v| v.get("guid"))
                     .and_then(|v| v.as_str())
                 {
-                    let connection = self.connection();
-                    let wsr_guid_owned = wsr_guid.to_string();
-                    let self_clone = self.clone();
-
-                    crate::task::spawn(async move {
-                        let route: crate::protocol::WebSocketRoute = match connection
-                            .get_typed::<crate::protocol::WebSocketRoute>(&wsr_guid_owned)
-                            .await
-                        {
-                            Ok(r) => r,
-                            Err(e) => {
-                                tracing::warn!("Failed to get WebSocketRoute object: {}", e);
-                                return;
-                            }
-                        };
-
-                        let url = route.url().to_string();
-                        let handlers = self_clone.ws_route_handlers.lock().unwrap().clone();
-                        for entry in handlers.iter().rev() {
-                            if crate::protocol::route::matches_pattern(&entry.pattern, &url) {
-                                let handler = entry.handler.clone();
-                                let route_clone = route.clone();
-                                crate::task::spawn(async move {
-                                    let route_after = route_clone.clone();
-                                    if let Err(e) = handler(route_clone).await {
-                                        tracing::error!("Error in webSocketRoute handler: {}", e);
-                                    }
-                                    route_after.after_handle().await;
-                                });
-                                break;
-                            }
-                        }
-                    });
+                    self.ws_route_handlers
+                        .dispatch(self.connection(), wsr_guid, "Page");
                 }
             }
             "worker" => {

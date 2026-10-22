@@ -1,11 +1,9 @@
-use super::{Page, WebSocketRouteHandlerFuture, WsRouteHandlerEntry};
+use super::Page;
 use crate::error::{Error, Result};
 use crate::protocol::Route;
-use crate::protocol::in_flight::settle_removed;
-use crate::protocol::route::{RouteHandlerEntry, UnrouteBehavior};
+use crate::protocol::route::UnrouteBehavior;
 use crate::server::channel_owner::ChannelOwner;
 use std::future::Future;
-use std::sync::Arc;
 
 /// Network interception: routes, HAR replay, WebSocket routes and extra headers.
 ///
@@ -44,12 +42,8 @@ impl Page {
         F: Fn(Route) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<()>> + Send + 'static,
     {
-        self.route_handlers
-            .lock()
-            .unwrap()
-            .push(RouteHandlerEntry::new(pattern, handler));
-
-        self.enable_network_interception().await
+        self.route_handlers.add(pattern, handler);
+        self.route_handlers.sync(self.channel()).await
     }
 
     /// Fulfills matching requests from an in-process tower `Service`, such as
@@ -95,30 +89,6 @@ impl Page {
         .await
     }
 
-    /// Updates network interception patterns for this page
-    async fn enable_network_interception(&self) -> Result<()> {
-        // Collect all patterns from registered handlers
-        // Each pattern must be an object with "glob" field
-        let patterns: Vec<serde_json::Value> = self
-            .route_handlers
-            .lock()
-            .unwrap()
-            .iter()
-            .map(|entry| serde_json::json!({ "glob": entry.pattern }))
-            .collect();
-
-        // Send protocol command to update network interception patterns
-        // Follows playwright-python's approach
-        self.channel()
-            .send_no_result(
-                "setNetworkInterceptionPatterns",
-                serde_json::json!({
-                    "patterns": patterns
-                }),
-            )
-            .await
-    }
-
     /// Removes route handler(s) matching the given URL pattern.
     ///
     /// # Arguments
@@ -128,11 +98,8 @@ impl Page {
     /// See: <https://playwright.dev/docs/api/class-page#page-unroute>
     #[tracing::instrument(level = "debug", skip_all, fields(guid = %self.guid(), url = %pattern))]
     pub async fn unroute(&self, pattern: &str) -> Result<()> {
-        self.route_handlers
-            .lock()
-            .unwrap()
-            .retain(|entry| entry.pattern != pattern);
-        self.enable_network_interception().await
+        self.route_handlers.remove(pattern);
+        self.route_handlers.sync(self.channel()).await
     }
 
     /// Removes all registered route handlers.
@@ -147,9 +114,8 @@ impl Page {
     /// See: <https://playwright.dev/docs/api/class-page#page-unroute-all>
     #[tracing::instrument(level = "debug", skip_all, fields(guid = %self.guid()))]
     pub async fn unroute_all(&self, behavior: Option<UnrouteBehavior>) -> Result<()> {
-        let removed = std::mem::take(&mut *self.route_handlers.lock().unwrap());
-        settle_removed(removed.iter().map(|entry| &entry.in_flight), behavior).await;
-        self.enable_network_interception().await
+        self.route_handlers.remove_all(behavior).await;
+        self.route_handlers.sync(self.channel()).await
     }
 
     /// Replays network requests from a HAR file recorded previously.
@@ -307,39 +273,8 @@ impl Page {
         F: Fn(crate::protocol::WebSocketRoute) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<()>> + Send + 'static,
     {
-        let handler = Arc::new(
-            move |route: crate::protocol::WebSocketRoute| -> WebSocketRouteHandlerFuture {
-                Box::pin(handler(route))
-            },
-        );
-
-        self.ws_route_handlers
-            .lock()
-            .unwrap()
-            .push(WsRouteHandlerEntry {
-                pattern: url.to_string(),
-                handler,
-            });
-
-        self.enable_ws_interception().await
-    }
-
-    /// Updates WebSocket interception patterns for this page.
-    async fn enable_ws_interception(&self) -> Result<()> {
-        let patterns: Vec<serde_json::Value> = self
-            .ws_route_handlers
-            .lock()
-            .unwrap()
-            .iter()
-            .map(|entry| serde_json::json!({ "glob": entry.pattern }))
-            .collect();
-
-        self.channel()
-            .send_no_result(
-                "setWebSocketInterceptionPatterns",
-                serde_json::json!({ "patterns": patterns }),
-            )
-            .await
+        self.ws_route_handlers.add(url, handler);
+        self.ws_route_handlers.sync(self.channel()).await
     }
 
     /// Handles a route event from the protocol
@@ -350,8 +285,7 @@ impl Page {
     /// next matching handler in the chain is tried, then the context's
     /// handlers, before the request is continued.
     pub(super) async fn on_route_event(&self, route: Route) {
-        let handlers = self.route_handlers.lock().unwrap().clone();
-        if route.run_handlers(&handlers, "Page").await {
+        if self.route_handlers.run(&route, "Page").await {
             return;
         }
         // Every page handler fell back: the context's handlers come next, and
