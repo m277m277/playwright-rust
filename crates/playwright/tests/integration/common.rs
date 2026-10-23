@@ -122,6 +122,31 @@ pub async fn setup_context() -> (Playwright, Browser, BrowserContext) {
     (playwright, browser, context)
 }
 
+/// Launches Chromium and opens a page in a context created with `base_url`.
+pub async fn setup_with_base_url(base_url: String) -> (Playwright, Browser, BrowserContext, Page) {
+    init_tracing();
+    let playwright = Playwright::launch()
+        .await
+        .expect("setup_with_base_url: failed to launch Playwright — is the driver installed?");
+    let browser = playwright
+        .chromium()
+        .launch()
+        .await
+        .expect("setup_with_base_url: failed to launch Chromium — are browsers installed?");
+    let options = playwright_rs::protocol::BrowserContextOptions::builder()
+        .base_url(base_url)
+        .build();
+    let context = browser
+        .new_context_with_options(options)
+        .await
+        .expect("setup_with_base_url: failed to create the context");
+    let page = context
+        .new_page()
+        .await
+        .expect("setup_with_base_url: failed to create a page");
+    (playwright, browser, context, page)
+}
+
 /// The driver's own Node runtime and its `package/` directory, for tests
 /// that script the driver directly. The bundled runtime, not whatever
 /// `node` is on PATH, so the script sees the same Playwright the crate does.

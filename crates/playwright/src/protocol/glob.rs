@@ -1,5 +1,8 @@
 // URL glob matching, shared by client-side waits (`Frame::wait_for_url`) and
-// client-side route matching (`Page::route`, `BrowserContext::route`).
+// client-side route matching (`Page::route`, `BrowserContext::route`). Route
+// matching resolves each pattern against the context's base URL first
+// (`GlobMatcher::for_url`), as the driver's `urlMatches` does. Waits match
+// the pattern as written, where the driver resolves it too.
 //
 // This is a port of the driver's `globToRegexPattern`
 // (`packages/isomorphic/urlMatch.ts`), not an independent implementation.
@@ -118,6 +121,104 @@ pub(crate) fn glob_to_regex_pattern(glob: &str) -> Option<String> {
     Some(out)
 }
 
+/// Reads an `http(s)` base URL as the `ws(s)` URL a WebSocket pattern is
+/// resolved against, the scheme matched without regard to case. Any other
+/// base is left as it is.
+pub(crate) fn to_web_socket_base_url(base_url: &str) -> String {
+    match base_url.split_once("://") {
+        Some((scheme, rest)) if scheme.eq_ignore_ascii_case("http") => format!("ws://{rest}"),
+        Some((scheme, rest)) if scheme.eq_ignore_ascii_case("https") => format!("wss://{rest}"),
+        _ => base_url.to_string(),
+    }
+}
+
+/// Resolves a glob against `base_url` as the driver's `resolveGlobBase`
+/// does, so the client and the driver agree on what a pattern names.
+///
+/// A glob starting with `*` is left alone. Otherwise each path segment that
+/// holds glob syntax is swapped for a placeholder, the rest is resolved as a
+/// URL (which also normalizes it: a trailing slash after a bare host, a
+/// default port dropped, percent-encoding, a lowercased scheme and host),
+/// and the segments are put back, lowercased where they fall in the origin.
+fn resolve_glob_base(base_url: Option<&str>, glob: &str) -> String {
+    if glob.starts_with('*') {
+        return glob.to_string();
+    }
+    // An escaped `\\?` reads the same as `?`.
+    let glob = glob.replace("\\\\?", "?");
+    if ["about:", "data:", "chrome:", "edge:", "file:"]
+        .iter()
+        .any(|scheme| glob.starts_with(scheme))
+    {
+        return glob;
+    }
+
+    let mut tokens: Vec<(String, String)> = Vec::new();
+    let mut map_token = |original: &str, replacement: String| -> String {
+        if original.is_empty() {
+            return String::new();
+        }
+        tokens.push((replacement.clone(), original.to_string()));
+        replacement
+    };
+    let relative_path = glob
+        .split('/')
+        .enumerate()
+        .map(|(index, token)| {
+            if index == 0 && token.ends_with(':') {
+                if token.contains(['*', '{']) {
+                    return map_token(token, "http:".to_string());
+                }
+                return token.to_string();
+            }
+            if !token.contains(['*', '?', '{', '}', '\\']) {
+                return token.to_string();
+            }
+            match token.find('?') {
+                None => map_token(token, format!("$_{index}_$")),
+                Some(question) => {
+                    let (prefix, suffix) = token.split_at(question);
+                    let prefix = map_token(prefix, format!("$_{index}_$"));
+                    let suffix = map_token(suffix, format!("?$_{index}_$"));
+                    prefix + &suffix
+                }
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("/");
+
+    let (mut resolved, origin) = resolve_base_url(base_url, &relative_path);
+    for (token, original) in tokens {
+        let in_origin = origin
+            .as_deref()
+            .is_some_and(|origin| origin.contains(&token));
+        let replacement = if in_origin {
+            original.to_lowercase()
+        } else {
+            original
+        };
+        resolved = resolved.replacen(&token, &replacement, 1);
+    }
+    resolved
+}
+
+/// Resolves `given` against `base_url` as `new URL(given, baseURL)` does,
+/// returning the serialized URL and its origin, or `given` unchanged (and no
+/// origin) when either does not parse.
+fn resolve_base_url(base_url: Option<&str>, given: &str) -> (String, Option<String>) {
+    let parsed = match base_url {
+        Some(base) => url::Url::parse(base).and_then(|base| base.join(given)),
+        None => url::Url::parse(given),
+    };
+    match parsed {
+        Ok(url) => {
+            let origin = url.origin().ascii_serialization();
+            (url.into(), Some(origin))
+        }
+        Err(_) => (given.to_string(), None),
+    }
+}
+
 /// Returns whether `text` matches the glob `pattern`.
 ///
 /// Returns `false` for a malformed pattern, matching the driver's behavior
@@ -145,6 +246,14 @@ impl GlobMatcher {
         regex::Regex::new(&regex_pattern)
             .ok()
             .map(|regex| Self { regex })
+    }
+
+    /// Compiles `pattern` the way the driver does before matching a URL
+    /// against it: resolved against `base_url` first. A WebSocket pattern
+    /// takes the base through [`to_web_socket_base_url`]. Returns `None` if
+    /// it is malformed.
+    pub(crate) fn for_url(base_url: Option<&str>, pattern: &str) -> Option<Self> {
+        Self::new(&resolve_glob_base(base_url, pattern))
     }
 
     pub(crate) fn matches(&self, text: &str) -> bool {
@@ -255,6 +364,322 @@ mod properties {
         #[test]
         fn matching_never_panics(pattern in glob_soup(), text in glob_soup()) {
             let _ = glob_match(&pattern, &text);
+        }
+    }
+}
+
+#[cfg(test)]
+mod url_matches {
+    use super::{GlobMatcher, to_web_socket_base_url};
+
+    fn url_matches(base_url: Option<&str>, url: &str, glob: &str) -> bool {
+        GlobMatcher::for_url(base_url, glob).is_some_and(|m| m.matches(url))
+    }
+
+    // The `urlMatches` cases of the driver's `interception.spec.ts` "should
+    // work with glob", in order, as (base URL, URL, glob, matches).
+    const DRIVER_CASES: &[(Option<&str>, &str, &str, bool)] = &[
+        (
+            None,
+            "http://playwright.dev/",
+            "http://playwright.dev",
+            true,
+        ),
+        (
+            None,
+            "http://playwright.dev/?a=b",
+            "http://playwright.dev?a=b",
+            true,
+        ),
+        (None, "http://playwright.dev/", "h*://playwright.dev", true),
+        (
+            None,
+            "http://api.playwright.dev/?x=y",
+            "http://*.playwright.dev?x=y",
+            true,
+        ),
+        (None, "http://playwright.dev/foo/bar", "**/foo/**", true),
+        (
+            Some("http://playwright.dev"),
+            "http://playwright.dev/?x=y",
+            "?x=y",
+            true,
+        ),
+        (
+            Some("http://playwright.dev/foo/"),
+            "http://playwright.dev/foo/bar?x=y",
+            "./bar?x=y",
+            true,
+        ),
+        (
+            None,
+            "http://playwright.dev/foo$$bar",
+            "http://playwright.dev/foo$$bar",
+            true,
+        ),
+        (
+            None,
+            "http://playwright.dev/a$&b",
+            "http://playwright.dev/a$&b",
+            true,
+        ),
+        (
+            Some("http://playwright.dev"),
+            "http://playwright.dev/p$$q",
+            "./p$$q",
+            true,
+        ),
+        (
+            None,
+            "https://playwright.dev/fooBAR",
+            "HtTpS://pLaYwRiGhT.dEv/fooBAR",
+            true,
+        ),
+        (
+            Some("http://ignored"),
+            "https://playwright.dev/fooBAR",
+            "HtTpS://pLaYwRiGhT.dEv/fooBAR",
+            true,
+        ),
+        (
+            None,
+            "https://playwright.dev/foobar",
+            "https://playwright.dev/fooBAR",
+            false,
+        ),
+        (
+            None,
+            "https://playwright.dev/foobar?a=b",
+            "https://playwright.dev/foobar?A=B",
+            false,
+        ),
+        (
+            None,
+            "http://example.com/path",
+            "http://example.com:80/path",
+            true,
+        ),
+        (
+            None,
+            "https://example.com/path",
+            "https://example.com:443/path",
+            true,
+        ),
+        (
+            None,
+            "http://example.com:8080/path",
+            "http://example.com:8080/path",
+            true,
+        ),
+        (None, "http://localhost/", "http://localhost:80/**", true),
+        (
+            None,
+            "http://example.com/foo%20bar",
+            "http://example.com/foo bar",
+            true,
+        ),
+        (
+            None,
+            "http://xn--mnchen-3ya.de/",
+            "http://münchen.de/",
+            true,
+        ),
+        (None, "https://localhost:3000/?a=b", "**/?a=b", true),
+        (None, "https://localhost:3000/?a=b", "**?a=b", true),
+        (None, "https://localhost:3000/?a=b", "**=b", true),
+        (
+            None,
+            "my.custom.protocol://foo",
+            "my.custom.protocol://**",
+            true,
+        ),
+        (None, "my.p://foo", "my.{p,y}://**", false),
+        (None, "my.p://foo/", "my.{p,y}://**", true),
+        (None, "file:///foo/", "f*e://**", true),
+        (
+            None,
+            "http://playwright.dev/",
+            "http://playwright.?ev",
+            false,
+        ),
+        (
+            None,
+            "http://playwright./?ev",
+            "http://playwright.?ev",
+            true,
+        ),
+        (
+            None,
+            "http://playwright.dev/foo",
+            "http://playwright.dev/f??",
+            false,
+        ),
+        (
+            None,
+            "http://playwright.dev/f??",
+            "http://playwright.dev/f??",
+            true,
+        ),
+        (
+            None,
+            "http://playwright.dev/?x=y",
+            "http://playwright.dev\\?x=y",
+            true,
+        ),
+        (
+            None,
+            "http://playwright.dev/?x=y",
+            "http://playwright.dev/\\?x=y",
+            true,
+        ),
+        (
+            Some("http://playwright.dev/foo"),
+            "http://playwright.dev/foo?bar",
+            "?bar",
+            true,
+        ),
+        (
+            Some("http://playwright.dev/foo"),
+            "http://playwright.dev/foo?bar",
+            "\\\\?bar",
+            true,
+        ),
+        (
+            Some("http://first.host/"),
+            "http://second.host/foo",
+            "**/foo",
+            true,
+        ),
+        (
+            Some("http://playwright.dev/"),
+            "http://localhost/",
+            "*//localhost/",
+            true,
+        ),
+        (None, "https://foo/bar.js", "https://foo/**/bar.js", true),
+        (None, "https://foo/bar.js", "https://foo/**/**/bar.js", true),
+    ];
+
+    #[test]
+    fn matches_urls_as_the_driver_does() {
+        for &(base_url, url, glob, expected) in DRIVER_CASES {
+            assert_eq!(
+                url_matches(base_url, url, glob),
+                expected,
+                "base {base_url:?}, url {url:?}, glob {glob:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn custom_scheme_prefixes_are_not_resolved() {
+        for prefix in ["about", "data", "chrome", "edge", "file"] {
+            let base = Some("http://playwright.dev/");
+            let blank = format!("{prefix}:blank");
+            assert!(url_matches(base, &blank, &blank), "{prefix}");
+            assert!(
+                !url_matches(base, &blank, "http://playwright.dev/"),
+                "{prefix}"
+            );
+            assert!(url_matches(None, &blank, &blank), "{prefix}");
+            assert!(
+                url_matches(None, &blank, &format!("{prefix}:*")),
+                "{prefix}"
+            );
+            assert!(
+                !url_matches(None, &format!("not{prefix}:blank"), &format!("{prefix}:*")),
+                "{prefix}"
+            );
+        }
+    }
+
+    fn web_socket_matches(base_url: Option<&str>, url: &str, glob: &str) -> bool {
+        let base_url = base_url.map(to_web_socket_base_url);
+        GlobMatcher::for_url(base_url.as_deref(), glob).is_some_and(|m| m.matches(url))
+    }
+
+    #[test]
+    fn a_web_socket_pattern_resolves_against_the_ws_form_of_the_base() {
+        assert!(web_socket_matches(
+            Some("http://localhost:3000"),
+            "ws://localhost:3000/ws",
+            "/ws"
+        ));
+        assert!(web_socket_matches(
+            Some("https://localhost:3000"),
+            "wss://localhost:3000/ws",
+            "/ws"
+        ));
+        assert!(!web_socket_matches(
+            Some("http://localhost:3000"),
+            "http://localhost:3000/ws",
+            "/ws"
+        ));
+    }
+
+    #[test]
+    fn the_base_scheme_is_read_without_regard_to_case() {
+        assert!(web_socket_matches(
+            Some("HTTP://localhost:3000"),
+            "ws://localhost:3000/ws",
+            "/ws"
+        ));
+        assert!(web_socket_matches(
+            Some("HtTpS://localhost:3000"),
+            "wss://localhost:3000/ws",
+            "/ws"
+        ));
+    }
+
+    #[test]
+    fn a_base_that_is_not_http_is_left_as_it_is() {
+        for base in ["ws://localhost:3000/", "file:///tmp/", "localhost:3000"] {
+            assert_eq!(to_web_socket_base_url(base), base);
+        }
+    }
+
+    #[test]
+    fn a_web_socket_url_without_a_path_matches_with_its_trailing_slash() {
+        assert!(web_socket_matches(
+            None,
+            "ws://localhost:3000/",
+            "ws://localhost:3000"
+        ));
+    }
+
+    #[test]
+    fn only_a_first_segment_ending_in_a_colon_is_read_as_a_scheme() {
+        let base = Some("http://playwright.dev/dir/");
+        assert!(url_matches(
+            base,
+            "http://playwright.dev/dir/foobar/baz",
+            "foo*/baz"
+        ));
+        assert!(url_matches(base, "http://playwright.dev/dir/a/b:", "a/b*:"));
+    }
+
+    #[test]
+    fn a_relative_pattern_without_a_base_stays_as_written() {
+        assert!(url_matches(None, "/ws", "/ws"));
+        assert!(!url_matches(None, "http://localhost/ws", "/ws"));
+    }
+
+    #[test]
+    fn an_unusable_base_leaves_the_pattern_unnormalized() {
+        assert!(url_matches(
+            None,
+            "http://playwright.dev/",
+            "http://playwright.dev"
+        ));
+        for base in ["", "not a url"] {
+            assert!(
+                !url_matches(
+                    Some(base),
+                    "http://playwright.dev/",
+                    "http://playwright.dev"
+                ),
+                "base {base:?}"
+            );
         }
     }
 }

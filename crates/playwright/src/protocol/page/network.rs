@@ -32,7 +32,8 @@ impl Page {
     ///
     /// # Arguments
     ///
-    /// * `pattern` - URL pattern to match (supports glob patterns like "**/*.png")
+    /// * `pattern` - URL pattern to match (supports glob patterns like "**/*.png").
+    ///   A relative pattern such as `"/api/*"` resolves against the context's `base_url`.
     /// * `handler` - Async closure that handles the route
     ///
     /// See: <https://playwright.dev/docs/api/class-page#page-route>
@@ -259,7 +260,9 @@ impl Page {
     ///
     /// # Arguments
     ///
-    /// * `url` — URL glob pattern (e.g. `"ws://**"` or `"wss://example.com/ws"`).
+    /// * `url` — URL glob pattern (e.g. `"**"` for every socket, or `"wss://example.com/ws"`).
+    ///   A relative pattern such as `"/ws"` resolves against the context's `base_url`,
+    ///   read as `ws://` or `wss://`.
     /// * `handler` — Async closure receiving a `WebSocketRoute`.
     ///
     /// # Errors

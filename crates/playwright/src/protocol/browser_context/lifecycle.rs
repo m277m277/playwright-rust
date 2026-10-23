@@ -3,6 +3,7 @@ use crate::error::Result;
 use crate::protocol::api_request_context::APIRequestContext;
 use crate::protocol::cdp_session::CDPSession;
 use crate::protocol::event_registry::EventRegistry;
+use crate::protocol::route_handlers::{RouteHandlers, WebSocketRouteHandlers};
 use crate::protocol::tracing::Tracing;
 use crate::protocol::{Browser, Page};
 use crate::server::channel::Channel;
@@ -37,6 +38,11 @@ impl BrowserContext {
         guid: Arc<str>,
         initializer: Value,
     ) -> Result<Self> {
+        // Route patterns on the context and its pages resolve against this.
+        let base_url = initializer["options"]["baseURL"]
+            .as_str()
+            .map(str::to_string);
+
         // Extract APIRequestContext GUID from initializer before moving it
         let request_context_guid = initializer
             .get("requestContext")
@@ -74,7 +80,7 @@ impl BrowserContext {
             base,
             browser,
             pages: Arc::new(Mutex::new(Vec::new())),
-            route_handlers: Arc::default(),
+            route_handlers: Arc::new(RouteHandlers::new(base_url.as_deref())),
             request_context_guid,
             tracing_guid,
             debugger_guid,
@@ -99,7 +105,7 @@ impl BrowserContext {
             forwarders: super::events::Forwarders::default(),
             serviceworker_waiters: Arc::new(Mutex::new(Vec::new())),
             service_workers_list: Arc::new(Mutex::new(Vec::new())),
-            ws_route_handlers: Arc::default(),
+            ws_route_handlers: Arc::new(WebSocketRouteHandlers::new(base_url.as_deref())),
             is_closed: Arc::new(AtomicBool::new(false)),
             option_har: Arc::new(tokio::sync::Mutex::new(None)),
         };

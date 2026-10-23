@@ -3,6 +3,7 @@ use crate::error::{Error, Result};
 use crate::protocol::Worker;
 use crate::protocol::browser_context::Viewport;
 use crate::protocol::event_registry::EventRegistry;
+use crate::protocol::route_handlers::{RouteHandlers, WebSocketRouteHandlers};
 use crate::server::channel::Channel;
 use crate::server::channel_owner::{ChannelOwner, ChannelOwnerImpl, ParentOrConnection};
 use crate::server::connection::{ConnectionExt, downcast_parent};
@@ -43,6 +44,11 @@ impl Page {
             .get("options")
             .and_then(|opts| opts.get("recordVideo"))
             .is_some();
+        // Route patterns resolve against the context's base URL, which is
+        // fixed when the context is created.
+        let base_url = parent.initializer()["options"]["baseURL"]
+            .as_str()
+            .map(str::to_string);
 
         let video_artifact_guid: Option<String> = initializer
             .get("video")
@@ -100,7 +106,7 @@ impl Page {
         Ok(Self {
             base,
             main_frame,
-            route_handlers: Arc::default(),
+            route_handlers: Arc::new(RouteHandlers::new(base_url.as_deref())),
             download: EventRegistry::new("download"),
             dialog: EventRegistry::new("dialog"),
             dialog_closed: EventRegistry::new("dialogClosed"),
@@ -109,7 +115,7 @@ impl Page {
             request_failed: EventRegistry::new("requestFailed"),
             response: EventRegistry::new("response"),
             websocket_handlers,
-            ws_route_handlers: Arc::default(),
+            ws_route_handlers: Arc::new(WebSocketRouteHandlers::new(base_url.as_deref())),
             viewport,
             is_closed: Arc::new(AtomicBool::new(false)),
             default_timeout_ms: Arc::new(AtomicU64::new(crate::DEFAULT_TIMEOUT_MS.to_bits())),

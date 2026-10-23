@@ -791,3 +791,34 @@ async fn test_route_webkit_methods() {
     browser.close().await.expect("Failed to close browser");
     server.shutdown();
 }
+
+#[tokio::test]
+async fn route_matches_a_url_relative_to_the_base_url() {
+    let server = TestServer::start().await;
+    let (_pw, browser, context, page) =
+        crate::common::setup_with_base_url(format!("{}/foobar/", server.url())).await;
+
+    page.route("./kek/index.html", |route| async move {
+        let body = playwright_rs::protocol::FulfillOptions::builder()
+            .body_string("base-url-matched-route")
+            .build();
+        route.fulfill(body).await
+    })
+    .await
+    .unwrap();
+
+    let response = page
+        .goto("./kek/index.html", None)
+        .await
+        .unwrap()
+        .expect("a response");
+    assert_eq!(
+        response.url(),
+        format!("{}/foobar/kek/index.html", server.url())
+    );
+    assert_eq!(response.text().await.unwrap(), "base-url-matched-route");
+
+    context.close().await.unwrap();
+    browser.close().await.unwrap();
+    server.shutdown();
+}

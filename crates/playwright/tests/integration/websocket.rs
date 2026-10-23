@@ -170,20 +170,7 @@ async fn test_page_route_web_socket_mock_replies_without_a_server() {
     let ws_url = server.url().replace("http://", "ws://") + "/ws";
 
     // No connect_to_server: the handler answers the page itself.
-    page.route_web_socket(&ws_url, move |route| {
-        Box::pin(async move {
-            let replier = route.clone();
-            route
-                .on_message(move |message| {
-                    let replier = replier.clone();
-                    Box::pin(async move { replier.send(&format!("mock: {message}")).await })
-                })
-                .await?;
-            Ok(())
-        })
-    })
-    .await
-    .unwrap();
+    page.route_web_socket(&ws_url, mock_echo).await.unwrap();
 
     page.goto(&format!("{}/websocket.html", server.url()), None)
         .await
@@ -245,6 +232,103 @@ async fn test_context_route_web_socket() {
         handler_called.load(Ordering::Acquire),
         "Context WebSocket route handler should have been called"
     );
+
+    context.close().await.unwrap();
+    browser.close().await.unwrap();
+    server.shutdown();
+}
+
+async fn mock_echo(route: playwright_rs::protocol::WebSocketRoute) -> playwright_rs::Result<()> {
+    let replier = route.clone();
+    route
+        .on_message(move |message| {
+            let replier = replier.clone();
+            Box::pin(async move { replier.send(&format!("mock: {message}")).await })
+        })
+        .await
+}
+
+#[tokio::test]
+async fn route_web_socket_resolves_a_relative_pattern_against_the_base_url() {
+    let server = TestServer::start().await;
+    let (_pw, browser, context, page) = common::setup_with_base_url(server.url()).await;
+
+    page.route_web_socket("/ws", mock_echo).await.unwrap();
+    page.goto("/websocket.html", None).await.unwrap();
+
+    expect(page.locator("#log"))
+        .to_contain_text("received: mock: Hello Server")
+        .await
+        .expect("the handler for /ws answered the page");
+
+    context.close().await.unwrap();
+    browser.close().await.unwrap();
+    server.shutdown();
+}
+
+#[tokio::test]
+async fn route_web_socket_reads_the_base_url_scheme_without_regard_to_case() {
+    let server = TestServer::start().await;
+    let (_pw, browser, context, page) =
+        common::setup_with_base_url(server.url().replacen("http://", "HTTP://", 1)).await;
+
+    page.route_web_socket("/ws", mock_echo).await.unwrap();
+    page.goto(&format!("{}/websocket.html", server.url()), None)
+        .await
+        .unwrap();
+
+    expect(page.locator("#log"))
+        .to_contain_text("received: mock: Hello Server")
+        .await
+        .expect("the handler for /ws answered the page");
+
+    context.close().await.unwrap();
+    browser.close().await.unwrap();
+    server.shutdown();
+}
+
+#[tokio::test]
+async fn route_web_socket_matches_a_url_written_without_a_trailing_slash() {
+    let (_pw, browser, page) = common::setup().await;
+    let server = TestServer::start().await;
+    let host_url = server.url().replace("http://", "ws://");
+
+    page.route_web_socket(&host_url, mock_echo).await.unwrap();
+    page.goto(&server.url(), None).await.unwrap();
+    page.evaluate_expression(
+        r#"(() => {
+            const log = document.createElement('div');
+            log.id = 'log';
+            document.body.appendChild(log);
+            const ws = new WebSocket('ws://' + location.host);
+            ws.addEventListener('open', () => ws.send('query'));
+            ws.addEventListener('message', event => { log.textContent += 'received: ' + event.data; });
+        })()"#,
+    )
+    .await
+    .unwrap();
+
+    expect(page.locator("#log"))
+        .to_contain_text("received: mock: query")
+        .await
+        .expect("the handler for the bare host answered the page");
+
+    browser.close().await.unwrap();
+    server.shutdown();
+}
+
+#[tokio::test]
+async fn context_route_web_socket_resolves_a_relative_pattern_against_the_base_url() {
+    let server = TestServer::start().await;
+    let (_pw, browser, context, page) = common::setup_with_base_url(server.url()).await;
+
+    context.route_web_socket("/ws", mock_echo).await.unwrap();
+    page.goto("/websocket.html", None).await.unwrap();
+
+    expect(page.locator("#log"))
+        .to_contain_text("received: mock: Hello Server")
+        .await
+        .expect("the context handler for /ws answered the page");
 
     context.close().await.unwrap();
     browser.close().await.unwrap();

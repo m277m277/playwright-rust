@@ -16,7 +16,7 @@
 //!     let page = browser.new_page().await?;
 //!
 //!     // Intercept all WebSocket connections and proxy them to the real server
-//!     page.route_web_socket("ws://**", |route| {
+//!     page.route_web_socket("**", |route| {
 //!         Box::pin(async move {
 //!             route.connect_to_server().await?;
 //!             Ok(())
