@@ -110,16 +110,18 @@ if [ "$runs" -eq 0 ]; then
     exit 0
 fi
 
-# "  FLAKY 2/2 [   0.008s] (2/2) <binary> <test name>". Parsed one line at a
-# time and with `-n`, so a line that does not match yields nothing rather
-# than passing through as though the whole raw line were a test name.
+# "  FLAKY 2/2 [   0.008s] (2/2) <binary> <test name>". The counter is padded
+# to the width of the total, "( 753/1077)", once a run has ten tests or more.
+# Parsed one line at a time and with `-n`, so a line that does not match
+# yields nothing rather than passing through as though the whole raw line
+# were a test name.
 names=""
 found=0
 while IFS= read -r line; do
     [ -n "$line" ] || continue
     found=$((found + 1))
     name=$(printf '%s\n' "$line" |
-        sed -nE 's|^[[:space:]]*FLAKY [0-9]+/[0-9]+ \[[^]]*\] \([0-9]+/[0-9]+\) (.+)$|\1|p')
+        sed -nE 's|^[[:space:]]*FLAKY [0-9]+/[0-9]+ \[[^]]*\] \([[:space:]]*[0-9]+/[0-9]+\) (.+)$|\1|p')
     if [ -z "$name" ]; then
         echo "error: cannot parse the test name out of this FLAKY line:" >&2
         echo "  $line" >&2

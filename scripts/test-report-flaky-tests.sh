@@ -41,6 +41,13 @@ cat > "$work/second-flake.log" <<'LOG'
    FLAKY 2/2 [   0.900s] (2/2) playwright-rs::integration websocket::test_frame
 LOG
 
+# nextest right-aligns the progress counter to the width of the total, so a
+# run of more than nine tests pads it: "( 753/1077)". From a Windows job.
+cat > "$work/padded-counter.log" <<'LOG'
+     Summary [ 821.781s] 1077 tests run: 1077 passed (1 flaky), 58 skipped
+     FLAKY 2/2 [   2.037s] ( 753/1077) playwright-rs::integration navigation::test_page_navigation_methods
+LOG
+
 cat > "$work/malformed.log" <<'LOG'
 error: could not compile `playwright-rs`
 LOG
@@ -87,6 +94,8 @@ check() {
 
 check "names the flaky test" 0 \
     "playwright-rs::probe probe_fails_once_then_passes" "$work/with-flake.log"
+check "names a flaky test whose counter is padded" 0 \
+    "playwright-rs::integration navigation::test_page_navigation_methods" "$work/padded-counter.log"
 check "warns for the annotation" 0 \
     "::warning title=Flaky test::" "$work/with-flake.log"
 check "clean run reports none" 0 \
