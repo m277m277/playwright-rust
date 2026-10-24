@@ -49,6 +49,57 @@ Dependabot PRs that bump external crates often surface "missing
   well-known crates with negligible delta — match the existing
   exemption style).
 
+### Clearing a vet failure, step by step
+
+Run `cargo vet` without `--locked` first. With `--locked` it cannot
+refresh `imports.lock`, so it misses the publisher trust and imported
+audits for the new versions and reports crates CI does not. Then settle
+each crate it lists one of three ways:
+
+- **Delta audit**, for a diff you can read. Record it with
+  `cargo vet certify <crate> <old> <new> --criteria <criteria>
+  --accept-all --notes "..."`. Leave `--who` off: vet then records the
+  auditor from the certifying developer's `git config user.name` and
+  `user.email`. The notes say what
+  changed and what was checked, in the style of the existing
+  `[[audits.*]]` entries.
+- **Trust**, when vet says the project already trusts the crate's
+  publisher (`cargo vet trust <crate> <publisher>`). This is a decision
+  about the publisher, not a code review.
+- **Exemption with notes**, when no review applies. The common case is a
+  crate that sits in `Cargo.lock` but is never compiled: Cargo records an
+  optional dependency even when no feature turns it on, and vet checks
+  the lockfile. Prove it with
+  `cargo tree --workspace --all-features -i <crate> -e all --target all`
+  ("nothing to print" means no build reaches it), then
+  `cargo vet add-exemption <crate> <version> --criteria safe-to-run
+  --notes "..."`, naming the dependency that drags it in.
+
+`cargo vet prune` also drops exemptions that imported audits now cover,
+which reaches past the crates the PR touched. Leave it out of a
+Dependabot fix and run it as its own change. The fix commit goes onto the
+Dependabot branch and is squashed into the merge.
+
+### Handing the audits over for review
+
+An audit is recorded under the git identity of the developer who
+certifies it, so it is their attestation, and it does not get committed
+until they have reviewed it. Make the review something they can copy and
+paste, item by item:
+
+- **Each audit**: the diff command, `cargo vet diff <crate> <old> <new>`
+  (Sourcegraph in a browser; `--mode local` for the terminal), or a
+  `.diff` file per crate from
+  `diff -ru ~/.cargo/registry/src/<index>/<crate>-<old> .../<crate>-<new>`.
+  That is the published source vet audits, which can differ from the git
+  tag. Name the hunks where the judgment sits, say which parts are tests,
+  and say how deep your own review went (every hunk read, or a targeted
+  scan of the manifest and of `unsafe`, fs, net, process and env use).
+- **Each trust**: say it is a policy call with nothing to read, and name
+  the crates the same publisher is already trusted for.
+- **Each exemption**: the `cargo tree` command above, or whatever proves
+  its stated reason.
+
 ## Security advisories (`cargo audit` failures)
 
 A new `RUSTSEC-YYYY-NNNN` advisory against a transitive dependency
