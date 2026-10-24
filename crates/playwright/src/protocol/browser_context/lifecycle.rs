@@ -106,6 +106,7 @@ impl BrowserContext {
             serviceworker_waiters: Arc::new(Mutex::new(Vec::new())),
             service_workers_list: Arc::new(Mutex::new(Vec::new())),
             ws_route_handlers: Arc::new(WebSocketRouteHandlers::new(base_url.as_deref())),
+            base_url,
             is_closed: Arc::new(AtomicBool::new(false)),
             option_har: Arc::new(tokio::sync::Mutex::new(None)),
         };

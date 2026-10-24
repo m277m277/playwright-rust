@@ -1396,10 +1396,20 @@ impl PageExpectation {
 
     /// Asserts that the page URL matches the expected string.
     ///
+    /// A relative URL such as `"/hello"` resolves against the context's
+    /// `base_url` first, and the expected URL is normalized as a URL, as in
+    /// Playwright; the comparison is then exact, not a glob.
+    ///
     /// Auto-retries until the URL matches or the timeout expires.
     ///
     /// See: <https://playwright.dev/docs/api/class-pageassertions#page-assertions-to-have-url>
     pub async fn to_have_url(self, expected: &str) -> Result<()> {
+        let context = self.page.context().ok();
+        let expected = crate::protocol::glob::construct_url_based_on_base_url(
+            context.as_ref().and_then(|context| context.base_url()),
+            expected,
+        );
+        let expected = expected.as_str();
         let start = std::time::Instant::now();
 
         loop {

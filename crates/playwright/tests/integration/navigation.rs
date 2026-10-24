@@ -698,3 +698,60 @@ async fn test_url_workaround_with_evaluate() {
     browser.close().await.expect("Failed to close browser");
     server.shutdown();
 }
+
+fn five_seconds() -> GotoOptions {
+    GotoOptions::new().timeout(Duration::from_secs(5))
+}
+
+#[tokio::test]
+async fn wait_for_url_resolves_a_relative_url_against_the_base_url() {
+    let server = TestServer::start().await;
+    let (_pw, browser, context, page) =
+        crate::common::setup_with_base_url(format!("{}/foobar/", server.url())).await;
+
+    page.goto("/kek/index.html", None).await.unwrap();
+    page.wait_for_url("/kek/index.html", five_seconds())
+        .await
+        .unwrap();
+    assert_eq!(page.url(), format!("{}/kek/index.html", server.url()));
+
+    context.close().await.unwrap();
+    browser.close().await.unwrap();
+    server.shutdown();
+}
+
+#[tokio::test]
+async fn wait_for_url_does_not_resolve_a_glob_that_starts_with_a_wildcard() {
+    let server = TestServer::start().await;
+    let (_pw, browser, context, page) =
+        crate::common::setup_with_base_url(format!("{}/foobar/", server.url())).await;
+
+    page.goto("./kek/index.html", None).await.unwrap();
+    page.wait_for_url("**/foobar/kek/index.html", five_seconds())
+        .await
+        .unwrap();
+
+    context.close().await.unwrap();
+    browser.close().await.unwrap();
+    server.shutdown();
+}
+
+#[tokio::test]
+async fn wait_for_url_refuses_a_malformed_glob_at_once() {
+    let (_pw, browser, page) = crate::common::setup().await;
+
+    let outcome = page
+        .wait_for_url("http://localhost/search?q={", five_seconds())
+        .await;
+    match outcome {
+        Err(playwright_rs::Error::InvalidArgument(message)) => {
+            assert!(
+                message.contains("search?q={"),
+                "names the pattern: {message}"
+            )
+        }
+        other => panic!("expected InvalidArgument, got {other:?}"),
+    }
+
+    browser.close().await.unwrap();
+}

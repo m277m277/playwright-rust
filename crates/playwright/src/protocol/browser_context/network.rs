@@ -253,6 +253,13 @@ impl BrowserContext {
         self.ws_route_handlers.sync(self.channel()).await
     }
 
+    /// The `base_url` this context was created with, which route patterns
+    /// and the URLs given to `wait_for_url` and `to_have_url` resolve
+    /// against.
+    pub(crate) fn base_url(&self) -> Option<&str> {
+        self.base_url.as_deref()
+    }
+
     /// Runs this context's route handlers on a request: one the driver
     /// reported to the context, or one its page's handlers all fell back on,
     /// as upstream's page hands it to its context. Continues the request if

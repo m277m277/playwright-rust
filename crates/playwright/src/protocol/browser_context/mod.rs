@@ -100,6 +100,9 @@ pub struct BrowserContext {
     browser: Option<Browser>,
     /// All open pages in this context
     pages: Arc<Mutex<Vec<Page>>>,
+    /// The `base_url` the context was created with, which route patterns,
+    /// `wait_for_url` and `to_have_url` resolve against.
+    base_url: Option<String>,
     /// Route handlers for context-level network interception
     route_handlers: Arc<crate::protocol::route_handlers::RouteHandlers>,
     /// APIRequestContext GUID from initializer (resolved lazily)

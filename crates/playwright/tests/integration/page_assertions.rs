@@ -71,3 +71,43 @@ async fn test_page_assertion_mismatches() -> Result<(), Box<dyn std::error::Erro
     server.shutdown();
     Ok(())
 }
+
+#[tokio::test]
+async fn to_have_url_resolves_a_relative_url_against_the_base_url() {
+    let server = TestServer::start().await;
+    let (_pw, browser, context, page) = crate::common::setup_with_base_url(server.url()).await;
+
+    page.goto("/hello", None).await.unwrap();
+    expect_page(&page).to_have_url("/hello").await.unwrap();
+    expect_page(&page)
+        .to_have_url(&format!("{}/hello", server.url()))
+        .await
+        .unwrap();
+
+    context.close().await.unwrap();
+    browser.close().await.unwrap();
+    server.shutdown();
+}
+
+#[tokio::test]
+async fn to_have_url_reports_the_resolved_url_it_expected() {
+    let server = TestServer::start().await;
+    let (_pw, browser, context, page) = crate::common::setup_with_base_url(server.url()).await;
+
+    page.goto("/hello", None).await.unwrap();
+    let outcome = expect_page(&page)
+        .with_timeout(std::time::Duration::from_secs(1))
+        .to_have_url("/kek")
+        .await;
+    let resolved = format!("{}/kek", server.url());
+    match outcome {
+        Err(playwright_rs::Error::AssertionTimeout(message)) => {
+            assert!(message.contains(&resolved), "names {resolved}: {message}")
+        }
+        other => panic!("expected an AssertionTimeout, got {other:?}"),
+    }
+
+    context.close().await.unwrap();
+    browser.close().await.unwrap();
+    server.shutdown();
+}

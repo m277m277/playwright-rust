@@ -46,8 +46,10 @@ impl Page {
             .is_some();
         // Route patterns resolve against the context's base URL, which is
         // fixed when the context is created.
-        let base_url = parent.initializer()["options"]["baseURL"]
-            .as_str()
+        let base_url = parent
+            .as_any()
+            .downcast_ref::<crate::protocol::BrowserContext>()
+            .and_then(|context| context.base_url())
             .map(str::to_string);
 
         let video_artifact_guid: Option<String> = initializer

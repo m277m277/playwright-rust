@@ -85,7 +85,10 @@ impl Page {
         frame.wait_for_load_state(state).await
     }
 
-    /// Waits for the main frame to navigate to a URL matching the given string or glob pattern.
+    /// Waits for the main frame to navigate to a URL matching the given glob pattern.
+    ///
+    /// The pattern resolves against the context's `base_url` first, as in
+    /// Playwright; see [`Frame::wait_for_url`](crate::protocol::Frame::wait_for_url).
     ///
     /// See: <https://playwright.dev/docs/api/class-page#page-wait-for-url>
     #[tracing::instrument(level = "debug", skip_all, fields(guid = %self.guid(), url = %url))]

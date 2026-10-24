@@ -1,8 +1,7 @@
 // URL glob matching, shared by client-side waits (`Frame::wait_for_url`) and
-// client-side route matching (`Page::route`, `BrowserContext::route`). Route
-// matching resolves each pattern against the context's base URL first
-// (`GlobMatcher::for_url`), as the driver's `urlMatches` does. Waits match
-// the pattern as written, where the driver resolves it too.
+// client-side route matching (`Page::route`, `BrowserContext::route`). Both
+// resolve each pattern against the context's base URL first
+// (`GlobMatcher::for_url`), as the driver's `urlMatches` does.
 //
 // This is a port of the driver's `globToRegexPattern`
 // (`packages/isomorphic/urlMatch.ts`), not an independent implementation.
@@ -202,6 +201,14 @@ fn resolve_glob_base(base_url: Option<&str>, glob: &str) -> String {
     resolved
 }
 
+/// Resolves an expected URL against `base_url` as the driver's
+/// `constructURLBasedOnBaseURL` does for `toHaveURL`: the URL comes back
+/// resolved and normalized, or unchanged when it does not resolve. Unlike
+/// [`GlobMatcher::for_url`] it reads no glob syntax.
+pub(crate) fn construct_url_based_on_base_url(base_url: Option<&str>, url: &str) -> String {
+    resolve_base_url(base_url, url).0
+}
+
 /// Resolves `given` against `base_url` as `new URL(given, baseURL)` does,
 /// returning the serialized URL and its origin, or `given` unchanged (and no
 /// origin) when either does not parse.
@@ -249,9 +256,9 @@ impl GlobMatcher {
     }
 
     /// Compiles `pattern` the way the driver does before matching a URL
-    /// against it: resolved against `base_url` first. A WebSocket pattern
-    /// takes the base through [`to_web_socket_base_url`]. Returns `None` if
-    /// it is malformed.
+    /// against it: resolved against `base_url` first. For a WebSocket
+    /// pattern the caller passes the base through [`to_web_socket_base_url`]
+    /// first. Returns `None` if the pattern is malformed.
     pub(crate) fn for_url(base_url: Option<&str>, pattern: &str) -> Option<Self> {
         Self::new(&resolve_glob_base(base_url, pattern))
     }
@@ -681,6 +688,53 @@ mod url_matches {
                 "base {base:?}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod construct_url {
+    use super::construct_url_based_on_base_url;
+
+    // (base URL, URL, resolved), each checked against the pinned driver's
+    // own constructURLBasedOnBaseURL.
+    const DRIVER_CASES: &[(Option<&str>, &str, &str)] = &[
+        (
+            Some("http://localhost:3000/foobar/"),
+            "/hello",
+            "http://localhost:3000/hello",
+        ),
+        (
+            Some("http://localhost:3000/foobar/"),
+            "./kek",
+            "http://localhost:3000/foobar/kek",
+        ),
+        (None, "http://localhost:3000", "http://localhost:3000/"),
+        (None, "/hello", "/hello"),
+        (Some("not a url"), "/hello", "/hello"),
+        (
+            Some("http://ignored/"),
+            "https://Example.COM:443/a",
+            "https://example.com/a",
+        ),
+    ];
+
+    #[test]
+    fn resolves_an_expected_url_as_the_driver_does() {
+        for &(base_url, url, resolved) in DRIVER_CASES {
+            assert_eq!(
+                construct_url_based_on_base_url(base_url, url),
+                resolved,
+                "base {base_url:?}, url {url:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn reads_no_glob_syntax() {
+        assert_eq!(
+            construct_url_based_on_base_url(Some("http://localhost:3000/"), "**/a"),
+            "http://localhost:3000/**/a"
+        );
     }
 }
 

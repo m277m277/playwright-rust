@@ -888,7 +888,21 @@ impl Frame {
         }
     }
 
-    /// Waits for the frame to navigate to a URL matching the given string or glob pattern.
+    /// Waits for the frame to navigate to a URL matching the given glob pattern.
+    ///
+    /// The pattern is matched as Playwright matches it: resolved against the
+    /// context's `base_url` first, so `"/done"` names a page on the base URL's
+    /// origin, and normalized as a URL, so `"http://localhost:3000"` matches
+    /// `http://localhost:3000/`. Every string is a glob: `*` and `**` are
+    /// wildcards, `{a,b}` is alternation, and `\` makes the next character
+    /// literal, so a URL that contains `{`, `}` or `\` needs them escaped.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidArgument`](crate::error::Error::InvalidArgument)
+    /// at once for a malformed pattern (an unmatched or nested brace), and
+    /// [`Error::Timeout`](crate::error::Error::Timeout) if no matching URL is
+    /// reached in time.
     ///
     /// Playwright's protocol doesn't expose `waitForURL` as a server-side command —
     /// it's implemented client-side. We implement it by polling `window.location.href`.
@@ -907,13 +921,18 @@ impl Frame {
             .map(|d| d.as_millis() as u64)
             .unwrap_or(crate::DEFAULT_TIMEOUT_MS as u64);
 
-        // Playwright supports string (exact), glob, and regex patterns; we
-        // support the first two. Compile the glob once rather than on every
-        // poll: a 30s wait polls ~600 times.
-        let matcher = if url.contains('*') {
-            Some(crate::protocol::glob::GlobMatcher::new(url))
-        } else {
-            None
+        // Playwright reads every string as a glob; regex patterns are not
+        // supported here. Compile it once rather than on every poll: a 30s
+        // wait polls ~600 times. The driver throws on a malformed glob, so
+        // this refuses one rather than waiting out the timeout.
+        let base_url = self
+            .page()
+            .and_then(|page| page.context().ok()?.base_url().map(str::to_string));
+        let Some(matcher) = crate::protocol::glob::GlobMatcher::for_url(base_url.as_deref(), url)
+        else {
+            return Err(crate::error::Error::InvalidArgument(format!(
+                "wait_for_url: invalid glob pattern \"{url}\""
+            )));
         };
 
         let poll_interval = std::time::Duration::from_millis(50);
@@ -922,11 +941,7 @@ impl Frame {
         loop {
             let current_url = self.url();
 
-            let matches = match &matcher {
-                // A malformed glob matches nothing, as it does in the driver.
-                Some(matcher) => matcher.as_ref().is_some_and(|m| m.matches(&current_url)),
-                None => current_url == url,
-            };
+            let matches = matcher.matches(&current_url);
 
             if matches {
                 // URL matches — optionally wait for load state
