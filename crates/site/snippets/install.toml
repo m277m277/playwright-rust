@@ -1,3 +1,3 @@
 [dependencies]
-playwright-rs = "0.20"           # auto-updates within 0.20.x
+playwright-rs = "0.21"           # auto-updates within 0.21.x
 tokio = { version = "1", features = ["full"] }

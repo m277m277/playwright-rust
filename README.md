@@ -4,7 +4,7 @@
 [![docs.rs](https://docs.rs/playwright-rs/badge.svg)](https://docs.rs/playwright-rs)
 [![CI](https://github.com/padamson/playwright-rust/actions/workflows/test.yml/badge.svg)](https://github.com/padamson/playwright-rust/actions/workflows/test.yml)
 [![License](https://img.shields.io/crates/l/playwright-rs)](LICENSE)
-[![Playwright](https://img.shields.io/badge/Playwright-1.64.0-45ba4b)](https://playwright.dev)
+[![Playwright](https://img.shields.io/badge/Playwright-1.65.0-45ba4b)](https://playwright.dev)
 [![skills.sh](https://skills.sh/b/padamson/playwright-rust)](https://skills.sh/padamson/playwright-rust)
 
 > Rust language bindings for [Microsoft Playwright](https://playwright.dev) — the industry standard for cross-browser end-to-end testing.
@@ -132,7 +132,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-playwright-rs = "0.20"  # Auto-updates to latest 0.20.x
+playwright-rs = "0.21"  # Auto-updates to latest 0.21.x
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -145,7 +145,7 @@ backend for driver downloads (and rustls WebSocket connections). Use
 four, so list the others back:
 
 ```toml
-playwright-rs = { version = "0.20", default-features = false, features = [
+playwright-rs = { version = "0.21", default-features = false, features = [
     "aws-lc",
     "native-tls",
     "macros",

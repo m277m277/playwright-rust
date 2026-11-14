@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-11-14
+
 ### Added
 
 - **Close options: `Page::close_with_options`, `BrowserContext::close_with_options`, and `Browser::close_with_options`.** Each takes a `reason` that operations the close interrupts report in their error, as Playwright's other clients allow. `PageCloseOptions::run_before_unload` runs the page's `beforeunload` handlers instead of closing it outright: the page may raise a `beforeunload` dialog and stays open if that dialog is dismissed, so the call returns before the page has closed. `close()` is unchanged on all three.
@@ -1004,7 +1006,8 @@ Public-API type-consistency sweep — within the crate, the same conceptual quan
   - Playwright returns null for data URLs and `about:blank` (valid behavior, not an error)
   - Migration: `page.goto("https://example.com").await?.expect("response")` or use `if let Some(response) = page.goto(...).await? { ... }`
 
-[Unreleased]: https://github.com/padamson/playwright-rust/compare/v0.20.1...HEAD
+[Unreleased]: https://github.com/padamson/playwright-rust/compare/v0.21.0...HEAD
+[0.21.0]: https://github.com/padamson/playwright-rust/compare/v0.20.1...v0.21.0
 [0.20.1]: https://github.com/padamson/playwright-rust/compare/v0.20.0...v0.20.1
 [0.20.0]: https://github.com/padamson/playwright-rust/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/padamson/playwright-rust/compare/v0.18.1...v0.19.0
